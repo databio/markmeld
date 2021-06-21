@@ -1,0 +1,7 @@
+md_template: md_template.jinja
+latex_template: /home/nsheff/code/sciquill/tex_templates/nih_bs.tex
+output_file: "output/Sheffield_NIH_{today}_COMP.pdf"
+data_yaml:
+  - some_data.yaml
+data_md:
+  some_text_data: some_text.md
