@@ -23,7 +23,7 @@ _LOGGER = getLogger(PKG_NAME)
 mm_targets = {
     "figs": "/home/nsheff/code/sciquill/bin/build-pdfs fig",
     "figs_png": "/home/nsheff/code/sciquill/bin/buildfigs fig/*.svg",
-    "yaml_refs": "jabref -n --exportMatches 'groups=shefflab',reflists/ncs_papers.yaml,my_yaml i ${HOME}/code/papers/sheffield.bib"
+    "yaml_refs": "jabref -n --exportMatches 'groups=shefflab',reflists/ncs_papers.yaml,my_yaml i ${HOME}/code/papers/sheffield.bib",
     "pubs": ""
 }
 
@@ -237,7 +237,8 @@ def main():
     _LOGGER.info(f"MM | Output md_template: {cfg['md_template']}")
 
     if args.print:
-        return print(t.render(data))
+        return print(t.render(data))  # one time        
+        return print(Template(t.render(data)).render(data))  # two times
 
     if "prebuild" in cfg:
         # prebuild hooks
@@ -256,7 +257,8 @@ def main():
         _LOGGER.info(cmd_pandoc_fmt)
         # Call pandoc, passing the rendered template to stdin
         p = subprocess.Popen(cmd_pandoc_fmt, shell=True, stdin=subprocess.PIPE)
-        p.communicate(input=t.render(data).encode())
+        # p.communicate(input=t.render(data).encode())
+        p.communicate(input=Template(t.render(data)).render(data).encode())
 
 
     # Open the file
