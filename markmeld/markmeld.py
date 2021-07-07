@@ -9,6 +9,7 @@ import yaml
 
 from datetime import date
 from jinja2 import Template
+from jinja2.filters import FILTERS, environmentfilter
 from logging import getLogger
 from ubiquerg import VersionInHelpParser
 
@@ -26,6 +27,15 @@ mm_targets = {
     "yaml_refs": "jabref -n --exportMatches 'groups=shefflab',reflists/ncs_papers.yaml,my_yaml i ${HOME}/code/papers/sheffield.bib",
     "pubs": ""
 }
+
+@environmentfilter
+def datetimeformat(environment, value, to_format='%Y-%m-%d', from_format='%Y-%m-%d'):
+    value = str(value)
+    try:
+        return datetime.datetime.strptime(value, from_format).strftime(to_format)
+    except ValueError as VE:
+        _LOGGER.warning(VE)
+        return value
 
 
 def build_argparser():
@@ -184,12 +194,24 @@ def main():
     # if not args.target:
 
     if args.list:
+        if 'targets' not in cfg:
+            _LOGGER.error(f"No targets specified in config.")
+            sys.exit(1)
         tarlist = [x for x,k in cfg['targets'].items()]
         _LOGGER.error(f"Targets: {tarlist}")
         sys.exit(1)
 
-
+    # Add custom date formatter filter
+    FILTERS['date'] = datetimeformat
+    today = date.today().strftime("%Y-%m-%d")
+    data["now"] = date.today().strftime("%s")
+    cfg["today"] = today
+   
+    
     if args.target:
+        if 'targets' not in cfg:
+            _LOGGER.error(f"No targets specified in config.")
+            sys.exit(1)        
         if args.target not in cfg["targets"]:
             _LOGGER.error(f"target {args.target} not found")
             sys.exit(1)
@@ -223,8 +245,6 @@ def main():
     else:
         cfg["md_template"] = None
 
-    today = date.today().strftime("%Y-%m-%d")
-    cfg["today"] = today
 
     if "output_file" in cfg:
         cfg["output_file"] = cfg["output_file"].format(**cfg)
@@ -236,8 +256,10 @@ def main():
     _LOGGER.info(f"MM | Output file: {cfg['output_file']}")
     _LOGGER.info(f"MM | Output md_template: {cfg['md_template']}")
 
+
     if args.print:
-        return print(t.render(data))  # one time        
+
+        # return print(t.render(data))  # one time
         return print(Template(t.render(data)).render(data))  # two times
 
     if "prebuild" in cfg:
