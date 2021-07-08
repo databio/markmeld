@@ -44,3 +44,17 @@ Then it will automatically run pandoc.
 All `mm` is doing then is providing a convenient way to parameterize pandoc, I guess. Can you already do this with yaml frontmatter? Possibly, but maybe not for everything.
 
 - [ ] Right now, if you want to provide markmeld with `md` data, you can either specify them explicitly, in which case you can define an identifier by which you can refer to that file, like `my_identifier: path/some_file.md`, which can then be referenced in a template with `{{ my_identifer.content }}`. But if you use `data_md_globs`, then you just give it file globs, and the identifier is the filename. I could build an alternative metadata key, like `mm_id: my_identifier`, and if you use the glob approach, it could become available under that idea. Why might this be useful? 1) For a mix/match where I want swap out one possible version of `my_identifier` with another, this way I can do that with different file names; 2) if using hedgedoc, I may not control the filename. So if it's a remote file... I guess I'd just have to make it explicit?
+
+## Hooks
+
+I also recently developed hooks. You can use them by adding:
+
+``
+    prebuild: 
+      - manuscript_supplement
+      - manuscript
+    postbuild:
+      - split
+```
+
+in `_markmeld.yaml`. This allows you to build another recipe before the current one. These recipes can be built-in recipes (which are in `mm_targets`), or can be recipes from your cfg file. I'm using built-in recipes to provide alternative commands, like building figures or splitting stuff. I guess I could make these command templates instead.
