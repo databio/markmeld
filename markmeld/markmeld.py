@@ -5,6 +5,7 @@ import logmuse
 import os
 import subprocess
 import sys
+import time
 import yaml
 
 from datetime import date
@@ -31,6 +32,10 @@ mm_targets = {
 
 @environmentfilter
 def datetimeformat(environment, value, to_format='%Y-%m-%d', from_format='%Y-%m-%d'):
+    if from_format == "%s":
+        value = time.ctime(int(value))
+        from_format = '%a %b %d %H:%M:%S %Y'
+        print(value)
     value = str(value)
     try:
         return datetime.datetime.strptime(value, from_format).strftime(to_format)
