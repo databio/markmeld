@@ -1,3 +1,4 @@
+import argparse
 import datetime
 import frontmatter
 import jinja2
@@ -27,14 +28,15 @@ mm_targets = {
     "figs_png": "/home/nsheff/code/sciquill/bin/buildfigs fig/*.svg",
     "yaml_refs": "jabref -n --exportMatches 'groups=shefflab',reflists/ncs_papers.yaml,my_yaml i ${HOME}/code/papers/sheffield.bib",
     "pubs": "",
-    "split": "/home/nsheff/code/sciquill/bin/splitsupl {combined} {primary} {appendix}"
+    "split": "/home/nsheff/code/sciquill/bin/splitsupl {combined} {primary} {appendix}",
 }
 
+
 @environmentfilter
-def datetimeformat(environment, value, to_format='%Y-%m-%d', from_format='%Y-%m-%d'):
+def datetimeformat(environment, value, to_format="%Y-%m-%d", from_format="%Y-%m-%d"):
     if from_format == "%s":
         value = time.ctime(int(value))
-        from_format = '%a %b %d %H:%M:%S %Y'
+        from_format = "%a %b %d %H:%M:%S %Y"
         print(value)
     value = str(value)
     try:
@@ -66,30 +68,27 @@ def build_argparser():
         "--config",
         dest="config",
         metavar="C",
-        help="Path to mm configuration file."
+        help="Path to mm configuration file.",
     )
 
     # position 1
+    parser.add_argument(dest="target", metavar="T", help="Target", nargs="?")
+
     parser.add_argument(
-        dest="target",
-        metavar="T",
-        help="Target",
-        nargs="?"
+        "-l", "--list", action="store_true", default=False, help="List targets"
     )
 
     parser.add_argument(
-        "-l",
-        "--list",
-        action="store_true",
-        default=False,
-        help="List targets")
+        "--autocomplete", action="store_true", default=False, help=argparse.SUPPRESS
+    )
 
     parser.add_argument(
         "-p",
         "--print",
         action="store_true",
         default=False,
-        help="Print template output instead of going to pandoc.")
+        help="Print template output instead of going to pandoc.",
+    )
 
     parser.add_argument(
         "-v",
@@ -101,6 +100,7 @@ def build_argparser():
 
     return parser
 
+
 def load_config_file(filepath):
     """
     Loads a configuration file.
@@ -109,10 +109,10 @@ def load_config_file(filepath):
     @return Loaded yaml data object.
     """
 
-    with open(filepath, 'r') as f:
+    with open(filepath, "r") as f:
         cfg_data = f.read()
 
-    return (load_config_data(cfg_data))
+    return load_config_data(cfg_data)
 
 
 def load_config_data(cfg_data):
@@ -127,7 +127,7 @@ def populate_yaml_data(cfg, data):
     _LOGGER.info(f"MM | Populating yaml data...")
     for d in cfg["data_yaml"]:
         _LOGGER.info(f"MM | {d}")
-        with open(d, 'r') as f:
+        with open(d, "r") as f:
             data.update(yaml.load(f, Loader=yaml.SafeLoader))
 
     return data
@@ -138,7 +138,7 @@ def populate_md_data(cfg, data):
     if "data_md" not in cfg:
         return data
     _LOGGER.info(f"MM | Populating md data...")
-    for k,v in cfg["data_md"].items():
+    for k, v in cfg["data_md"].items():
         _LOGGER.info(f"MM | --> {k}")
         p = frontmatter.load(v)
         data[k] = p.__dict__
@@ -149,9 +149,11 @@ def populate_md_data(cfg, data):
 
     return data
 
+
 def populate_data_md_globs(cfg, data):
     import glob
-    if 'data_md_globs' not in cfg:
+
+    if "data_md_globs" not in cfg:
         return data
     _LOGGER.info(f"MM | Populating md data globs...")
     for folder in cfg["data_md_globs"]:
@@ -168,14 +170,14 @@ def populate_data_md_globs(cfg, data):
                 data[k]["metadata_yaml"] = yaml.dump(p.metadata)
     return data
 
+
 def load_template(cfg):
     if "md_template" not in cfg:
         return None
-    with open(cfg["md_template"], 'r') as f:
-        x= f.read()
+    with open(cfg["md_template"], "r") as f:
+        x = f.read()
     t = Template(x)
     return t
-
 
 
 def meld(args, data, cmd_data, cfg):
@@ -199,11 +201,11 @@ def meld(args, data, cmd_data, cfg):
             _LOGGER.info(f"MM | Command: {cmd}")
             p = subprocess.Popen(cmd, shell=True)
             return p.communicate()
-        elif tgt in cmd_data['targets']:
+        elif tgt in cmd_data["targets"]:
             return meld(args, data, populate_cmd_data(cfg, tgt), cfg)
         else:
             _LOGGER.warning(f"MM | No target called {tgt}.")
-            return False            
+            return False
 
     if "prebuild" in cmd_data:
         # prebuild hooks
@@ -237,9 +239,9 @@ def populate_cmd_data(cfg, target=None, vardata=None):
     cmd_data["today"] = date.today().strftime("%Y-%m-%d")
 
     if target:
-        if 'targets' not in cfg:
+        if "targets" not in cfg:
             _LOGGER.error(f"No targets specified in config.")
-            sys.exit(1)        
+            sys.exit(1)
         if target not in cfg["targets"]:
             _LOGGER.error(f"target {target} not found")
             sys.exit(1)
@@ -253,7 +255,9 @@ def populate_cmd_data(cfg, target=None, vardata=None):
 
     if not "pandoc" in cmd_data:
         # default pandoc command
-        cmd_data["pandoc"] = """pandoc \
+        cmd_data[
+            "pandoc"
+        ] = """pandoc \
              --template {latex_template} \
              -o {output_file}"""
 
@@ -270,22 +274,31 @@ def main():
         if os.path.exists("_markmeld.yaml"):
             args.config = "_markmeld.yaml"
         else:
-            _LOGGER.error("You must provide config file or be in a dir with _markmeld.yaml.")
+            _LOGGER.error(
+                "You must provide config file or be in a dir with _markmeld.yaml."
+            )
             sys.exit(1)
 
     data = {"md": {}}
     cfg = load_config_file(args.config)
 
     if args.list:
-        if 'targets' not in cfg:
+        if "targets" not in cfg:
             _LOGGER.error(f"No targets specified in config.")
             sys.exit(1)
-        tarlist = [x for x,k in cfg['targets'].items()]
+        tarlist = [x for x, k in cfg["targets"].items()]
         _LOGGER.error(f"Targets: {tarlist}")
         sys.exit(1)
 
+    if args.autocomplete:
+        if "targets" not in cfg:
+            sys.exit(1)
+        for t, k in cfg["targets"].items():
+            sys.stdout.write(t + " ")
+        sys.exit(1)
+
     # Add custom date formatter filter
-    FILTERS['date'] = datetimeformat
+    FILTERS["date"] = datetimeformat
     data["now"] = date.today().strftime("%s")
 
     # Set up cmd_data object
@@ -298,7 +311,7 @@ def main():
     data = populate_data_md_globs(cmd_data, data)
     data = populate_yaml_data(cmd_data, data)
     data = populate_md_data(cmd_data, data)
-    if 'data_variables' in cmd_data:
+    if "data_variables" in cmd_data:
         data.update(cmd_data["data_variables"])
 
     if "output_file" in cmd_data:
@@ -311,7 +324,7 @@ def main():
 
     # Open the file
     if cmd_data["output_file"]:
-        subprocess.call(["xdg-open", cmd_data['output_file']])
+        subprocess.call(["xdg-open", cmd_data["output_file"]])
 
     return
 
