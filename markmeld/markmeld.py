@@ -190,6 +190,9 @@ def meld(args, data, cmd_data, cfg):
     else:
         cmd_data["md_template"] = None
 
+    if 'latex_template' not in cmd_data:
+        cmd_data["latex_template"] = None
+
     _LOGGER.info(f"MM | Today's date: {cmd_data['today']}")
     _LOGGER.info(f"MM | latex_template: {cmd_data['latex_template']}")
     _LOGGER.info(f"MM | Output file: {cmd_data['output_file']}")
@@ -216,11 +219,11 @@ def meld(args, data, cmd_data, cfg):
         # return print(t.render(data))  # one time
         return print(Template(t.render(data)).render(data))  # two times
     elif cmd_data["md_template"]:
-        cmd_pandoc = cmd_data["pandoc"]
-        cmd_pandoc_fmt = cmd_pandoc.format(**cmd_data)
-        _LOGGER.info(cmd_pandoc_fmt)
-        # Call pandoc, passing the rendered template to stdin
-        p = subprocess.Popen(cmd_pandoc_fmt, shell=True, stdin=subprocess.PIPE)
+        cmd = cmd_data["command"]
+        cmd_fmt = cmd.format(**cmd_data)
+        _LOGGER.info(cmd_fmt)
+        # Call command (pandoc), passing the rendered template to stdin
+        p = subprocess.Popen(cmd_fmt, shell=True, stdin=subprocess.PIPE)
         # p.communicate(input=t.render(data).encode())
         p.communicate(input=Template(t.render(data)).render(data).encode())
 
@@ -253,10 +256,10 @@ def populate_cmd_data(cfg, target=None, vardata=None):
     else:
         cli_vars = {}
 
-    if not "pandoc" in cmd_data:
-        # default pandoc command
+    if not "command" in cmd_data:
+        # default command
         cmd_data[
-            "pandoc"
+            "command"
         ] = """pandoc \
              --template {latex_template} \
              -o {output_file}"""
@@ -323,8 +326,10 @@ def main():
     meld(args, data, cmd_data, cfg)
 
     # Open the file
-    if cmd_data["output_file"]:
-        subprocess.call(["xdg-open", cmd_data["output_file"]])
+    if cmd_data["output_file"] and not "stopopen" in cmd_data:
+        cmd_open = ["xdg-open", cmd_data["output_file"]]
+        _LOGGER.info(" ".join(cmd_open))
+        subprocess.call(cmd_open)
 
     return
 
