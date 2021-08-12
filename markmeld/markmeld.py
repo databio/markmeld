@@ -193,6 +193,24 @@ def meld(args, data, cmd_data, cfg):
     if 'latex_template' not in cmd_data:
         cmd_data["latex_template"] = None
 
+    # all the data goes into a big dict, with markdown data under a '.content' attribute
+    # for the file name
+    # use this to populate the template.
+
+    data = populate_data_md_globs(cmd_data, data)
+    data = populate_yaml_data(cmd_data, data)
+    data = populate_md_data(cmd_data, data)
+    
+    if "data_variables" in cmd_data:
+        data.update(cmd_data["data_variables"])
+
+    if "output_file" in cmd_data:
+        cmd_data["output_file"] = cmd_data["output_file"].format(**cmd_data)
+    else:
+        cmd_data["output_file"] = None
+
+
+
     _LOGGER.info(f"MM | Today's date: {cmd_data['today']}")
     _LOGGER.info(f"MM | latex_template: {cmd_data['latex_template']}")
     _LOGGER.info(f"MM | Output file: {cmd_data['output_file']}")
@@ -249,6 +267,7 @@ def populate_cmd_data(cfg, target=None, vardata=None):
             _LOGGER.error(f"target {target} not found")
             sys.exit(1)
         cmd_data.update(cfg["targets"][target])
+        print(cfg["targets"][target])
 
     if vardata:
         cli_vars = {y[0]: y[1] for y in [x.split("=") for x in vardata]}
@@ -304,23 +323,8 @@ def main():
     FILTERS["date"] = datetimeformat
     data["now"] = date.today().strftime("%s")
 
-    # Set up cmd_data object
+    # Set up cmd_data object (it's variables for the command population)
     cmd_data = populate_cmd_data(cfg, args.target, args.vars)
-
-    # all the data goes into a big dict, with markdown data under a '.content' attribute
-    # for the file name
-    # use this to populate the template.
-
-    data = populate_data_md_globs(cmd_data, data)
-    data = populate_yaml_data(cmd_data, data)
-    data = populate_md_data(cmd_data, data)
-    if "data_variables" in cmd_data:
-        data.update(cmd_data["data_variables"])
-
-    if "output_file" in cmd_data:
-        cmd_data["output_file"] = cmd_data["output_file"].format(**cmd_data)
-    else:
-        cmd_data["output_file"] = None
 
     # Meld it!
     meld(args, data, cmd_data, cfg)
