@@ -10,6 +10,7 @@ import sys
 import time
 import yaml
 
+from collections.abc import Mapping
 from datetime import date
 from jinja2 import Template
 from jinja2.filters import FILTERS, environmentfilter
@@ -111,6 +112,17 @@ def build_argparser():
 
     return parser
 
+def deep_update(old, new):
+    """
+    Like built-in dict update, but recursive.
+    """
+    for k, v in new.items():
+        if isinstance(v, Mapping):
+            old[k] = deep_update(old.get(k, {}), v)
+        else:
+            old[k] = v
+    return old
+
 
 def load_config_file(filepath):
     """
@@ -127,14 +139,16 @@ def load_config_file(filepath):
 
 
 def load_config_data(cfg_data):
-    temp_cfg = yaml.load(cfg_data, Loader=yaml.SafeLoader)
-    final_cfg = {}
-    if "imports" in temp_cfg:
+    higher_cfg = yaml.load(cfg_data, Loader=yaml.SafeLoader)
+    lower_cfg = {}
+    if "imports" in higher_cfg:
         _LOGGER.debug("Found imports")
-        for import_file in temp_cfg["imports"]:
+        for import_file in higher_cfg["imports"]:
             _LOGGER.debug(f"Importing {import_file}")
-            temp_cfg.update(load_config_file(expandpath(import_file)))
-    return temp_cfg
+            deep_update(lower_cfg, load_config_file(expandpath(import_file)))
+
+    deep_update(lower_cfg, higher_cfg)
+    return lower_cfg
 
 
 def populate_yaml_data(cfg, data):
@@ -226,24 +240,29 @@ def meld(args, data, cmd_data, cfg):
     else:
         cmd_data["output_file"] = None
 
-
-
     _LOGGER.info(f"MM | Today's date: {cmd_data['today']}")
     _LOGGER.info(f"MM | latex_template: {cmd_data['latex_template']}")
     _LOGGER.info(f"MM | Output file: {cmd_data['output_file']}")
     _LOGGER.info(f"MM | Output md_template: {cmd_data['md_template']}")
 
     def call_hook(cmd_data, tgt):
-        if tgt in mm_targets:
-            cmd = mm_targets[tgt].format(**cmd_data)
-            _LOGGER.info(f"MM | Command: {cmd}")
-            p = subprocess.Popen(cmd, shell=True)
-            return p.communicate()
-        elif tgt in cmd_data["targets"]:
+        # if tgt in mm_targets:
+
+        #     cmd = mm_targets[tgt].format(**cmd_data)
+        #     return run_cmd(cmd)
+        # el
+
+        if tgt in cmd_data["targets"]:
             return meld(args, data, populate_cmd_data(cfg, tgt), cfg)
         else:
             _LOGGER.warning(f"MM | No target called {tgt}.")
             return False
+
+    def run_cmd(cmd):
+        _LOGGER.info(f"MM | Command: {cmd}")
+        p = subprocess.Popen(cmd, shell=True)
+        return p.communicate()
+
 
     if "prebuild" in cmd_data:
         # prebuild hooks
@@ -253,14 +272,17 @@ def meld(args, data, cmd_data, cfg):
     if args.print:
         # return print(t.render(data))  # one time
         return print(Template(t.render(data)).render(data))  # two times
-    elif cmd_data["md_template"]:
+    elif cmd_data["command"]:
         cmd = cmd_data["command"]
         cmd_fmt = cmd.format(**cmd_data)
         _LOGGER.info(cmd_fmt)
-        # Call command (pandoc), passing the rendered template to stdin
-        p = subprocess.Popen(cmd_fmt, shell=True, stdin=subprocess.PIPE)
-        # p.communicate(input=t.render(data).encode())
-        p.communicate(input=Template(t.render(data)).render(data).encode())
+        if "type" in cmd_data and cmd_data["type"] == "raw":
+            run_cmd(cmd_fmt)
+        else:
+            # Call command (pandoc), passing the rendered template to stdin
+            p = subprocess.Popen(cmd_fmt, shell=True, stdin=subprocess.PIPE)
+            # p.communicate(input=t.render(data).encode())
+            p.communicate(input=Template(t.render(data)).render(data).encode())
 
     if "postbuild" in cmd_data:
         # postbuild hooks
