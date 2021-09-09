@@ -15,6 +15,7 @@ from jinja2 import Template
 from jinja2.filters import FILTERS, environmentfilter
 from logging import getLogger
 from ubiquerg import VersionInHelpParser
+from ubiquerg import expandpath
 
 from ._version import __version__
 
@@ -115,8 +116,8 @@ def load_config_file(filepath):
     """
     Loads a configuration file.
 
-    @param filepath Path to configuration file to load
-    @return Loaded yaml data object.
+    @param str filepath Path to configuration file to load
+    @return dict Loaded yaml data object.
     """
 
     with open(filepath, "r") as f:
@@ -126,8 +127,14 @@ def load_config_file(filepath):
 
 
 def load_config_data(cfg_data):
-    cfg = yaml.load(cfg_data, Loader=yaml.SafeLoader)
-    return cfg
+    temp_cfg = yaml.load(cfg_data, Loader=yaml.SafeLoader)
+    final_cfg = {}
+    if "imports" in temp_cfg:
+        _LOGGER.debug("Found imports")
+        for import_file in temp_cfg["imports"]:
+            _LOGGER.debug(f"Importing {import_file}")
+            temp_cfg.update(load_config_file(expandpath(import_file)))
+    return temp_cfg
 
 
 def populate_yaml_data(cfg, data):
