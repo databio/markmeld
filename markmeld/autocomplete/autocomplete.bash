@@ -5,7 +5,7 @@ _mm_autocomplete()
     COMPREPLY=()
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
-    opts=$(mm -l)
+    opts=$(mm --autocomplete)
     COMPREPLY=( $(compgen -W "${opts}" -- ${cur}) )
     return 0
 }
