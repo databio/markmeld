@@ -4,6 +4,7 @@ import frontmatter
 import jinja2
 import logmuse
 import os
+import re
 import subprocess
 import sys
 import time
@@ -44,6 +45,15 @@ def datetimeformat(environment, value, to_format="%Y-%m-%d", from_format="%Y-%m-
     except ValueError as VE:
         _LOGGER.warning(VE)
         return value
+
+@environmentfilter
+def extract_refs(environment, value):
+    m = re.findall('@([a-zA-Z0-9_]+)', value)
+    return m
+
+# m = extract_refs("abc; hello @test;me @second one; and finally @three")
+# m
+
 
 
 def build_argparser():
@@ -322,6 +332,9 @@ def main():
     # Add custom date formatter filter
     FILTERS["date"] = datetimeformat
     data["now"] = date.today().strftime("%s")
+
+    # Add custom reference extraction filter
+    FILTERS["extract_refs"] = extract_refs
 
     # Set up cmd_data object (it's variables for the command population)
     cmd_data = populate_cmd_data(cfg, args.target, args.vars)
