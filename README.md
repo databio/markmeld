@@ -67,3 +67,48 @@ For simple documents like a manuscript that don't really use much structured con
 
 I also like the symmetry -- that is, becoming familiar with one system that can handle the simple documents, but is also powerful enough to add in structured content into those same documents, should it become necessary.
 
+
+# How to write a mail-merge letters with markmeld
+
+1. Data
+
+You need a `data.yaml` file like this. This is a list of people you want to send the letter to:
+
+```
+people:
+  - first_name: Bob
+    last_name: Jones
+    email: bob.jones@gmail.com
+```
+
+2. Letter
+
+Write your letter in a jinja template like this `letter.jinja`:
+
+```
+{% for person in people %}
+
+<a href="mailto:{{ person.email }}?subject=SUBJECT&body=Hi {{person.first_name}},%0D%0A%0D%Letter conte.t %0D%0A%0D%0AThanks, and we should catch up some time!%0D%0A%0D%0A-Nathan">{{ person.first_name }}</a>
+
+{% endfor %}
+```
+
+3. Markmeld config in `_markmeld.yaml`:
+
+Which is something like:
+
+```
+imports:
+  - $MMDIR/$HOSTNAME.yaml
+targets:
+  links:
+    md_template: letter_template.jinja
+    output_file: "{today}.html"
+    data_yaml:
+      - data.yaml
+    command: |
+      pandoc \
+        -o {output_file}
+```
+
+Now just `mm links`, open the file, and you have personalized click links for all your letters. Easy peasy!

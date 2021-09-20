@@ -17,6 +17,7 @@ from jinja2.filters import FILTERS, environmentfilter
 from logging import getLogger
 from ubiquerg import VersionInHelpParser
 from ubiquerg import expandpath
+from ubiquerg import is_url
 
 from ._version import __version__
 
@@ -170,8 +171,14 @@ def populate_md_data(cfg, data):
         return data
     _LOGGER.info(f"MM | Populating md data...")
     for k, v in cfg["data_md"].items():
-        _LOGGER.info(f"MM | --> {k}")
-        p = frontmatter.load(v)
+        _LOGGER.info(f"MM | --> {k}: {v}")
+        if is_url(v):
+            # Do url stuff
+            import requests
+            response = requests.get(v)
+            p = frontmatter.loads(response.text)
+        else:
+            p = frontmatter.load(v)
         data[k] = p.__dict__
         data["md"][k] = p.__dict__
         data[k]["all"] = frontmatter.dumps(p)
@@ -277,12 +284,20 @@ def meld(args, data, cmd_data, cfg):
         cmd_fmt = cmd.format(**cmd_data)
         _LOGGER.info(cmd_fmt)
         if "type" in cmd_data and cmd_data["type"] == "raw":
+            # Raw = No subprocess stdin printing
             run_cmd(cmd_fmt)
         else:
             # Call command (pandoc), passing the rendered template to stdin
-            p = subprocess.Popen(cmd_fmt, shell=True, stdin=subprocess.PIPE)
+            import shlex
+            cmd_fmt = cmd_fmt.replace("\n", "").replace("\\","")
+            # _LOGGER.debug(cmd_fmt)
+            cmd_ary = shlex.split(cmd_fmt)
+            # _LOGGER.debug(cmd_ary)
+            p = subprocess.Popen(cmd_ary, shell=False, stdin=subprocess.PIPE)
             # p.communicate(input=t.render(data).encode())
-            p.communicate(input=Template(t.render(data)).render(data).encode())
+            rendered_in = Template(t.render(data)).render(data).encode()
+            p.communicate(input=rendered_in)
+            # _LOGGER.info(rendered_in)
 
     if "postbuild" in cmd_data:
         # postbuild hooks
