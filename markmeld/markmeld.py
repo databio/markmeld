@@ -289,11 +289,13 @@ def meld(args, data, cmd_data, cfg):
         else:
             # Call command (pandoc), passing the rendered template to stdin
             import shlex
-            cmd_fmt = cmd_fmt.replace("\n", "").replace("\\","")
-            # _LOGGER.debug(cmd_fmt)
-            cmd_ary = shlex.split(cmd_fmt)
+            _LOGGER.debug(cmd_fmt)
+            # In case I need to make it NOT use the shell in the future
+            # here's how:
+            # cmd_fmt2 = cmd_fmt.replace("\n", "").replace("\\","")
+            # cmd_ary = shlex.split(cmd_fmt2)
             # _LOGGER.debug(cmd_ary)
-            p = subprocess.Popen(cmd_ary, shell=False, stdin=subprocess.PIPE)
+            p = subprocess.Popen(cmd_fmt, shell=True, stdin=subprocess.PIPE)
             # p.communicate(input=t.render(data).encode())
             rendered_in = Template(t.render(data)).render(data).encode()
             p.communicate(input=rendered_in)
