@@ -119,14 +119,14 @@ Now just `mm links`, open the file, and you have personalized click links for al
 
 ## Limitations and TODO
 
-- [ ] Currently, paths are relative to the working directory. Instead, paths should be relative to the directory of the yaml file. (this will only matter when I start trying to build stuff using external `_markmeld.yaml` files in other folders.)
-- [ ] Might need better error handling in case some sections aren't present in the config file. All sections are optional. This has not been thoroughly tested.
-- [ ] It would be nice if the config files could import one another so I can have nested ones, so I don't have to repeat common data. Can I use PEP for that?
-- [x] some kind of list functionality to show available recipes to build? `mm list` ? Or just `mm` ? -> `mm -l`
-- [x] I want the config file to be a position argument?
+- [x] tab completion
+- [x] Config file should be a positional argument
+- [x] some kind of list functionality to show available recipes to build? `mm -l`
 - [x] the latex template is configurable, but nothing else with pandoc. Really, should pandoc just be something you pipe `mm` output to?
 - [x] CLI: `mm meldsource.yaml target`
 - [x] use `_markmeld.yaml` by default, so you configure by putting a `_markmeld.yaml` file in root.
 - [ ] `mm` without a target lists the targets.
-- [x] tab completion would be awesome (but `-l` suffices for the time being)
-- [ ] Right now, if you want to provide markmeld with `md` data, you can either specify them explicitly, in which case you can define an identifier by which you can refer to that file, like `my_identifier: path/some_file.md`, which can then be referenced in a template with `{{ my_identifer.content }}`. But if you use `data_md_globs`, then you just give it file globs, and the identifier is the filename. I could build an alternative metadata key, like `mm_id: my_identifier`, and if you use the glob approach, it could become available under that label. Why might this be useful? 1) For a mix/match where I want swap out one possible version of `my_identifier` with another, this way I can do that with different file names; 2) if using hedgedoc, I may not control the filename. So if it's a remote file... I guess I'd just have to make it explicit?
+- [ ] Currently, paths are relative to the working directory. Instead, paths should be relative to the directory of the yaml file. (this will only matter when I start trying to build stuff using external `_markmeld.yaml` files in other folders.)
+- [ ] Might need better error handling in case some sections aren't present in the config file. All sections are optional. This has not been thoroughly tested.
+- [ ] Currently, config files can import one another with `imports`. This way I can keep common targets in common config files. Would this be a useful application for PEP?
+- [ ] Right now, if you want to provide markmeld with `md` data, you can either specify them explicitly, in which case you can define an identifier by which you can refer to that file, like `my_identifier: path/some_file.md`, which can then be referenced in a template with `{{ my_identifer.content }}`. But if you use `data_md_globs`, then you just give it file globs, and the identifier is the filename. I could build an alternative metadata key, like `mm_id: my_identifier`, and if you use the glob approach, it could become available under that label. Why might this be useful? 1) For a mix/match where I want swap out one possible version of `my_identifier` with another, this way I can do that with different file names; 2) if using hedgedoc, I may not control the filename. So if it's a remote file... I guess I'd just have to make it explicit...
