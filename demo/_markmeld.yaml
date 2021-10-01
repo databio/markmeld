@@ -1,7 +1,7 @@
 targets:
   default:
     md_template: md_template.jinja
-latex_template: /home/nsheff/code/sciquill/tex_templates/nih_bs.tex
+latex_template: pandoc_default.tex
 output_file: "{today}_demo_output.pdf"
 data_yaml:
   - some_data.yaml

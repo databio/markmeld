@@ -1,3 +1,4 @@
+{'md_template': 'md_template.jinja'}
 # Template
 
 This is a jinja template. You can write plain markdown text into the template like this.
@@ -7,18 +8,20 @@ This is a jinja template. You can write plain markdown text into the template li
 You can also refer to variables in the yaml files, using syntax like this:
 
 
-{{ number_of_things }} 
-{{ name_of_person }}
+15 
+The sundance kid
 
 
 Which renders like this:
 
 15 
-Bill Cassidy
+The sundance kid
 
 ## Markdown data
 
-You can refer to *content* in the markdown data with the `.content` attribute, using the name you put in the config file {{ some_text_data.content }}, which renders like this::
+You can refer to *content* in the markdown data with the `.content` attribute, using the name you put in the config file # Text content
+
+Here is some text, which renders like this::
 
 ```
 # Text content
@@ -27,7 +30,7 @@ Here is some text
 ```
 
 
-You can also refer to the yaml metadata in your markdown files, using {{ some_text_data.metadata.text_property }}:
+You can also refer to the yaml metadata in your markdown files, using text_property_value:
 
 ```
 text_property_value
