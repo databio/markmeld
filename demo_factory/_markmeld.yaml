@@ -1,0 +1,10 @@
+imports:
+  - $MMCFG
+target_factories:
+- glob:
+    path: "*.md"
+- glob:
+    path: "*/*.md"
+    name: "folder"
+md_template: /home/nsheff/code/sciquill/markmeld_templates/generic.jinja
+latex_template: /home/nsheff/code/sciquill/tex_templates/shefflab.tex

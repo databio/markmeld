@@ -65,6 +65,39 @@ postbuild:
 
 in `_markmeld.yaml`. This allows you to build another recipe before the current one. These recipes can be built-in recipes (which are in `mm_targets`), or can be recipes from your cfg file. I'm using built-in recipes to provide alternative commands, like building figures or splitting stuff. I guess I could make these command templates instead.
 
+## Imports
+
+It's super useful to define global config options, and then re-use them across projects. You can do this with `imports`.So I have a global config file, say `/_markmeld_config.yaml`:
+
+```yaml
+sciquill: /home/nsheff/code/sciquill/
+figczar: /home/nsheff/code/sciquill/pandoc_filters/figczar/figczar.lua
+highlighter: /home/nsheff/code/sciquill/pandoc_filters/change_marker/change_marker.lua
+multirefs: /home/nsheff/code/sciquill/pandoc_filters/multi-refs/multi-refs.lua
+csl: /home/nsheff/code/sciquill/csl/biomed-central.csl
+bibdb: /home/nsheff/code/papers/sheffield.bib
+```
+
+Now you use:
+```yaml
+imports:
+- /_markmeld_config.yaml
+```
+
+And now I can use `{figczar}` and `{bibdb}` in `command` section of a `_markmeld.yaml` file. If you want to be really cool, maybe point to this config file with `$MARKMELD` and then use:
+
+```yaml
+imports:
+- $MARKMELD
+```
+
+It works! Imports are in priority order, and lower priority than whatever you have in the local file, like `css`.  You can also define targets and import them.
+
+## Raw commands
+
+If in a command you use `type: raw`, then the command will run directly, and not pass the template render as stdin.
+
+
 ## Rationale
 
 Why is this better than just stringing stuff together using pandoc? Well, for one, the power of a jinja template is pretty nice... so I can just tell markmeld about all the data, which can be either markdown or yaml, and then using jinja I can restructure the output in whatever format I want. Furthermore, it allows me to intersperse yaml data in there. Without markmeld, I couldn't really find an easy way to integrate prose content (in markdown format) with structured content (in yaml format) into one output. This is useful for something like a CV/Biosketch, where I have some prose components, and then some lists, which I'd rather draw from a structured YAML file.
@@ -130,3 +163,4 @@ Now just `mm links`, open the file, and you have personalized click links for al
 - [ ] Might need better error handling in case some sections aren't present in the config file. All sections are optional. This has not been thoroughly tested.
 - [ ] Currently, config files can import one another with `imports`. This way I can keep common targets in common config files. Would this be a useful application for PEP?
 - [ ] Right now, if you want to provide markmeld with `md` data, you can either specify them explicitly, in which case you can define an identifier by which you can refer to that file, like `my_identifier: path/some_file.md`, which can then be referenced in a template with `{{ my_identifer.content }}`. But if you use `data_md_globs`, then you just give it file globs, and the identifier is the filename. I could build an alternative metadata key, like `mm_id: my_identifier`, and if you use the glob approach, it could become available under that label. Why might this be useful? 1) For a mix/match where I want swap out one possible version of `my_identifier` with another, this way I can do that with different file names; 2) if using hedgedoc, I may not control the filename. So if it's a remote file... I guess I'd just have to make it explicit...
+- `markmeld_templates: [ ]` - a priority list of folders to search for a named template file (in `md_template`, which must exist as a file). (maybe?)

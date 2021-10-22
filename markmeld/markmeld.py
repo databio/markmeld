@@ -35,7 +35,6 @@ mm_targets = {
     "split": "/home/nsheff/code/sciquill/bin/splitsupl {combined} {primary} {appendix}",
 }
 
-
 @environmentfilter
 def datetimeformat(environment, value, to_format="%Y-%m-%d", from_format="%Y-%m-%d"):
     if from_format == "%s":
@@ -56,6 +55,30 @@ def extract_refs(environment, value):
 
 # m = extract_refs("abc; hello @test;me @second one; and finally @three")
 # m
+
+
+#  TODO: if it's a folder-style naming, shouldn't we put the output file
+#  in that folder?
+def glob_factory(vars):
+    path = vars["path"]
+    if "name" in vars and vars["name"] == "folder":
+        slot = -2
+    else:
+        slot = -1
+    import glob
+    globs = glob.glob(path)
+    targets = {}
+    for i in globs:
+        tgt = os.path.splitext(i.split("/")[slot])[0]
+        print(tgt)
+        targets[tgt] = {
+            "output_file": f"{tgt}.pdf",
+            "data_md": { 
+                "data": i,
+            }
+        }
+    return targets
+
 
 
 
@@ -139,9 +162,22 @@ def load_config_file(filepath):
     return load_config_data(cfg_data)
 
 
+def load_plugins():
+    from pkg_resources import iter_entry_points
+    built_in_plugins = {
+        "glob": glob_factory
+    }
+
+    installed_plugins = {
+        ep.name: ep.load() for ep in iter_entry_points("markmeld.factories")
+    }
+    built_in_plugins.update(installed_plugins)
+    return built_in_plugins
+
 def load_config_data(cfg_data):
     higher_cfg = yaml.load(cfg_data, Loader=yaml.SafeLoader)
     lower_cfg = {}
+    # Imports
     if "imports" in higher_cfg:
         _LOGGER.debug("Found imports")
         for import_file in higher_cfg["imports"]:
@@ -149,6 +185,21 @@ def load_config_data(cfg_data):
             deep_update(lower_cfg, load_config_file(expandpath(import_file)))
 
     deep_update(lower_cfg, higher_cfg)
+
+    # Target factories
+    if "target_factories" in lower_cfg:
+        plugins = load_plugins()
+        _LOGGER.info(f"Available plugins: {plugins}")
+        for fac in lower_cfg["target_factories"]:
+            fac_name = list(fac.keys())[0]
+            fac_vals = list(fac.values())[0]
+            _LOGGER.info(f"Processing target factory: {fac_name}")
+            # Look up function to call.
+            func = plugins[fac_name]
+            factory_targets = func(fac_vals)
+            deep_update(lower_cfg, {"targets": factory_targets})
+
+    _LOGGER.info(lower_cfg)
     return lower_cfg
 
 
@@ -182,6 +233,7 @@ def populate_md_data(cfg, data):
         data[k] = p.__dict__
         data["md"][k] = p.__dict__
         data[k]["all"] = frontmatter.dumps(p)
+        _LOGGER.debug(data[k])
         if len(p.metadata) > 0:
             data[k]["metadata_yaml"] = yaml.dump(p.metadata)
 
@@ -224,9 +276,10 @@ def meld(args, data, cmd_data, cfg):
     """
 
     if "md_template" in cmd_data:
-        t = load_template(cmd_data)
+        tpl = load_template(cmd_data)
     else:
         cmd_data["md_template"] = None
+        _LOGGER.error("No md_template provided")
 
     if 'latex_template' not in cmd_data:
         cmd_data["latex_template"] = None
@@ -277,8 +330,8 @@ def meld(args, data, cmd_data, cfg):
             _LOGGER.info(f"MM | Run prebuild hooks: {tgt}")
             call_hook(cmd_data, tgt)
     if args.print:
-        # return print(t.render(data))  # one time
-        return print(Template(t.render(data)).render(data))  # two times
+        # return print(tpl.render(data))  # one time
+        return print(Template(tpl.render(data)).render(data))  # two times
     elif cmd_data["command"]:
         cmd = cmd_data["command"]
         cmd_fmt = cmd.format(**cmd_data)
@@ -296,8 +349,8 @@ def meld(args, data, cmd_data, cfg):
             # cmd_ary = shlex.split(cmd_fmt2)
             # _LOGGER.debug(cmd_ary)
             p = subprocess.Popen(cmd_fmt, shell=True, stdin=subprocess.PIPE)
-            # p.communicate(input=t.render(data).encode())
-            rendered_in = Template(t.render(data)).render(data).encode()
+            # p.communicate(input=tpl.render(data).encode())
+            rendered_in = Template(tpl.render(data)).render(data).encode()
             p.communicate(input=rendered_in)
             # _LOGGER.info(rendered_in)
 
