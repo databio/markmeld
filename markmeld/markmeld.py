@@ -35,6 +35,13 @@ mm_targets = {
     "split": "/home/nsheff/code/sciquill/bin/splitsupl {combined} {primary} {appendix}",
 }
 
+tpl_generic = """{% if data.metadata_yaml is defined %}---
+{{ data.metadata_yaml }}
+---{% endif %}
+
+{{ data.content }}"""
+
+
 @environmentfilter
 def datetimeformat(environment, value, to_format="%Y-%m-%d", from_format="%Y-%m-%d"):
     if from_format == "%s":
@@ -48,10 +55,12 @@ def datetimeformat(environment, value, to_format="%Y-%m-%d", from_format="%Y-%m-
         _LOGGER.warning(VE)
         return value
 
+
 @environmentfilter
 def extract_refs(environment, value):
-    m = re.findall('@([a-zA-Z0-9_]+)', value)
+    m = re.findall("@([a-zA-Z0-9_]+)", value)
     return m
+
 
 # m = extract_refs("abc; hello @test;me @second one; and finally @three")
 # m
@@ -62,24 +71,35 @@ def extract_refs(environment, value):
 def glob_factory(vars):
     path = vars["path"]
     if "name" in vars and vars["name"] == "folder":
-        slot = -2
+        folder_mode = True
     else:
-        slot = -1
+        folder_mode = False
+
     import glob
+
     globs = glob.glob(path)
+
+    # Populate a targets array to return
     targets = {}
     for i in globs:
-        tgt = os.path.splitext(i.split("/")[slot])[0]
-        print(tgt)
+        # Extract target name from path
+        split_path = i.split("/")
+        file_name = os.path.splitext(split_path[-1])[0]
+        if folder_mode:
+            folder_name = split_path[-2]
+            tgt = f"{folder_name}/{file_name}"
+        else:
+            tgt = file_name
+
+        output_file = f"{tgt}.pdf"
+        _LOGGER.debug(f"Found target: {tgt}")
         targets[tgt] = {
-            "output_file": f"{tgt}.pdf",
-            "data_md": { 
+            "output_file": output_file,
+            "data_md": {
                 "data": i,
-            }
+            },
         }
     return targets
-
-
 
 
 def build_argparser():
@@ -136,6 +156,7 @@ def build_argparser():
 
     return parser
 
+
 def deep_update(old, new):
     """
     Like built-in dict update, but recursive.
@@ -164,15 +185,15 @@ def load_config_file(filepath):
 
 def load_plugins():
     from pkg_resources import iter_entry_points
-    built_in_plugins = {
-        "glob": glob_factory
-    }
+
+    built_in_plugins = {"glob": glob_factory}
 
     installed_plugins = {
         ep.name: ep.load() for ep in iter_entry_points("markmeld.factories")
     }
     built_in_plugins.update(installed_plugins)
     return built_in_plugins
+
 
 def load_config_data(cfg_data):
     higher_cfg = yaml.load(cfg_data, Loader=yaml.SafeLoader)
@@ -189,17 +210,17 @@ def load_config_data(cfg_data):
     # Target factories
     if "target_factories" in lower_cfg:
         plugins = load_plugins()
-        _LOGGER.info(f"Available plugins: {plugins}")
+        _LOGGER.debug(f"Available plugins: {plugins}")
         for fac in lower_cfg["target_factories"]:
             fac_name = list(fac.keys())[0]
             fac_vals = list(fac.values())[0]
-            _LOGGER.info(f"Processing target factory: {fac_name}")
+            _LOGGER.debug(f"Processing target factory: {fac_name}")
             # Look up function to call.
             func = plugins[fac_name]
             factory_targets = func(fac_vals)
             deep_update(lower_cfg, {"targets": factory_targets})
 
-    _LOGGER.info(lower_cfg)
+    _LOGGER.debug("Lower cfg: " + str(lower_cfg))
     return lower_cfg
 
 
@@ -226,6 +247,7 @@ def populate_md_data(cfg, data):
         if is_url(v):
             # Do url stuff
             import requests
+
             response = requests.get(v)
             p = frontmatter.loads(response.text)
         else:
@@ -279,9 +301,10 @@ def meld(args, data, cmd_data, cfg):
         tpl = load_template(cmd_data)
     else:
         cmd_data["md_template"] = None
-        _LOGGER.error("No md_template provided")
+        tpl = Template(tpl_generic)
+        _LOGGER.error("No md_template provided. Using generic markmeld template.")
 
-    if 'latex_template' not in cmd_data:
+    if "latex_template" not in cmd_data:
         cmd_data["latex_template"] = None
 
     # all the data goes into a big dict, with markdown data under a '.content' attribute
@@ -291,7 +314,7 @@ def meld(args, data, cmd_data, cfg):
     data = populate_data_md_globs(cmd_data, data)
     data = populate_yaml_data(cmd_data, data)
     data = populate_md_data(cmd_data, data)
-    
+
     if "data_variables" in cmd_data:
         data.update(cmd_data["data_variables"])
 
@@ -323,6 +346,7 @@ def meld(args, data, cmd_data, cfg):
         p = subprocess.Popen(cmd, shell=True)
         return p.communicate()
 
+    returncode = -1
 
     if "prebuild" in cmd_data:
         # prebuild hooks
@@ -342,6 +366,7 @@ def meld(args, data, cmd_data, cfg):
         else:
             # Call command (pandoc), passing the rendered template to stdin
             import shlex
+
             _LOGGER.debug(cmd_fmt)
             # In case I need to make it NOT use the shell in the future
             # here's how:
@@ -352,6 +377,7 @@ def meld(args, data, cmd_data, cfg):
             # p.communicate(input=tpl.render(data).encode())
             rendered_in = Template(tpl.render(data)).render(data).encode()
             p.communicate(input=rendered_in)
+            returncode = p.returncode
             # _LOGGER.info(rendered_in)
 
     if "postbuild" in cmd_data:
@@ -360,7 +386,7 @@ def meld(args, data, cmd_data, cfg):
             _LOGGER.info(f"MM | Run postbuild hooks: {tgt}")
             call_hook(cmd_data, tgt)
 
-    return True
+    return returncode
 
 
 def populate_cmd_data(cfg, target=None, vardata=None):
@@ -385,12 +411,18 @@ def populate_cmd_data(cfg, target=None, vardata=None):
         cli_vars = {}
 
     if not "command" in cmd_data:
+        # Generally, user should provide a `command`,
+        # But if they don't for simple cases, we can just
+        # route through pandoc.
+        # Populate built-in pandoc auto-options
+        options_array = []
+        if "latex_template" in cmd_data:
+            options_array.append("--template {latex_template}")
+        if "output_file" in cmd_data:
+            options_array.append("--output {output_file}")
         # default command
-        cmd_data[
-            "command"
-        ] = """pandoc \
-             --template {latex_template} \
-             -o {output_file}"""
+        options = " ".join(options_array)
+        cmd_data["command"] = f"pandoc {options}"
 
     return cmd_data
 
@@ -439,13 +471,14 @@ def main():
     cmd_data = populate_cmd_data(cfg, args.target, args.vars)
 
     # Meld it!
-    meld(args, data, cmd_data, cfg)
-
+    returncode = meld(args, data, cmd_data, cfg)
     # Open the file
-    if cmd_data["output_file"] and not "stopopen" in cmd_data:
+    if returncode == 0 and cmd_data["output_file"] and not "stopopen" in cmd_data:
         cmd_open = ["xdg-open", cmd_data["output_file"]]
         _LOGGER.info(" ".join(cmd_open))
         subprocess.call(cmd_open)
+    else:
+        _LOGGER.info(f"Return code: {returncode}")
 
     return
 
