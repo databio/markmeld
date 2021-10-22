@@ -104,7 +104,7 @@ Why is this better than just stringing stuff together using pandoc? Well, for on
 
 For simple documents like a manuscript that don't really use much structured content and are purely gluing together prose, you can get by with just straight-up pandoc. You'd just pass multiple markdown files directly to pandoc on the command line. But even in these situations, you gain something from going the route of the jinja template with markmeld: it formalizes the linking of documents into a separate file, instead of relying the on order and content of CLI arguments to pandoc. So you can more easily write a little recipe saying, "provide these pieces of content under these names, and then use this jinja template to produce the output". So, it makes that recipe reproducible.
 
-## How to write a mail-merge letters with markmeld
+## How to write mail-merge letters with markmeld
 
 1. Data
 
