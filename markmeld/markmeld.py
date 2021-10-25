@@ -20,6 +20,7 @@ from ubiquerg import expandpath
 from ubiquerg import is_url
 
 from ._version import __version__
+from .glob_factory import glob_factory
 
 PKG_NAME = "markmeld"
 
@@ -64,43 +65,6 @@ def extract_refs(environment, value):
 
 # m = extract_refs("abc; hello @test;me @second one; and finally @three")
 # m
-
-
-#  TODO: if it's a folder-style naming, shouldn't we put the output file
-#  in that folder?
-def glob_factory(vars):
-    path = vars["path"]
-    if "name" in vars and vars["name"] == "folder":
-        folder_mode = True
-    else:
-        folder_mode = False
-
-    import glob
-
-    globs = glob.glob(path)
-
-    # Populate a targets array to return
-    targets = {}
-    for i in globs:
-        # Extract target name from path
-        split_path = i.split("/")
-        file_name = os.path.splitext(split_path[-1])[0]
-        if folder_mode:
-            folder_name = split_path[-2]
-            tgt = f"{folder_name}/{file_name}"
-        else:
-            tgt = file_name
-
-        output_file = f"{tgt}.pdf"
-        _LOGGER.debug(f"Found target: {tgt}")
-        targets[tgt] = {
-            "output_file": output_file,
-            "data_md": {
-                "data": i,
-            },
-        }
-    return targets
-
 
 def build_argparser():
     """
