@@ -1,0 +1,5 @@
+targets:
+  default:
+    output_file: "demo_output.pdf"
+    data_md:
+      data: https://demo.hedgedoc.org/lZSqGjRfQ_aP2ONA-77Npg/download
