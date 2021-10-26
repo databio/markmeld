@@ -339,7 +339,11 @@ def meld(args, data, cmd_data, cfg):
             # _LOGGER.debug(cmd_ary)
             p = subprocess.Popen(cmd_fmt, shell=True, stdin=subprocess.PIPE)
             # p.communicate(input=tpl.render(data).encode())
-            rendered_in = Template(tpl.render(data)).render(data).encode()
+            if "recursive_render" in cmd_data and not cmd_data["recursive_render"]:
+                rendered_in = tpl.render(data).encode()
+            else:
+                # Recursive rendering allows your template to include variables
+                rendered_in = Template(tpl.render(data)).render(data).encode()
             p.communicate(input=rendered_in)
             returncode = p.returncode
             # _LOGGER.info(rendered_in)

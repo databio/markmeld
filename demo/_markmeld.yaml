@@ -1,7 +1,7 @@
 targets:
   default:
     md_template: md_template.jinja
-latex_template: pandoc_default.tex
+    recursive_render: false
 output_file: "{today}_demo_output.pdf"
 data_yaml:
   - some_data.yaml
