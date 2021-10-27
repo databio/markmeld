@@ -16,4 +16,4 @@ targets:
 
 This is using the default latex template and default jinja template to produce the [demo_output.pdf](demo_output.pdf).
 
-You can use a different oen by adding `latex_template: ...` or `jinja_template: ...` attributes to this target. The point of this demo is just to show how you could collaborate on a markdown file, and then use markmeld to build it locally.
+You can use a different one by adding `latex_template: ...` or `jinja_template: ...` attributes to this target. The point of this demo is just to show how you could collaborate on a markdown file, and then use markmeld to build it locally.
