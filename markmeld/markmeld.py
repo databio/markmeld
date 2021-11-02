@@ -208,6 +208,9 @@ def populate_md_data(cfg, data):
     _LOGGER.info(f"MM | Populating md data...")
     for k, v in cfg["data_md"].items():
         _LOGGER.info(f"MM | --> {k}: {v}")
+        if not v:
+            data[k] = v
+            continue
         if is_url(v):
             # Do url stuff
             import requests
@@ -278,7 +281,7 @@ def meld(args, data, cmd_data, cfg):
     data = populate_data_md_globs(cmd_data, data)
     data = populate_yaml_data(cmd_data, data)
     data = populate_md_data(cmd_data, data)
-
+    # _LOGGER.info(data)
     if "data_variables" in cmd_data:
         data.update(cmd_data["data_variables"])
 
@@ -292,7 +295,7 @@ def meld(args, data, cmd_data, cfg):
     _LOGGER.info(f"MM | Output file: {cmd_data['output_file']}")
     _LOGGER.info(f"MM | Output md_template: {cmd_data['md_template']}")
 
-    def call_hook(cmd_data, tgt):
+    def call_hook(cmd_data, data, tgt):
         # if tgt in mm_targets:
 
         #     cmd = mm_targets[tgt].format(**cmd_data)
@@ -316,43 +319,45 @@ def meld(args, data, cmd_data, cfg):
         # prebuild hooks
         for tgt in cmd_data["prebuild"]:
             _LOGGER.info(f"MM | Run prebuild hooks: {tgt}")
-            call_hook(cmd_data, tgt)
-    if args.print:
+            call_hook(cmd_data, data, tgt)
+    if "type" in cmd_data and cmd_data["type"] == "raw":
+        # Raw = No subprocess stdin printing
+        cmd = cmd_data["command"]
+        cmd_fmt = cmd.format(**cmd_data)
+        _LOGGER.info(cmd_fmt)        
+        run_cmd(cmd_fmt)  
+    elif args.print:
         # return print(tpl.render(data))  # one time
         return print(Template(tpl.render(data)).render(data))  # two times
     elif cmd_data["command"]:
         cmd = cmd_data["command"]
         cmd_fmt = cmd.format(**cmd_data)
         _LOGGER.info(cmd_fmt)
-        if "type" in cmd_data and cmd_data["type"] == "raw":
-            # Raw = No subprocess stdin printing
-            run_cmd(cmd_fmt)
-        else:
-            # Call command (pandoc), passing the rendered template to stdin
-            import shlex
+        # Call command (pandoc), passing the rendered template to stdin
+        import shlex
 
-            _LOGGER.debug(cmd_fmt)
-            # In case I need to make it NOT use the shell in the future
-            # here's how:
-            # cmd_fmt2 = cmd_fmt.replace("\n", "").replace("\\","")
-            # cmd_ary = shlex.split(cmd_fmt2)
-            # _LOGGER.debug(cmd_ary)
-            p = subprocess.Popen(cmd_fmt, shell=True, stdin=subprocess.PIPE)
-            # p.communicate(input=tpl.render(data).encode())
-            if "recursive_render" in cmd_data and not cmd_data["recursive_render"]:
-                rendered_in = tpl.render(data).encode()
-            else:
-                # Recursive rendering allows your template to include variables
-                rendered_in = Template(tpl.render(data)).render(data).encode()
-            p.communicate(input=rendered_in)
-            returncode = p.returncode
-            # _LOGGER.info(rendered_in)
+        _LOGGER.debug(cmd_fmt)
+        # In case I need to make it NOT use the shell in the future
+        # here's how:
+        # cmd_fmt2 = cmd_fmt.replace("\n", "").replace("\\","")
+        # cmd_ary = shlex.split(cmd_fmt2)
+        # _LOGGER.debug(cmd_ary)
+        p = subprocess.Popen(cmd_fmt, shell=True, stdin=subprocess.PIPE)
+        # p.communicate(input=tpl.render(data).encode())
+        if "recursive_render" in cmd_data and not cmd_data["recursive_render"]:
+            rendered_in = tpl.render(data).encode()
+        else:
+            # Recursive rendering allows your template to include variables
+            rendered_in = Template(tpl.render(data)).render(data).encode()
+        p.communicate(input=rendered_in)
+        returncode = p.returncode
+        # _LOGGER.info(rendered_in)
 
     if "postbuild" in cmd_data:
         # postbuild hooks
         for tgt in cmd_data["postbuild"]:
             _LOGGER.info(f"MM | Run postbuild hooks: {tgt}")
-            call_hook(cmd_data, tgt)
+            call_hook(cmd_data, data, tgt)
 
     return returncode
 
