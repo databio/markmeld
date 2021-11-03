@@ -253,9 +253,22 @@ def populate_data_md_globs(cfg, data):
 def load_template(cfg):
     if "md_template" not in cfg:
         return None
-    with open(cfg["md_template"], "r") as f:
-        x = f.read()
-    t = Template(x)
+
+    md_tpl = None
+    if os.path.isfile(cfg["md_template"]):
+        md_tpl = cfg["md_template"]
+    elif "mm_templates" in cfg:
+        md_tpl = os.path.join(cfg["mm_templates"], cfg["md_template"])
+
+    if is_url(md_tpl):            
+        import requests
+        response = requests.get(md_tpl)
+        md_tpl_contents = response.text
+    else:
+        with open(md_tpl, "r") as f:
+            md_tpl_contents = f.read()
+
+    t = Template(md_tpl_contents)
     return t
 
 
