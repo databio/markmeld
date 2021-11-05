@@ -2,4 +2,5 @@ python-frontmatter
 jinja2
 logmuse
 pyyaml
+requests
 ubiquerg
