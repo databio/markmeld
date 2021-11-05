@@ -1,0 +1,8 @@
+number_of_things: 15
+name_of_person: The sundance kid
+recipients:
+  - name: "John Doe"
+    institution: "University of Virginia"
+  - name: "Jane Doe"
+    institution: "Brigham Young University"
+  

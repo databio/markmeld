@@ -10,6 +10,7 @@ import sys
 import time
 import yaml
 
+from copy import deepcopy
 from collections.abc import Mapping
 from datetime import date
 from jinja2 import Template
@@ -272,10 +273,11 @@ def load_template(cfg):
     return t
 
 
-def meld(args, data, cmd_data, cfg):
+def meld(args, data, cmd_data, cfg, loop=True):
     """
     Melds input markdown and yaml into a jinja output.
     """
+
 
     if "md_template" in cmd_data:
         tpl = load_template(cmd_data)
@@ -294,6 +296,26 @@ def meld(args, data, cmd_data, cfg):
     data = populate_data_md_globs(cmd_data, data)
     data = populate_yaml_data(cmd_data, data)
     data = populate_md_data(cmd_data, data)
+
+
+    if "loop" in cmd_data and loop:
+        n = len(data[cmd_data["loop"]["loop_data"]])
+        _LOGGER.info(f"Loop found: {n} elements.")
+        _LOGGER.debug(data[cmd_data["loop"]["loop_data"]])
+        return_codes = []
+        for i in data[cmd_data["loop"]["loop_data"]]:
+            var = cmd_data["loop"]["assign_to"]
+            _LOGGER.info(f"{var}: {i}")
+            data.update({ var: i })
+            cmd_data.update({ var: i })
+            _LOGGER.debug(cmd_data)
+            return_codes.append(meld(args, data, deepcopy(cmd_data), cfg, loop=False))
+
+        _LOGGER.info(f"Return codes: {return_codes}")
+        cmd_data["stopopen"] = True
+        return max(return_codes)
+
+
     # _LOGGER.info(data)
     if "data_variables" in cmd_data:
         data.update(cmd_data["data_variables"])
@@ -405,7 +427,7 @@ def populate_cmd_data(cfg, target=None, vardata=None):
         if "latex_template" in cmd_data:
             options_array.append("--template {latex_template}")
         if "output_file" in cmd_data:
-            options_array.append("--output {output_file}")
+            options_array.append("--output \"{output_file}\"")
         # default command
         options = " ".join(options_array)
         cmd_data["command"] = f"pandoc {options}"
