@@ -4,7 +4,7 @@ This folder contains a demo that shows how to use *multi-output targets*. Typica
 
 ## Motivation
 
-This is useful for something like a mail merge, where you'd write a single letter, but want to produce it with slight differences such as the name of the recipient.
+This is useful for something like a mail merge, where you'd write a single letter, but want to produce it with slight differences such as the name of the recipient. Or, if you want to load in a large piece of data one time (like a list of publications), and then produce several different versions or subsets of it without reloading the input.
 
 
 ## Quick start
@@ -19,7 +19,7 @@ targets:
       assign_to: recipient
 ```
 The *loop* attribute has two sub-attributes:
-- **loop_data**: Specify the name of the object that contains the data you want to loop over. This target will create one output per element in this array. The array can be either of primitive types (like strings), or can be an array of objects.
+- **loop_data**: Specify the name of the object that contains the array you want to loop over. This target will create one output per element in this array. The array can be either of primitive types (like strings), or can be an array of objects.
 - **assign_to**: This is the name of the variable that each element in loop_data will be assigned to. This is how you will access the individual element, both in the command templates and in the jinja templates.
 
 ## Loop data: array of strings
@@ -32,11 +32,11 @@ recipients:
   - "Jane Doe"
 ```
 
-This target will create 1 outputs, one for each recipient.
+This target will create 1 output for each recipient.
 
 ### Loop data: array of objects
 
-If you have a more complicated needs, like more than one element per loop iteration, then you can use a array of objects like this:
+If you have a more complicated needs, like more than one element per loop iteration, then you can use am array of objects like this:
 
 ```
 recipients:
@@ -72,6 +72,6 @@ data_md:
   some_text_data: some_text.md
 ```
 
-We just have to make sure the `output_file` variable uses the array data in some way (in this case, it's `{recipient}`, because that's what we put under `assign_to`). This will create a separate output, with a separate output file name, for each iteration of the loop.
+We just have to make sure the `output_file` variable uses the `assign_to` variable in some way (in this case, it's `{recipient}`). This will create a separate output, with a separate output file name, for each iteration of the loop. The jinja template specified in `md_template` should also use `recipient`, so that each output is unique.
 
 You thus produce multiple outputs with a single `mm` build call.
