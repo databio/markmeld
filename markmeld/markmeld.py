@@ -10,6 +10,7 @@ import sys
 import time
 import yaml
 
+from copy import deepcopy
 from collections.abc import Mapping
 from datetime import date
 from jinja2 import Template
@@ -208,6 +209,9 @@ def populate_md_data(cfg, data):
     _LOGGER.info(f"MM | Populating md data...")
     for k, v in cfg["data_md"].items():
         _LOGGER.info(f"MM | --> {k}: {v}")
+        if not v:
+            data[k] = v
+            continue
         if is_url(v):
             # Do url stuff
             import requests
@@ -250,16 +254,30 @@ def populate_data_md_globs(cfg, data):
 def load_template(cfg):
     if "md_template" not in cfg:
         return None
-    with open(cfg["md_template"], "r") as f:
-        x = f.read()
-    t = Template(x)
+
+    md_tpl = None
+    if os.path.isfile(cfg["md_template"]):
+        md_tpl = cfg["md_template"]
+    elif "mm_templates" in cfg:
+        md_tpl = os.path.join(cfg["mm_templates"], cfg["md_template"])
+
+    if is_url(md_tpl):            
+        import requests
+        response = requests.get(md_tpl)
+        md_tpl_contents = response.text
+    else:
+        with open(md_tpl, "r") as f:
+            md_tpl_contents = f.read()
+
+    t = Template(md_tpl_contents)
     return t
 
 
-def meld(args, data, cmd_data, cfg):
+def meld(args, data, cmd_data, cfg, loop=True):
     """
     Melds input markdown and yaml into a jinja output.
     """
+
 
     if "md_template" in cmd_data:
         tpl = load_template(cmd_data)
@@ -279,6 +297,26 @@ def meld(args, data, cmd_data, cfg):
     data = populate_yaml_data(cmd_data, data)
     data = populate_md_data(cmd_data, data)
 
+
+    if "loop" in cmd_data and loop:
+        n = len(data[cmd_data["loop"]["loop_data"]])
+        _LOGGER.info(f"Loop found: {n} elements.")
+        _LOGGER.debug(data[cmd_data["loop"]["loop_data"]])
+        return_codes = []
+        for i in data[cmd_data["loop"]["loop_data"]]:
+            var = cmd_data["loop"]["assign_to"]
+            _LOGGER.info(f"{var}: {i}")
+            data.update({ var: i })
+            cmd_data.update({ var: i })
+            _LOGGER.debug(cmd_data)
+            return_codes.append(meld(args, data, deepcopy(cmd_data), cfg, loop=False))
+
+        _LOGGER.info(f"Return codes: {return_codes}")
+        cmd_data["stopopen"] = True
+        return max(return_codes)
+
+
+    # _LOGGER.info(data)
     if "data_variables" in cmd_data:
         data.update(cmd_data["data_variables"])
 
@@ -292,7 +330,7 @@ def meld(args, data, cmd_data, cfg):
     _LOGGER.info(f"MM | Output file: {cmd_data['output_file']}")
     _LOGGER.info(f"MM | Output md_template: {cmd_data['md_template']}")
 
-    def call_hook(cmd_data, tgt):
+    def call_hook(cmd_data, data, tgt):
         # if tgt in mm_targets:
 
         #     cmd = mm_targets[tgt].format(**cmd_data)
@@ -316,43 +354,45 @@ def meld(args, data, cmd_data, cfg):
         # prebuild hooks
         for tgt in cmd_data["prebuild"]:
             _LOGGER.info(f"MM | Run prebuild hooks: {tgt}")
-            call_hook(cmd_data, tgt)
-    if args.print:
+            call_hook(cmd_data, data, tgt)
+    if "type" in cmd_data and cmd_data["type"] == "raw":
+        # Raw = No subprocess stdin printing
+        cmd = cmd_data["command"]
+        cmd_fmt = cmd.format(**cmd_data)
+        _LOGGER.info(cmd_fmt)        
+        run_cmd(cmd_fmt)  
+    elif args.print:
         # return print(tpl.render(data))  # one time
         return print(Template(tpl.render(data)).render(data))  # two times
     elif cmd_data["command"]:
         cmd = cmd_data["command"]
         cmd_fmt = cmd.format(**cmd_data)
         _LOGGER.info(cmd_fmt)
-        if "type" in cmd_data and cmd_data["type"] == "raw":
-            # Raw = No subprocess stdin printing
-            run_cmd(cmd_fmt)
-        else:
-            # Call command (pandoc), passing the rendered template to stdin
-            import shlex
+        # Call command (pandoc), passing the rendered template to stdin
+        import shlex
 
-            _LOGGER.debug(cmd_fmt)
-            # In case I need to make it NOT use the shell in the future
-            # here's how:
-            # cmd_fmt2 = cmd_fmt.replace("\n", "").replace("\\","")
-            # cmd_ary = shlex.split(cmd_fmt2)
-            # _LOGGER.debug(cmd_ary)
-            p = subprocess.Popen(cmd_fmt, shell=True, stdin=subprocess.PIPE)
-            # p.communicate(input=tpl.render(data).encode())
-            if "recursive_render" in cmd_data and not cmd_data["recursive_render"]:
-                rendered_in = tpl.render(data).encode()
-            else:
-                # Recursive rendering allows your template to include variables
-                rendered_in = Template(tpl.render(data)).render(data).encode()
-            p.communicate(input=rendered_in)
-            returncode = p.returncode
-            # _LOGGER.info(rendered_in)
+        _LOGGER.debug(cmd_fmt)
+        # In case I need to make it NOT use the shell in the future
+        # here's how:
+        # cmd_fmt2 = cmd_fmt.replace("\n", "").replace("\\","")
+        # cmd_ary = shlex.split(cmd_fmt2)
+        # _LOGGER.debug(cmd_ary)
+        p = subprocess.Popen(cmd_fmt, shell=True, stdin=subprocess.PIPE)
+        # p.communicate(input=tpl.render(data).encode())
+        if "recursive_render" in cmd_data and not cmd_data["recursive_render"]:
+            rendered_in = tpl.render(data).encode()
+        else:
+            # Recursive rendering allows your template to include variables
+            rendered_in = Template(tpl.render(data)).render(data).encode()
+        p.communicate(input=rendered_in)
+        returncode = p.returncode
+        # _LOGGER.info(rendered_in)
 
     if "postbuild" in cmd_data:
         # postbuild hooks
         for tgt in cmd_data["postbuild"]:
             _LOGGER.info(f"MM | Run postbuild hooks: {tgt}")
-            call_hook(cmd_data, tgt)
+            call_hook(cmd_data, data, tgt)
 
     return returncode
 
@@ -387,7 +427,7 @@ def populate_cmd_data(cfg, target=None, vardata=None):
         if "latex_template" in cmd_data:
             options_array.append("--template {latex_template}")
         if "output_file" in cmd_data:
-            options_array.append("--output {output_file}")
+            options_array.append("--output \"{output_file}\"")
         # default command
         options = " ".join(options_array)
         cmd_data["command"] = f"pandoc {options}"

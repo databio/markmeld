@@ -1,0 +1,21 @@
+targets:
+  default:
+    output_file: "{today}_demo_output_{recipient}.pdf"
+    loop:
+      loop_data: recipients
+      assign_to: recipient
+    md_template: md_template.jinja
+    recursive_render: false
+    data_yaml:
+    - some_data.yaml
+  complex_loop:
+    output_file: "{today}_demo_output_complex_{recipient[name]}.pdf"
+    loop:
+      loop_data: recipients
+      assign_to: recipient
+    md_template: md_template_complex.jinja
+    recursive_render: false
+    data_yaml:
+    - complex_loop.yaml
+data_md:
+  some_text_data: some_text.md
