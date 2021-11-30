@@ -293,9 +293,15 @@ def meld(args, data, cmd_data, cfg, loop=True):
     # for the file name
     # use this to populate the template.
 
-    data = populate_data_md_globs(cmd_data, data)
-    data = populate_yaml_data(cmd_data, data)
-    data = populate_md_data(cmd_data, data)
+    if loop:
+        # If we're not looping, then these were already populated
+        # by the parent loop.
+        data = populate_data_md_globs(cmd_data, data)
+        data = populate_yaml_data(cmd_data, data)
+        data = populate_md_data(cmd_data, data)
+        # _LOGGER.info(data)
+        if "data_variables" in cmd_data:
+            data.update(cmd_data["data_variables"])
 
 
     if "loop" in cmd_data and loop:
@@ -316,9 +322,6 @@ def meld(args, data, cmd_data, cfg, loop=True):
         return max(return_codes)
 
 
-    # _LOGGER.info(data)
-    if "data_variables" in cmd_data:
-        data.update(cmd_data["data_variables"])
 
     if "output_file" in cmd_data:
         cmd_data["output_file"] = cmd_data["output_file"].format(**cmd_data)
