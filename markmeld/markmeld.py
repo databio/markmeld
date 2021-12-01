@@ -303,6 +303,9 @@ def meld(args, data, cmd_data, cfg, loop=True):
         if "data_variables" in cmd_data:
             data.update(cmd_data["data_variables"])
 
+        _LOGGER.info(f"MM | Today's date: {cmd_data['today']}")
+        _LOGGER.info(f"MM | latex_template: {cmd_data['latex_template']}")
+        _LOGGER.info(f"MM | Output md_template: {cmd_data['md_template']}")
 
     if "loop" in cmd_data and loop:
         n = len(data[cmd_data["loop"]["loop_data"]])
@@ -321,17 +324,12 @@ def meld(args, data, cmd_data, cfg, loop=True):
         cmd_data["stopopen"] = True
         return max(return_codes)
 
-
-
     if "output_file" in cmd_data:
         cmd_data["output_file"] = cmd_data["output_file"].format(**cmd_data)
     else:
         cmd_data["output_file"] = None
 
-    _LOGGER.info(f"MM | Today's date: {cmd_data['today']}")
-    _LOGGER.info(f"MM | latex_template: {cmd_data['latex_template']}")
     _LOGGER.info(f"MM | Output file: {cmd_data['output_file']}")
-    _LOGGER.info(f"MM | Output md_template: {cmd_data['md_template']}")
 
     def call_hook(cmd_data, data, tgt):
         # if tgt in mm_targets:
