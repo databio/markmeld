@@ -46,10 +46,25 @@ The configurable attributes are:
 - `data_yaml` - a list of yaml files to make available to the templates
 - `data_md` - a named list of markdown files, which will be made available to the templates
 - `data_variables` - direct yaml data made available to the templates.
-
+- `data_md_globs` - Globs, where each file will be read, and available at the key of the filename.
 Any other attributes will be made available to the build system, but not to the jinja templates.
 
 In the demo, the only target you can build is `default`. You can see the list of targets with `mm -l`. 
+
+## md jinja template
+
+Your markdown items will be available under the key you specify in the config. If you are using the `_globs` key, then they will be available under the filename. You can then access them in the jinja template as variables, like this:
+
+```
+{{ variable.content }}
+```
+
+The `.content` attribute will have the actual markdown -- this is probably what you want. But if you want metadata, you can also access that under `{{ variable.metadata }}`.
+
+
+## The jinja md array
+
+See detailed instructions for how to access md content with variable names using the md array.
 
 ## Hooks
 
