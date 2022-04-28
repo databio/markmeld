@@ -260,16 +260,20 @@ def load_template(cfg):
         md_tpl = cfg["md_template"]
     elif "mm_templates" in cfg:
         md_tpl = os.path.join(cfg["mm_templates"], cfg["md_template"])
-
-    if is_url(md_tpl):            
-        import requests
-        response = requests.get(md_tpl)
-        md_tpl_contents = response.text
     else:
-        with open(md_tpl, "r") as f:
-            md_tpl_contents = f.read()
-
-    t = Template(md_tpl_contents)
+        raise Exception(f"md_template file not found: {cfg['md_template']}")
+    
+    try:
+        if is_url(md_tpl):            
+            import requests
+            response = requests.get(md_tpl)
+            md_tpl_contents = response.text
+        else:
+            with open(md_tpl, "r") as f:
+                md_tpl_contents = f.read()
+        t = Template(md_tpl_contents)
+    except TypeError:
+        print("Unable to open md_template. Path:", md_tpl)
     return t
 
 
