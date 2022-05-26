@@ -238,14 +238,20 @@ def populate_data_md_globs(cfg, data):
     _LOGGER.info(f"MM | Populating md data globs...")
     for folder in cfg["data_md_globs"]:
         files = glob.glob(folder)
-
+        _LOGGER.info(files)
         for file in files:
-            k = os.path.splitext(os.path.basename(file))[0]
-            _LOGGER.info(f"MM | {k}:{file}")
+            basename = os.path.basename(file)
+            dirname = os.path.dirname(file)
+            splitext =os.path.splitext(basename) 
+            k = splitext[0]
+            ext = splitext[1]
+            _LOGGER.info(f"MM | [key:value] {k}:{file}")
             p = frontmatter.load(file)
             data[k] = p.__dict__
             data["md"][k] = p.__dict__
             data[k]["all"] = frontmatter.dumps(p)
+            data[k]["path"] = file
+            data[k]["ext"] = ext
             if len(p.metadata) > 0:
                 data[k]["metadata_yaml"] = yaml.dump(p.metadata)
     return data
@@ -311,12 +317,21 @@ def meld(args, data, cmd_data, cfg, loop=True):
         _LOGGER.info(f"MM | latex_template: {cmd_data['latex_template']}")
         _LOGGER.info(f"MM | Output md_template: {cmd_data['md_template']}")
 
+    def recursive_get(dat, indices):
+        for i in indices:
+            if i not in dat:
+                return None
+            dat = dat[i]
+        return dat
+
     if "loop" in cmd_data and loop:
-        n = len(data[cmd_data["loop"]["loop_data"]])
+        loop_dat = recursive_get(data,cmd_data["loop"]["loop_data"].split("."))
+        n = len(loop_dat)
         _LOGGER.info(f"Loop found: {n} elements.")
-        _LOGGER.debug(data[cmd_data["loop"]["loop_data"]])
+        _LOGGER.debug(loop_dat)
+
         return_codes = []
-        for i in data[cmd_data["loop"]["loop_data"]]:
+        for i in loop_dat:
             var = cmd_data["loop"]["assign_to"]
             _LOGGER.info(f"{var}: {i}")
             data.update({ var: i })
@@ -327,6 +342,8 @@ def meld(args, data, cmd_data, cfg, loop=True):
         _LOGGER.info(f"Return codes: {return_codes}")
         cmd_data["stopopen"] = True
         return max(return_codes)
+    else:
+        _LOGGER.debug("MM | No loop here.")
 
     if "output_file" in cmd_data:
         cmd_data["output_file"] = cmd_data["output_file"].format(**cmd_data)
