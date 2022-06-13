@@ -145,7 +145,7 @@ def load_config_file(filepath):
     try: 
         with open(filepath, "r") as f:
             cfg_data = f.read()
-        return load_config_data(cfg_data)
+        return load_config_data(cfg_data, os.path.abspath(filepath))
     except Exception as e:
         _LOGGER.error(f"Couldn't load config file: {filepath}")
         _LOGGER.error(e)
@@ -163,14 +163,21 @@ def load_plugins():
     return built_in_plugins
 
 
-def load_config_data(cfg_data):
+def load_config_data(cfg_data, filepath=None):
     higher_cfg = yaml.load(cfg_data, Loader=yaml.SafeLoader)
     lower_cfg = {}
+
+    # Add date to targets?
+    if "targets" in higher_cfg:
+        for tgt in higher_cfg["targets"]:
+            _LOGGER.info(tgt, higher_cfg["targets"][tgt])
+            higher_cfg["targets"][tgt]["_filepath"] = filepath
+            
     # Imports
     if "imports" in higher_cfg:
         _LOGGER.debug("Found imports")
         for import_file in higher_cfg["imports"]:
-            _LOGGER.info(f"Importing {import_file}")
+            _LOGGER.error(f"Specified config file to import: {import_file}")
             deep_update(lower_cfg, load_config_file(expandpath(import_file)))
 
     deep_update(lower_cfg, higher_cfg)
@@ -282,15 +289,36 @@ def load_template(cfg):
                 md_tpl_contents = f.read()
         t = Template(md_tpl_contents)
     except TypeError:
-        print("Unable to open md_template. Path:", md_tpl)
+        _LOGGER.error(f"Unable to open md_template. Path:{md_tpl}")
     return t
 
 
-def meld(args, data, cmd_data, cfg, loop=True):
+def meld_output(args, data, cmd_data, cfg, loop=True):
     """
     Melds input markdown and yaml into a jinja output.
     """
 
+    # define some usful functions
+    
+    def recursive_get(dat, indices):
+        for i in indices:
+            if i not in dat:
+                return None
+            dat = dat[i]
+        return dat
+
+    def call_hook(cmd_data, data, tgt):
+        # if tgt in mm_targets:
+
+        #     cmd = mm_targets[tgt].format(**cmd_data)
+        #     return run_cmd(cmd)
+        # el
+
+        if tgt in cmd_data["targets"]:
+            return meld_output(args, data, populate_cmd_data(cfg, tgt), cfg)
+        else:
+            _LOGGER.warning(f"MM | No target called {tgt}.")
+            return False
 
     if "md_template" in cmd_data:
         tpl = load_template(cmd_data)
@@ -306,6 +334,13 @@ def meld(args, data, cmd_data, cfg, loop=True):
     # for the file name
     # use this to populate the template.
 
+
+    if "prebuild" in cmd_data:
+        # prebuild hooks
+        for tgt in cmd_data["prebuild"]:
+            _LOGGER.info(f"MM | Run prebuild hooks: {tgt}")
+            call_hook(cmd_data, data, tgt)
+
     if loop:
         # If we're not looping, then these were already populated
         # by the parent loop.
@@ -320,12 +355,7 @@ def meld(args, data, cmd_data, cfg, loop=True):
         _LOGGER.info(f"MM | latex_template: {cmd_data['latex_template']}")
         _LOGGER.info(f"MM | Output md_template: {cmd_data['md_template']}")
 
-    def recursive_get(dat, indices):
-        for i in indices:
-            if i not in dat:
-                return None
-            dat = dat[i]
-        return dat
+
 
     if "loop" in cmd_data and loop:
         loop_dat = recursive_get(data,cmd_data["loop"]["loop_data"].split("."))
@@ -340,7 +370,7 @@ def meld(args, data, cmd_data, cfg, loop=True):
             data.update({ var: i })
             cmd_data.update({ var: i })
             _LOGGER.debug(cmd_data)
-            return_codes.append(meld(args, data, deepcopy(cmd_data), cfg, loop=False))
+            return_codes.append(meld_output(args, data, deepcopy(cmd_data), cfg, loop=False))
 
         _LOGGER.info(f"Return codes: {return_codes}")
         cmd_data["stopopen"] = True
@@ -355,37 +385,20 @@ def meld(args, data, cmd_data, cfg, loop=True):
 
     _LOGGER.info(f"MM | Output file: {cmd_data['output_file']}")
 
-    def call_hook(cmd_data, data, tgt):
-        # if tgt in mm_targets:
 
-        #     cmd = mm_targets[tgt].format(**cmd_data)
-        #     return run_cmd(cmd)
-        # el
-
-        if tgt in cmd_data["targets"]:
-            return meld(args, data, populate_cmd_data(cfg, tgt), cfg)
-        else:
-            _LOGGER.warning(f"MM | No target called {tgt}.")
-            return False
-
-    def run_cmd(cmd):
-        _LOGGER.info(f"MM | Command: {cmd}")
-        p = subprocess.Popen(cmd, shell=True)
+    def run_cmd(cmd, cwd=None):
+        _LOGGER.info(f"MM | Command: {cmd}; CWD: {cwd}")
+        p = subprocess.Popen(cmd, shell=True, cwd=os.path.dirname(cwd))
         return p.communicate()
 
     returncode = -1
 
-    if "prebuild" in cmd_data:
-        # prebuild hooks
-        for tgt in cmd_data["prebuild"]:
-            _LOGGER.info(f"MM | Run prebuild hooks: {tgt}")
-            call_hook(cmd_data, data, tgt)
     if "type" in cmd_data and cmd_data["type"] == "raw":
         # Raw = No subprocess stdin printing
         cmd = cmd_data["command"]
         cmd_fmt = cmd.format(**cmd_data)
         _LOGGER.info(cmd_fmt)        
-        run_cmd(cmd_fmt)  
+        run_cmd(cmd_fmt, cmd_data["_filepath"])  
     elif args.print:
         # return print(tpl.render(data))  # one time
         return print(Template(tpl.render(data)).render(data))  # two times
@@ -435,7 +448,7 @@ def populate_cmd_data(cfg, target=None, vardata=None):
             _LOGGER.error(f"target {target} not found")
             sys.exit(1)
         cmd_data.update(cfg["targets"][target])
-        print(cfg["targets"][target])
+        _LOGGER.debug(f'Config for this target: {cfg["targets"][target]}')
 
     if vardata:
         cli_vars = {y[0]: y[1] for y in [x.split("=") for x in vardata]}
@@ -493,6 +506,7 @@ def main():
             sys.stdout.write(t + " ")
         sys.exit(1)
 
+    _LOGGER.debug("Custom date formatting...")
     # Add custom date formatter filter
     FILTERS["date"] = datetimeformat
     data["now"] = date.today().strftime("%s")
@@ -502,9 +516,9 @@ def main():
 
     # Set up cmd_data object (it's variables for the command population)
     cmd_data = populate_cmd_data(cfg, args.target, args.vars)
-
+    _LOGGER.debug("Melding...")
     # Meld it!
-    returncode = meld(args, data, cmd_data, cfg)
+    returncode = meld_output(args, data, cmd_data, cfg)
     # Open the file
     if returncode == 0 and cmd_data["output_file"] and not "stopopen" in cmd_data:
         cmd_open = ["xdg-open", cmd_data["output_file"]]
