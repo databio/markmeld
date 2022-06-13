@@ -142,11 +142,14 @@ def load_config_file(filepath):
     @return dict Loaded yaml data object.
     """
 
-    with open(filepath, "r") as f:
-        cfg_data = f.read()
-
-    return load_config_data(cfg_data)
-
+    try: 
+        with open(filepath, "r") as f:
+            cfg_data = f.read()
+        return load_config_data(cfg_data)
+    except Exception as e:
+        _LOGGER.error(f"Couldn't load config file: {filepath}")
+        _LOGGER.error(e)
+        return {}
 
 def load_plugins():
     from pkg_resources import iter_entry_points
@@ -167,7 +170,7 @@ def load_config_data(cfg_data):
     if "imports" in higher_cfg:
         _LOGGER.debug("Found imports")
         for import_file in higher_cfg["imports"]:
-            _LOGGER.debug(f"Importing {import_file}")
+            _LOGGER.info(f"Importing {import_file}")
             deep_update(lower_cfg, load_config_file(expandpath(import_file)))
 
     deep_update(lower_cfg, higher_cfg)
