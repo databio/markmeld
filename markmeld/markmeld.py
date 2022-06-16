@@ -134,7 +134,7 @@ def deep_update(old, new):
     return old
 
 
-def load_config_file(filepath):
+def load_config_file(filepath, autocomplete=True):
     """
     Loads a configuration file.
 
@@ -145,7 +145,7 @@ def load_config_file(filepath):
     try: 
         with open(filepath, "r") as f:
             cfg_data = f.read()
-        return load_config_data(cfg_data, os.path.abspath(filepath))
+        return load_config_data(cfg_data, os.path.abspath(filepath), autocomplete)
     except Exception as e:
         _LOGGER.error(f"Couldn't load config file: {filepath}")
         _LOGGER.error(e)
@@ -163,21 +163,22 @@ def load_plugins():
     return built_in_plugins
 
 
-def load_config_data(cfg_data, filepath=None):
+def load_config_data(cfg_data, filepath=None, autocomplete=True):
     higher_cfg = yaml.load(cfg_data, Loader=yaml.SafeLoader)
     lower_cfg = {}
 
     # Add date to targets?
     if "targets" in higher_cfg:
         for tgt in higher_cfg["targets"]:
-            _LOGGER.info(tgt, higher_cfg["targets"][tgt])
+            _LOGGER.debug(tgt, higher_cfg["targets"][tgt])
             higher_cfg["targets"][tgt]["_filepath"] = filepath
             
     # Imports
     if "imports" in higher_cfg:
         _LOGGER.debug("Found imports")
         for import_file in higher_cfg["imports"]:
-            _LOGGER.error(f"Specified config file to import: {import_file}")
+            if not autocomplete:
+                _LOGGER.error(f"Specified config file to import: {import_file}")
             deep_update(lower_cfg, load_config_file(expandpath(import_file)))
 
     deep_update(lower_cfg, higher_cfg)
@@ -489,7 +490,7 @@ def main():
             sys.exit(1)
 
     data = {"md": {}}
-    cfg = load_config_file(args.config)
+    cfg = load_config_file(args.config, args.autocomplete)
 
     if args.list:
         if "targets" not in cfg:
