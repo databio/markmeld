@@ -212,6 +212,22 @@ def populate_yaml_data(cfg, data):
 
     return data
 
+# For itemized yaml this time...
+def populate_yaml_keyed(cfg, data):
+    # Load up yaml data
+    if "data_yaml_keyed" not in cfg:
+        return data
+    _LOGGER.info(f"MM | Populating yaml data...")
+    for k,v in cfg["data_yaml_keyed"].items():
+        _LOGGER.info(f"MM | --> {k}: {v}")
+        with open(v, "r") as f:
+            yaml_dict = yaml.load(f, Loader=yaml.SafeLoader)
+            data[k] = yaml_dict
+            data["yaml"][k] = yaml_dict
+            data[k]["raw"] = yaml.dump(yaml_dict)
+    return data
+
+
 
 def populate_md_data(cfg, data):
     # Load up markdown data
@@ -230,7 +246,14 @@ def populate_md_data(cfg, data):
             response = requests.get(v)
             p = frontmatter.loads(response.text)
         else:
-            p = frontmatter.load(v)
+            if os.path.exists(v):
+                p = frontmatter.load(v)
+            else:
+                _LOGGER.warning(f"Skipping file that does not exist: {v}")
+                data[k] = {}
+                data["md"][k] = {}
+                data[k]["all"] = ""
+                continue
         data[k] = p.__dict__
         data["md"][k] = p.__dict__
         data[k]["all"] = frontmatter.dumps(p)
@@ -345,8 +368,10 @@ def meld_output(args, data, cmd_data, cfg, loop=True):
     if loop:
         # If we're not looping, then these were already populated
         # by the parent loop.
+        data["yaml"] = {}
         data = populate_data_md_globs(cmd_data, data)
         data = populate_yaml_data(cmd_data, data)
+        data = populate_yaml_keyed(cmd_data, data)
         data = populate_md_data(cmd_data, data)
         # _LOGGER.info(data)
         if "data_variables" in cmd_data:
