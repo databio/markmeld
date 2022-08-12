@@ -217,17 +217,20 @@ def populate_yaml_keyed(cfg, data):
     # Load up yaml data
     if "data_yaml_keyed" not in cfg:
         return data
-    _LOGGER.info(f"MM | Populating yaml data...")
+    _LOGGER.info(f"MM | Populating keyed yaml data...")
     for k,v in cfg["data_yaml_keyed"].items():
         _LOGGER.info(f"MM | --> {k}: {v}")
         with open(v, "r") as f:
             yaml_dict = yaml.load(f, Loader=yaml.SafeLoader)
+            print(yaml_dict)
             data[k] = yaml_dict
             data["yaml"][k] = yaml_dict
-            data[k]["raw"] = yaml.dump(yaml_dict)
+            data["raw"][k] = yaml.dump(yaml_dict)
+            # 2022-08-12 Original way, this doesn't work in the case that data[k] is a list 
+            # (if the yaml file is an array, not an object)
+            # So I changed it put the raw value under ["raw"][k] instead of [k]["raw"]
+            # data[k]["raw"] = yaml.dump(yaml_dict)
     return data
-
-
 
 def populate_md_data(cfg, data):
     # Load up markdown data
@@ -369,6 +372,7 @@ def meld_output(args, data, cmd_data, cfg, loop=True):
         # If we're not looping, then these were already populated
         # by the parent loop.
         data["yaml"] = {}
+        data["raw"] = {}
         data = populate_data_md_globs(cmd_data, data)
         data = populate_yaml_data(cmd_data, data)
         data = populate_yaml_keyed(cmd_data, data)
