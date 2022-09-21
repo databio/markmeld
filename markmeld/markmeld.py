@@ -168,7 +168,13 @@ def load_plugins():
 
 
 def load_config_data(cfg_data, filepath=None, autocomplete=True):
+    """
+    Recursive loader that parses a yaml string, and handles imports.
+    """
+
+
     higher_cfg = yaml.load(cfg_data, Loader=yaml.SafeLoader)
+    higher_cfg["_cfg_file_path"] = filepath
     lower_cfg = {}
 
     # Add date to targets?
@@ -211,7 +217,9 @@ def populate_yaml_data(cfg, data):
     _LOGGER.info(f"MM | Populating yaml data...")
     for d in cfg["data_yaml"]:
         _LOGGER.info(f"MM | {d}")
-        with open(d, "r") as f:
+        dabs = make_abspath(d, cfg)
+
+        with open(dabs, "r") as f:
             data.update(yaml.load(f, Loader=yaml.SafeLoader))
 
     return data
@@ -240,6 +248,10 @@ def populate_md_data(cfg, data):
     # Load up markdown data
     if "data_md" not in cfg:
         return data
+
+    if "md" not in data:
+        data["md"] = {}
+
     _LOGGER.info(f"MM | Populating md data...")
     for k, v in cfg["data_md"].items():
         _LOGGER.info(f"MM | --> {k}: {v}")
@@ -253,10 +265,12 @@ def populate_md_data(cfg, data):
             response = requests.get(v)
             p = frontmatter.loads(response.text)
         else:
-            if os.path.exists(v):
-                p = frontmatter.load(v)
+            vabs = make_abspath(v, cfg)
+
+            if os.path.exists(vabs):
+                p = frontmatter.load(vabs)
             else:
-                _LOGGER.warning(f"Skipping file that does not exist: {v}")
+                _LOGGER.warning(f"Skipping file that does not exist: {vabs}")
                 data[k] = {}
                 data["md"][k] = {}
                 data[k]["all"] = ""
@@ -298,17 +312,32 @@ def populate_data_md_globs(cfg, data):
     return data
 
 
+
+def make_abspath(relpath, cfg, root=None):
+    if root:
+        return os.path.join(root, relpath)
+    return os.path.join(os.path.dirname(cfg["_cfg_file_path"]), relpath)
+
+    
+
+
 def load_template(cfg):
     if "md_template" not in cfg:
         return None
 
     md_tpl = None
-    if os.path.isfile(cfg["md_template"]):
-        md_tpl = cfg["md_template"]
-    elif "mm_templates" in cfg:
-        md_tpl = os.path.join(cfg["mm_templates"], cfg["md_template"])
-    else:
-        raise Exception(f"md_template file not found: {cfg['md_template']}")
+    root = cfg["mm_templates"] if "mm_templates" in cfg else None
+    md_tpl = make_abspath(cfg["md_template"], cfg, root)
+
+    # # if os.path.isfile(cfg["md_template"]):
+    # #     md_tpl = cfg["md_template"]
+    # if "mm_templates" in cfg:
+    #     md_tpl = os.path.join(cfg["mm_templates"], cfg["md_template"])
+    # else:
+    #     md_tpl = os.path.join(, cfg["md_template"])
+    if not os.path.isfile(md_tpl):
+        print(cfg)
+        raise Exception(f"md_template file not found: {md_tpl}")
     
     try:
         if is_url(md_tpl):            
@@ -333,14 +362,14 @@ class MarkdownMelder(object):
         self.cfg = cfg
         
 
-    def meld_output(self, args, data, cmd_data, config=None, loop=True):
+    def meld_output(self, data, cmd_data, config=None, print_only=False, loop=True):
         """
         Melds input markdown and yaml into a jinja output.
         """
         cfg = config if config else self.cfg
+        print("loop", loop)
 
-        # define some usful functions
-        
+        # define some useful functions
         def recursive_get(dat, indices):
             for i in indices:
                 if i not in dat:
@@ -356,7 +385,7 @@ class MarkdownMelder(object):
             # el
 
             if tgt in cmd_data["targets"]:
-                return meld_output(args, data, populate_cmd_data(cfg, tgt), cfg)
+                return meld_output(data, populate_cmd_data(cfg, tgt), cfg, print_only)
             else:
                 _LOGGER.warning(f"MM | No target called {tgt}.")
                 return False
@@ -395,6 +424,7 @@ class MarkdownMelder(object):
             if "data_variables" in cmd_data:
                 data.update(cmd_data["data_variables"])
 
+            print(cmd_data)
             _LOGGER.info(f"MM | Today's date: {cmd_data['today']}")
             _LOGGER.info(f"MM | latex_template: {cmd_data['latex_template']}")
             _LOGGER.info(f"MM | Output md_template: {cmd_data['md_template']}")
@@ -414,7 +444,7 @@ class MarkdownMelder(object):
                 data.update({ var: i })
                 cmd_data.update({ var: i })
                 _LOGGER.debug(cmd_data)
-                return_codes.append(meld_output(args, data, deepcopy(cmd_data), cfg, loop=False))
+                return_codes.append(meld_output(data, deepcopy(cmd_data), cfg, print_only=args.print, loop=False))
 
             _LOGGER.info(f"Return codes: {return_codes}")
             cmd_data["stopopen"] = True
@@ -443,7 +473,7 @@ class MarkdownMelder(object):
             cmd_fmt = cmd.format(**cmd_data)
             _LOGGER.info(cmd_fmt)        
             run_cmd(cmd_fmt, cmd_data["_filepath"])  
-        elif args.print:
+        elif print_only:
             # return print(tpl.render(data))  # one time
             return print(Template(tpl.render(data)).render(data))  # two times
         elif cmd_data["command"]:
@@ -565,7 +595,7 @@ def main():
     mm = MarkdownMelder(cfg)
 
     # Meld it!
-    returncode = mm.meld_output(args, data, cmd_data, cfg)
+    returncode = mm.meld_output(data, cmd_data, cfg, print_only=args.print)
     # Open the file
     if returncode == 0 and cmd_data["output_file"] and not "stopopen" in cmd_data:
         cmd_open = ["xdg-open", cmd_data["output_file"]]

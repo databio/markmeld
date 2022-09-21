@@ -1,3 +1,3 @@
-from .markmeld import MarkdownMelder
+from .markmeld import *
 
-__all__ = ["MarkdownMelder"]
+__all__ = ["MarkdownMelder", "load_config_file"]
