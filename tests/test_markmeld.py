@@ -4,15 +4,22 @@ import markmeld
 
 cfg = {"test": True}
 
+def compare_to_file(file, string_to_compare):
+    with open(file) as f:
+        file_contents = f.read()
+        assert file_contents == string_to_compare
+
+
+
 def test_MarkdownMelder():
     cfg = markmeld.load_config_file("demo/_markmeld.yaml")
     cmd_data = markmeld.populate_cmd_data(cfg, "default", {})
     x = markmeld.MarkdownMelder(cfg)
-    x.meld_output({"md": {}}, cmd_data, cfg, print_only=True)
-    num = 25
-    assert True
+    
+    res = x.build_target("default", print_only=True)
+    compare_to_file('demo/rendered.md', res)
 
-
-markmeld.populate_cmd_data
+    res = x.build_target("default", print_only=False)
+    print(f"res:", res)
 
 

@@ -353,6 +353,70 @@ def load_template(cfg):
     return t
 
 
+
+class MMDict(dict):
+    """
+    Just a dict object with a cmd_data property,
+    to hold a second more specialized dict
+    """
+    def __init__(self, *arg, **kw):
+       super(MMDict, self).__init__(*arg, **kw)
+       self.cmd_data = {}
+
+
+class Target(object):
+    """
+    Holds 2 dicts: real data and metadata for a target
+    """
+    def __init__(self, data={}, target_name=None):
+        self.data = data
+        self.target_name = target_name
+        self.target_meta = populate_cmd_data(self.data, target_name)
+        if "output_file" in self.target_meta:
+            self.target_meta["output_file"] = self.target_meta["output_file"].format(**self.target_meta)
+        else:
+            self.target_meta["output_file"] = None
+
+        _LOGGER.info(f"MM | Output file: {self.target_meta['output_file']}")
+
+
+# define some useful functions
+def recursive_get(dat, indices):
+    """
+    Indexes into a nested dict with a list of indexes.
+    """
+    for i in indices:
+        if i not in dat:
+            return None
+        dat = dat[i]
+    return dat
+
+def run_cmd(cmd, stdin=None, workdir=None):
+    """ Runs a command from a given workdir"""
+    _LOGGER.info(f"MM | Command: {cmd}; CWD: {workdir}")
+    if stdin:
+        p = subprocess.Popen(cmd, shell=True, stdin=subprocess.PIPE, cwd=os.path.dirname(workdir))
+        p.communicate(input=stdin)
+        return p.returncode
+    else:
+        p = subprocess.Popen(cmd, shell=True, cwd=os.path.dirname(workdir))
+        p.communicate()
+        return p.returncode
+
+    # In case I need to make it NOT use the shell in the future
+    # here's how:
+    # cmd_fmt2 = cmd_fmt.replace("\n", "").replace("\\","")
+    # cmd_ary = shlex.split(cmd_fmt2)
+    # _LOGGER.debug(cmd_ary)
+    # p = subprocess.Popen(cmd_fmt, shell=True, stdin=subprocess.PIPE)
+    # p.communicate(input=tpl.render(data).encode())
+
+def format_command(target):
+    cmd = target.target_meta["command"]
+    cmd_fmt = cmd.format(**target.target_meta)
+    return cmd_fmt    
+
+
 class MarkdownMelder(object):
     def __init__(self, cfg):
         """
@@ -360,22 +424,87 @@ class MarkdownMelder(object):
         """
         _LOGGER.info("Initializing MarkdownMelder...")
         self.cfg = cfg
-        
+       
+
+    def build_target(self, target_name, print_only=False):
+
+        tgt = Target(self.cfg, target_name)
+
+        # First, run any pre-builds
+        if "prebuild" in tgt.data:
+            for pretgt in tgt.data["prebuild"]:
+                _LOGGER.info(f"MM | Run prebuild hooks: {tgt}: {pretgt}")
+                if pretgt in self["targets"]:
+                    self.build_target(self, pretgt)
+                else:
+                    _LOGGER.warning(f"MM | No target called {pretgt}, requested prebuild by target {tgt}.")
+                    return False
+
+        # Next, meld the inputs
+        # This means reading in all the data to populating variables, etc.
+        # This can be time-consuming
+        melded_input = self.meld_inputs(tgt)
+
+        # command...
+        if "type" in tgt.data and tgt.data["type"] == "raw":
+            # Raw = No subprocess stdin printing. (so, it doesn't render anything)
+            cmd_fmt = format_command(tgt)
+            return run_cmd(cmd_fmt, None, tgt.target_meta["_filepath"])
+        if print_only:
+            # Case 2: print_only means just render but run no command.
+            # return print(tpl.render(data))  # one time
+            print(self.render_template(melded_input, tgt))
+            return self.render_template(melded_input, tgt)
+        if tgt.target_meta["command"]:
+            cmd_fmt = format_command(tgt)
+            # Call command (pandoc), passing the rendered template to stdin
+            import shlex
+
+            _LOGGER.debug(cmd_fmt)
+            print(tgt.target_meta["today"])
+            print(cmd_fmt)
+            if "recursive_render" in tgt.target_meta and not tgt.target_meta["recursive_render"]:
+                rendered_in = self.render_template(melded_input, tgt, double=False).encode()
+            else:
+                # Recursive rendering allows your template to include variables
+                rendered_in = self.render_template(melded_input, tgt, double=True).encode()
+            return run_cmd(cmd_fmt, rendered_in, tgt.target_meta["_filepath"])
+
+        return False
+
+    def meld_inputs(self, target):
+        data_copy = deepcopy(target.data)
+        data_copy["yaml"] = {}
+        data_copy["raw"] = {}
+        data_copy = populate_data_md_globs(target.target_meta, data_copy)
+        data_copy = populate_yaml_data(target.target_meta, data_copy)
+        data_copy = populate_yaml_keyed(target.target_meta, data_copy)
+        data_copy = populate_md_data(target.target_meta, data_copy)
+        if "data_variables" in target.target_meta:
+            data_copy.update(target.target_meta["data_variables"])
+
+        return data_copy
+
+    def render_template(self, melded_input, target, double=True):
+        if "md_template" in target.target_meta:
+            tpl = load_template(target.target_meta)
+        else:
+            # cmd_data["md_template"] = None
+            tpl = Template(tpl_generic)
+            _LOGGER.error("No md_template provided. Using generic markmeld template.")
+        if double:
+            return Template(tpl.render(melded_input)).render(melded_input)  # two times
+        else:
+            return tpl.render(melded_input)
+
+
 
     def meld_output(self, data, cmd_data, config=None, print_only=False, loop=True):
         """
-        Melds input markdown and yaml into a jinja output.
+        Melds input markdown and yaml through a jinja template to produce text output.
         """
         cfg = config if config else self.cfg
         print("loop", loop)
-
-        # define some useful functions
-        def recursive_get(dat, indices):
-            for i in indices:
-                if i not in dat:
-                    return None
-                dat = dat[i]
-            return dat
 
         def call_hook(cmd_data, data, tgt):
             # if tgt in mm_targets:
@@ -429,8 +558,6 @@ class MarkdownMelder(object):
             _LOGGER.info(f"MM | latex_template: {cmd_data['latex_template']}")
             _LOGGER.info(f"MM | Output md_template: {cmd_data['md_template']}")
 
-
-
         if "loop" in cmd_data and loop:
             loop_dat = recursive_get(data,cmd_data["loop"]["loop_data"].split("."))
             n = len(loop_dat)
@@ -459,6 +586,14 @@ class MarkdownMelder(object):
 
         _LOGGER.info(f"MM | Output file: {cmd_data['output_file']}")
 
+        return data
+
+
+
+    def meld_to_command(self, data, cmd_data):
+        """
+        This function takes the melded output and runs the command on it.
+        """
 
         def run_cmd(cmd, cwd=None):
             _LOGGER.info(f"MM | Command: {cmd}; CWD: {cwd}")
@@ -468,7 +603,7 @@ class MarkdownMelder(object):
         returncode = -1
 
         if "type" in cmd_data and cmd_data["type"] == "raw":
-            # Raw = No subprocess stdin printing
+            # Raw = No subprocess stdin printing. (so, it doesn't render anything)
             cmd = cmd_data["command"]
             cmd_fmt = cmd.format(**cmd_data)
             _LOGGER.info(cmd_fmt)        
@@ -562,7 +697,6 @@ def main():
             )
             sys.exit(1)
 
-    data = {"md": {}}
     cfg = load_config_file(args.config, args.autocomplete)
 
     if args.list:
@@ -583,6 +717,9 @@ def main():
     _LOGGER.debug("Custom date formatting...")
     # Add custom date formatter filter
     FILTERS["date"] = datetimeformat
+
+
+    data = MMDict({"md": {}})
     data["now"] = date.today().strftime("%s")
 
     # Add custom reference extraction filter
