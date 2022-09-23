@@ -28,5 +28,13 @@ def test_loop():
     cfg = markmeld.load_config_file("demo_loop/_markmeld.yaml")
     cmd_data = markmeld.populate_cmd_data(cfg, "default", {})
     x = markmeld.MarkdownMelder(cfg)
-    
     res = x.build_target("default", print_only=True)
+
+    # Need assertion here
+
+    # can make sure: 
+    # 1. PDF file exists with correct name
+    # 2. PDF file contains text sourced from the data source
+    # test complex loop
+
+
