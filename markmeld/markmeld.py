@@ -372,11 +372,6 @@ class Target(object):
         self.data = data
         self.target_name = target_name
         self.target_meta = populate_cmd_data(self.data, target_name)
-        if "output_file" in self.target_meta:
-            self.target_meta["output_file"] = self.target_meta["output_file"].format(**self.target_meta)
-        else:
-            self.target_meta["output_file"] = None
-
         _LOGGER.info(f"MM | Output file: {self.target_meta['output_file']}")
 
 
@@ -395,6 +390,7 @@ def run_cmd(cmd, stdin=None, workdir=None):
     """ Runs a command from a given workdir"""
     _LOGGER.info(f"MM | Command: {cmd}; CWD: {workdir}")
     if stdin:
+        # Call command (default: pandoc), passing the rendered template to stdin
         p = subprocess.Popen(cmd, shell=True, stdin=subprocess.PIPE, cwd=os.path.dirname(workdir))
         p.communicate(input=stdin)
         return p.returncode
@@ -413,6 +409,10 @@ def run_cmd(cmd, stdin=None, workdir=None):
 
 def format_command(target):
     cmd = target.target_meta["command"]
+    if "output_file" in target.target_meta:
+        target.target_meta["output_file"] = target.target_meta["output_file"].format(**target.target_meta)
+    else:
+        target.target_meta["output_file"] = None
     cmd_fmt = cmd.format(**target.target_meta)
     return cmd_fmt    
 
@@ -440,12 +440,13 @@ class MarkdownMelder(object):
                     _LOGGER.warning(f"MM | No target called {pretgt}, requested prebuild by target {tgt}.")
                     return False
 
-        # Next, meld the inputs
-        # This means reading in all the data to populating variables, etc.
-        # This can be time-consuming
+        # Next, meld the inputs. This can be time-consuming, it reads data to populate variables
         melded_input = self.meld_inputs(tgt)
 
-        # command...
+        if "loop" in tgt.target_meta:
+            return self.build_target_in_loop(tgt, melded_input)
+
+        # Run command...
         if "type" in tgt.data and tgt.data["type"] == "raw":
             # Raw = No subprocess stdin printing. (so, it doesn't render anything)
             cmd_fmt = format_command(tgt)
@@ -457,12 +458,7 @@ class MarkdownMelder(object):
             return self.render_template(melded_input, tgt)
         if tgt.target_meta["command"]:
             cmd_fmt = format_command(tgt)
-            # Call command (pandoc), passing the rendered template to stdin
-            import shlex
-
             _LOGGER.debug(cmd_fmt)
-            print(tgt.target_meta["today"])
-            print(cmd_fmt)
             if "recursive_render" in tgt.target_meta and not tgt.target_meta["recursive_render"]:
                 rendered_in = self.render_template(melded_input, tgt, double=False).encode()
             else:
@@ -471,6 +467,31 @@ class MarkdownMelder(object):
             return run_cmd(cmd_fmt, rendered_in, tgt.target_meta["_filepath"])
 
         return False
+
+    def build_target_in_loop(self, tgt, melded_input):
+        #  Process each iteration of the loop
+        loop_dat = recursive_get(melded_input,tgt.target_meta["loop"]["loop_data"].split("."))
+        print(loop_dat)
+        print(tgt.data)
+        n = len(loop_dat)
+        _LOGGER.info(f"Loop found: {n} elements.")
+        _LOGGER.debug(loop_dat)
+
+        return_codes = []
+        for i in loop_dat:
+            melded_input_copy = deepcopy(melded_input)
+            tgt_copy = deepcopy(tgt)
+            var = tgt_copy.target_meta["loop"]["assign_to"]
+            print(f"{var}: {i}")
+            _LOGGER.info(f"{var}: {i}")
+            melded_input_copy.update({ var: i })
+            tgt_copy.target_meta.update({ var: i })
+            print(tgt_copy.target_meta)
+            # _LOGGER.debug(cmd_data)
+            rendered_in = self.render_template(melded_input_copy, tgt_copy, double=False).encode()
+            return_codes.append(run_cmd(format_command(tgt_copy), rendered_in, tgt_copy.target_meta["_filepath"]))
+
+        return max(return_codes)
 
     def meld_inputs(self, target):
         data_copy = deepcopy(target.data)
@@ -499,7 +520,7 @@ class MarkdownMelder(object):
 
 
 
-    def meld_output(self, data, cmd_data, config=None, print_only=False, loop=True):
+    def meld_output(self, data, cmd_data, config=None, print_only=False, in_loop=False):
         """
         Melds input markdown and yaml through a jinja template to produce text output.
         """
@@ -540,9 +561,9 @@ class MarkdownMelder(object):
                 _LOGGER.info(f"MM | Run prebuild hooks: {tgt}")
                 call_hook(cmd_data, data, tgt)
 
-        if loop:
+        if not in_loop:
             # If we're not looping, then these were already populated
-            # by the parent loop.
+            # by the parent loop. We don't want to repopulate
             data["yaml"] = {}
             data["raw"] = {}
             data = populate_data_md_globs(cmd_data, data)
@@ -558,7 +579,7 @@ class MarkdownMelder(object):
             _LOGGER.info(f"MM | latex_template: {cmd_data['latex_template']}")
             _LOGGER.info(f"MM | Output md_template: {cmd_data['md_template']}")
 
-        if "loop" in cmd_data and loop:
+        if "loop" in cmd_data and not in_loop:
             loop_dat = recursive_get(data,cmd_data["loop"]["loop_data"].split("."))
             n = len(loop_dat)
             _LOGGER.info(f"Loop found: {n} elements.")
@@ -571,7 +592,7 @@ class MarkdownMelder(object):
                 data.update({ var: i })
                 cmd_data.update({ var: i })
                 _LOGGER.debug(cmd_data)
-                return_codes.append(meld_output(data, deepcopy(cmd_data), cfg, print_only=args.print, loop=False))
+                return_codes.append(meld_output(data, deepcopy(cmd_data), cfg, print_only=args.print, in_loop=True))
 
             _LOGGER.info(f"Return codes: {return_codes}")
             cmd_data["stopopen"] = True

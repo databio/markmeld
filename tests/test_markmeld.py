@@ -10,8 +10,7 @@ def compare_to_file(file, string_to_compare):
         assert file_contents == string_to_compare
 
 
-
-def test_MarkdownMelder():
+def test_MarkdownMelder_demo():
     cfg = markmeld.load_config_file("demo/_markmeld.yaml")
     cmd_data = markmeld.populate_cmd_data(cfg, "default", {})
     x = markmeld.MarkdownMelder(cfg)
@@ -22,4 +21,12 @@ def test_MarkdownMelder():
     res = x.build_target("default", print_only=False)
     print(f"res:", res)
 
+    # os.remove()
 
+
+def test_loop():
+    cfg = markmeld.load_config_file("demo_loop/_markmeld.yaml")
+    cmd_data = markmeld.populate_cmd_data(cfg, "default", {})
+    x = markmeld.MarkdownMelder(cfg)
+    
+    res = x.build_target("default", print_only=True)
