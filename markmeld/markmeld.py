@@ -20,8 +20,10 @@ from ubiquerg import VersionInHelpParser
 from ubiquerg import expandpath
 from ubiquerg import is_url
 
-from ._version import __version__
+
+from .exceptions import *
 from .glob_factory import glob_factory
+from ._version import __version__
 
 PKG_NAME = "markmeld"
 
@@ -683,10 +685,6 @@ class MarkdownMelder(object):
                 call_hook(cmd_data, data, tgt)
 
         return returncode
-
-class TargetError(Exception):
-    pass
-
 
 def populate_cmd_data(cfg, target=None, vardata=None):
     cmd_data = {}
