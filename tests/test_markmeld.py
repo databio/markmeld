@@ -8,6 +8,7 @@ from datetime import date
 cfg = {"test": True}
 today = date.today().strftime("%Y-%m-%d")
 
+
 def compare_to_file(file, string_to_compare):
     with open(file) as f:
         file_contents = f.read()
@@ -18,9 +19,9 @@ def test_MarkdownMelder_demo():
     cfg = markmeld.load_config_file("demo/_markmeld.yaml")
     cmd_data = markmeld.populate_cmd_data(cfg, "default", {})
     x = markmeld.MarkdownMelder(cfg)
-    
+
     res = x.build_target("default", print_only=True)
-    compare_to_file('demo/rendered.md', res.melded_output)
+    compare_to_file("demo/rendered.md", res.melded_output)
 
     res = x.build_target("default", print_only=False)
     print(f"res:", res)
@@ -47,6 +48,7 @@ def test_loop():
     assert "John Doe" in str(res2[0].melded_output)
     assert "Jane Doe" in str(res2[1].melded_output)
     # print(f"res:", res)
+
 
 def test_factory():
     cfg = markmeld.load_config_file("demo_factory/_markmeld.yaml")
