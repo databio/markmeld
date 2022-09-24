@@ -1,8 +1,12 @@
 print("Run test")
 
 import markmeld
+import os
+
+from datetime import date
 
 cfg = {"test": True}
+today = date.today().strftime("%Y-%m-%d")
 
 def compare_to_file(file, string_to_compare):
     with open(file) as f:
@@ -26,15 +30,28 @@ def test_MarkdownMelder_demo():
 
 def test_loop():
     cfg = markmeld.load_config_file("demo_loop/_markmeld.yaml")
-    cmd_data = markmeld.populate_cmd_data(cfg, "default", {})
     x = markmeld.MarkdownMelder(cfg)
     res = x.build_target("default", print_only=True)
+    # print(f"res:", res)
+    assert "John Doe" in str(res[0])
+    assert "Jane Doe" in str(res[1])
 
-    # Need assertion here
+    # Check actual build (requires pandoc)
+    res = x.build_target("default")
+    assert os.path.isfile(f"demo_loop/{today}_demo_output_John Doe.pdf")
+    assert os.path.isfile(f"demo_loop/{today}_demo_output_Jane Doe.pdf")
+    os.remove(f"demo_loop/{today}_demo_output_John Doe.pdf")
+    os.remove(f"demo_loop/{today}_demo_output_Jane Doe.pdf")
 
-    # can make sure: 
-    # 1. PDF file exists with correct name
-    # 2. PDF file contains text sourced from the data source
-    # test complex loop
+    res2 = x.build_target("complex_loop", print_only=True)
+    assert "John Doe" in str(res2[0])
+    assert "Jane Doe" in str(res2[1])
+    # print(f"res:", res)
 
-
+def test_factory():
+    cfg = markmeld.load_config_file("demo_factory/_markmeld.yaml")
+    x = markmeld.MarkdownMelder(cfg)
+    print(x.cfg)
+    res = x.build_target("target1", print_only=True)
+    print(f"res:", res)
+    assert "Target1" in str(res)

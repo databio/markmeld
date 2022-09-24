@@ -203,7 +203,9 @@ def load_config_data(cfg_data, filepath=None, autocomplete=True):
             _LOGGER.debug(f"Processing target factory: {fac_name}")
             # Look up function to call.
             func = plugins[fac_name]
-            factory_targets = func(fac_vals)
+            factory_targets = func(fac_vals, lower_cfg)
+            for k,v in factory_targets.items():
+                factory_targets[k]["_filepath"] = filepath
             deep_update(lower_cfg, {"targets": factory_targets})
 
     _LOGGER.debug("Lower cfg: " + str(lower_cfg))
@@ -444,7 +446,7 @@ class MarkdownMelder(object):
         melded_input = self.meld_inputs(tgt)
 
         if "loop" in tgt.target_meta:
-            return self.build_target_in_loop(tgt, melded_input)
+            return self.build_target_in_loop(tgt, melded_input, print_only)
 
         # Run command...
         if "type" in tgt.data and tgt.data["type"] == "raw":
@@ -468,7 +470,7 @@ class MarkdownMelder(object):
 
         return False
 
-    def build_target_in_loop(self, tgt, melded_input):
+    def build_target_in_loop(self, tgt, melded_input, print_only=False):
         #  Process each iteration of the loop
         loop_dat = recursive_get(melded_input,tgt.target_meta["loop"]["loop_data"].split("."))
         print(loop_dat)
@@ -477,21 +479,26 @@ class MarkdownMelder(object):
         _LOGGER.info(f"Loop found: {n} elements.")
         _LOGGER.debug(loop_dat)
 
-        return_codes = []
-        for i in loop_dat:
+        return_codes = {}
+        for i in range(len(loop_dat)):
+            loop_var_value = loop_dat[i]
             melded_input_copy = deepcopy(melded_input)
             tgt_copy = deepcopy(tgt)
             var = tgt_copy.target_meta["loop"]["assign_to"]
-            print(f"{var}: {i}")
-            _LOGGER.info(f"{var}: {i}")
-            melded_input_copy.update({ var: i })
-            tgt_copy.target_meta.update({ var: i })
+            print(f"{var}: {loop_var_value}")
+            _LOGGER.info(f"{var}: {loop_var_value}")
+            melded_input_copy.update({ var: loop_var_value })
+            tgt_copy.target_meta.update({ var: loop_var_value })
             print(tgt_copy.target_meta)
             # _LOGGER.debug(cmd_data)
             rendered_in = self.render_template(melded_input_copy, tgt_copy, double=False).encode()
-            return_codes.append(run_cmd(format_command(tgt_copy), rendered_in, tgt_copy.target_meta["_filepath"]))
-
-        return max(return_codes)
+            if print_only:
+                return_codes[i] = rendered_in
+            else:
+                return_codes[i] = run_cmd(format_command(tgt_copy), rendered_in, tgt_copy.target_meta["_filepath"])
+        if print_only:
+            return return_codes
+        return max(return_codes.values())
 
     def meld_inputs(self, target):
         data_copy = deepcopy(target.data)
@@ -664,6 +671,9 @@ class MarkdownMelder(object):
 
         return returncode
 
+class TargetError(Exception):
+    pass
+
 
 def populate_cmd_data(cfg, target=None, vardata=None):
     cmd_data = {}
@@ -673,10 +683,10 @@ def populate_cmd_data(cfg, target=None, vardata=None):
     if target:
         if "targets" not in cfg:
             _LOGGER.error(f"No targets specified in config.")
-            sys.exit(1)
+            raise TargetError(f"No targets specified in config.")
         if target not in cfg["targets"]:
             _LOGGER.error(f"target {target} not found")
-            sys.exit(1)
+            raise TargetError(f"Target {target} not found")
         cmd_data.update(cfg["targets"][target])
         _LOGGER.debug(f'Config for this target: {cfg["targets"][target]}')
 
