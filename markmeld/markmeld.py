@@ -324,7 +324,6 @@ def make_abspath(relpath, cfg, root=None):
 
     
 
-
 def load_template(cfg):
     if "md_template" not in cfg:
         return None
@@ -357,15 +356,6 @@ def load_template(cfg):
     return t
 
 
-
-class MMDict(dict):
-    """
-    Just a dict object with a cmd_data property,
-    to hold a second more specialized dict
-    """
-    def __init__(self, *arg, **kw):
-       super(MMDict, self).__init__(*arg, **kw)
-       self.cmd_data = {}
 
 
 class Target(object):
