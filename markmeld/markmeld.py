@@ -409,6 +409,9 @@ def run_cmd(cmd, stdin=None, workdir=None):
     # p = subprocess.Popen(cmd_fmt, shell=True, stdin=subprocess.PIPE)
     # p.communicate(input=tpl.render(data).encode())
 
+
+
+
 def format_command(target):
     cmd = target.target_meta["command"]
     if "output_file" in target.target_meta:
@@ -426,7 +429,15 @@ class MarkdownMelder(object):
         """
         _LOGGER.info("Initializing MarkdownMelder...")
         self.cfg = cfg
+        self.target_objects = {}
        
+    def open_target(self, target_name):
+        tgt = Target(self.cfg, target_name)
+
+        if tgt.target_meta["output_file"] and not "stopopen" in tgt.target_meta:
+            return tgt.target_meta["output_file"]
+        else:
+            return False
 
     def build_target(self, target_name, print_only=False):
 
@@ -449,26 +460,32 @@ class MarkdownMelder(object):
             return self.build_target_in_loop(tgt, melded_input, print_only)
 
         # Run command...
+        return self.run_command_for_target(tgt, melded_input, print_only)
+
+    def run_command_for_target(self, tgt, melded_input, print_only):
+        cmd_fmt = format_command(tgt)
         if "type" in tgt.data and tgt.data["type"] == "raw":
             # Raw = No subprocess stdin printing. (so, it doesn't render anything)
             cmd_fmt = format_command(tgt)
-            return run_cmd(cmd_fmt, None, tgt.target_meta["_filepath"])
-        if print_only:
+            tgt.melded_output = None
+            tgt.returncode = run_cmd(cmd_fmt, None, tgt.target_meta["_filepath"])
+        elif print_only:
             # Case 2: print_only means just render but run no command.
             # return print(tpl.render(data))  # one time
-            print(self.render_template(melded_input, tgt))
-            return self.render_template(melded_input, tgt)
-        if tgt.target_meta["command"]:
+            tgt.melded_output = self.render_template(melded_input, tgt)
+            tgt.returncode = 0
+        elif tgt.target_meta["command"]:
             cmd_fmt = format_command(tgt)
             _LOGGER.debug(cmd_fmt)
             if "recursive_render" in tgt.target_meta and not tgt.target_meta["recursive_render"]:
-                rendered_in = self.render_template(melded_input, tgt, double=False).encode()
+                melded_output = self.render_template(melded_input, tgt, double=False).encode()
             else:
                 # Recursive rendering allows your template to include variables
-                rendered_in = self.render_template(melded_input, tgt, double=True).encode()
-            return run_cmd(cmd_fmt, rendered_in, tgt.target_meta["_filepath"])
+                melded_output = self.render_template(melded_input, tgt, double=True).encode()
+            tgt.melded_output = melded_output
+            tgt.returncode = run_cmd(cmd_fmt, melded_output, tgt.target_meta["_filepath"])
 
-        return False
+        return tgt
 
     def build_target_in_loop(self, tgt, melded_input, print_only=False):
         #  Process each iteration of the loop
@@ -479,7 +496,7 @@ class MarkdownMelder(object):
         _LOGGER.info(f"Loop found: {n} elements.")
         _LOGGER.debug(loop_dat)
 
-        return_codes = {}
+        return_target_objects = {}
         for i in range(len(loop_dat)):
             loop_var_value = loop_dat[i]
             melded_input_copy = deepcopy(melded_input)
@@ -492,13 +509,9 @@ class MarkdownMelder(object):
             print(tgt_copy.target_meta)
             # _LOGGER.debug(cmd_data)
             rendered_in = self.render_template(melded_input_copy, tgt_copy, double=False).encode()
-            if print_only:
-                return_codes[i] = rendered_in
-            else:
-                return_codes[i] = run_cmd(format_command(tgt_copy), rendered_in, tgt_copy.target_meta["_filepath"])
-        if print_only:
-            return return_codes
-        return max(return_codes.values())
+            return_target_objects[i] = self.run_command_for_target(tgt_copy, melded_input_copy, print_only)
+
+        return return_target_objects
 
     def meld_inputs(self, target):
         data_copy = deepcopy(target.data)
@@ -732,15 +745,14 @@ def main():
 
     if args.list:
         if "targets" not in cfg:
-            _LOGGER.error(f"No targets specified in config.")
-            sys.exit(1)
+            raise TargetError(f"No targets specified in config.")
         tarlist = [x for x, k in cfg["targets"].items()]
         _LOGGER.error(f"Targets: {tarlist}")
         sys.exit(1)
 
     if args.autocomplete:
         if "targets" not in cfg:
-            sys.exit(1)
+            raise TargetError(f"No targets specified in config.")
         for t, k in cfg["targets"].items():
             sys.stdout.write(t + " ")
         sys.exit(1)
@@ -748,7 +760,6 @@ def main():
     _LOGGER.debug("Custom date formatting...")
     # Add custom date formatter filter
     FILTERS["date"] = datetimeformat
-
 
     data = MMDict({"md": {}})
     data["now"] = date.today().strftime("%s")
@@ -763,14 +774,19 @@ def main():
     mm = MarkdownMelder(cfg)
 
     # Meld it!
-    returncode = mm.meld_output(data, cmd_data, cfg, print_only=args.print)
+    built_target = mm.build_target(args.target, print_only=args.print)
+    # returncode = mm.meld_output(data, cmd_data, cfg, print_only=args.print)
     # Open the file
-    if returncode == 0 and cmd_data["output_file"] and not "stopopen" in cmd_data:
-        cmd_open = ["xdg-open", cmd_data["output_file"]]
+
+    # if returncode == 0 and cmd_data["output_file"] and not "stopopen" in cmd_data:
+    output_file = built_target.target_meta["output_file"]
+
+    if built_target.returncode == 0 and output_file and not "stopopen" in built_target.target_meta:
+        cmd_open = ["xdg-open", output_file]
         _LOGGER.info(" ".join(cmd_open))
         subprocess.call(cmd_open)
     else:
-        _LOGGER.info(f"Return code: {returncode}")
+        _LOGGER.info(f"Return code: {built_target.returncode}")
 
     return
 

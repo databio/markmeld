@@ -20,7 +20,7 @@ def test_MarkdownMelder_demo():
     x = markmeld.MarkdownMelder(cfg)
     
     res = x.build_target("default", print_only=True)
-    compare_to_file('demo/rendered.md', res)
+    compare_to_file('demo/rendered.md', res.melded_output)
 
     res = x.build_target("default", print_only=False)
     print(f"res:", res)
@@ -32,9 +32,9 @@ def test_loop():
     cfg = markmeld.load_config_file("demo_loop/_markmeld.yaml")
     x = markmeld.MarkdownMelder(cfg)
     res = x.build_target("default", print_only=True)
-    # print(f"res:", res)
-    assert "John Doe" in str(res[0])
-    assert "Jane Doe" in str(res[1])
+    print(f"res:", res)
+    assert "John Doe" in str(res[0].melded_output)
+    assert "Jane Doe" in str(res[1].melded_output)
 
     # Check actual build (requires pandoc)
     res = x.build_target("default")
@@ -44,14 +44,14 @@ def test_loop():
     os.remove(f"demo_loop/{today}_demo_output_Jane Doe.pdf")
 
     res2 = x.build_target("complex_loop", print_only=True)
-    assert "John Doe" in str(res2[0])
-    assert "Jane Doe" in str(res2[1])
+    assert "John Doe" in str(res2[0].melded_output)
+    assert "Jane Doe" in str(res2[1].melded_output)
     # print(f"res:", res)
 
 def test_factory():
     cfg = markmeld.load_config_file("demo_factory/_markmeld.yaml")
     x = markmeld.MarkdownMelder(cfg)
-    print(x.cfg)
+    # print(x.cfg)
     res = x.build_target("target1", print_only=True)
-    print(f"res:", res)
-    assert "Target1" in str(res)
+    # print(f"res:", res)
+    assert "Target1" in str(res.melded_output)
