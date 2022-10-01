@@ -1,6 +1,19 @@
-# The jinja md array
+# Jinja template
 
-## How to access variable-named elements
+## Jinja template
+
+Your markdown items will be available under the key you specify in the config. If you are using the `_globs` key, then they will be available under the filename. You can then access them in the jinja template as variables, like this:
+
+```
+{{ variable.content }}
+```
+
+The `.content` attribute will have the actual markdown -- this is probably what you want. But if you want metadata, you can also access that under `{{ variable.metadata }}`.
+
+
+## The jinja md array
+
+### How to access variable-named elements
 
 In a typical markmeld application, you'll encode the structure of your document within the jinja file. That's great. But to make the template reusable, sometimes it's convenient to do things like specify a *list* of items that show up somewhere in the document. You can also do this by combining markmeld `data_variables` with a jinja loop through the `md` array.
 
@@ -30,7 +43,7 @@ Great. That works. But the problem is that this jinja template is specific now t
 
 Instead of using those chapters directly, let's define an array of variable names, and then use a jinja loop to just loop through that array and use those values to index into the markmeld `md` object.
 
-## The `md` array
+### The `md` array
 
 Basically, markmeld makes available to jinja an array under the name `md` which has access to all of the markdown elements keyed by their names. So, while you can access the *intro* chapter directly with `{{ intro.content }}`, you can also access it through the `md` array using `{{ md["intro"].content }}`. Take it one step further, and this means if you have "intro" in a variable, say `myvar`, you could access the exact same content with `{{ my[myvar].content }}`.
 

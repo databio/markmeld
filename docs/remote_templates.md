@@ -1,7 +1,7 @@
 
-## How to use a remote template repository
+# How to use a remote template repository
 
-### Remotely
+## Remotely
 
 Point your `_markmeld.yaml` config to a remote template provider using `mm_templates`:
 
@@ -18,7 +18,7 @@ targets:
     md_template: generic.jinja
 ```
 
-### Locally
+## Locally
 
 Clone the repository and then point to it with a local path:
 

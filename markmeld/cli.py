@@ -93,7 +93,7 @@ def main(test_args=None):
             raise TargetError(f"No targets specified in config.")
         for t, k in cfg["targets"].items():
             sys.stdout.write(t + " ")
-        sys.exit(1)
+        sys.exit(0)
 
     if not args.target: 
         args.list = True
@@ -102,14 +102,13 @@ def main(test_args=None):
             raise TargetError(f"No targets specified in config.")
         tarlist = [x for x, k in cfg["targets"].items()]
         _LOGGER.error(f"Targets: {tarlist}")
-        sys.exit(1)
+        sys.exit(0)
 
     _LOGGER.debug("Melding...")  # Meld it!
     mm = MarkdownMelder(cfg)
     built_target = mm.build_target(args.target, print_only=args.print)
     
     # Open the file
-
     output_file = built_target.target_meta["output_file"]
     if (
         built_target.returncode == 0

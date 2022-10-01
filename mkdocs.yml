@@ -1,0 +1,34 @@
+site_name: Markmeld
+site_logo: img/markmeld_logo_long.svg
+site_url: http://markmeld.databio.org/
+repo_url: http://github.com/databio/markmeld
+pypi_name: markmeld
+
+nav:
+  - Getting Started:
+      - Introduction: README.md
+      - Install: install.md
+      - Basic configuration: basic_config.md
+  - How-to guides:
+      - Jinja template: jinja_template.md
+      - Imports: imports.md
+      - Prebuild hooks: prebuild_hooks.md
+      - Multi-targets: multi_targets.md
+      - Remote templates: remote_templates.md
+      - Target factories: target_factories.md
+      - Alternative commands: alternative_commands.md
+      - Mail merges: mail_merge.md
+  - Reference:
+      - API: autodoc_build/markmeld.md
+      - Changelog: changelog.md
+
+theme: databio
+
+plugins:
+  - databio:
+      autodoc_build: "docs/autodoc_build"
+      jupyter_source: "docs_jupyter"
+      jupyter_build: "docs_jupyter/build"
+      # autodoc_package: "markmeld"
+      no_top_level: true
+  - search
