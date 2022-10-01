@@ -13,7 +13,7 @@ nav:
       - Jinja template: jinja_template.md
       - Imports: imports.md
       - Prebuild hooks: prebuild_hooks.md
-      - Multi-targets: multi_targets.md
+      - Multi-output targets: multi_output_targets.md
       - Remote templates: remote_templates.md
       - Target factories: target_factories.md
       - Alternative commands: alternative_commands.md

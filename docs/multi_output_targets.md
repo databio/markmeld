@@ -1,24 +1,26 @@
 # Multi-output targets
 
-This folder contains a demo that shows how to use *multi-output targets*. Typical targets produce only a single output, but if you specify a *loop* variable and provide an array, you can have a target that produces multiple outputs.
+Typical targets produce only a single output. But sometimes, it's useful to specify a single target and have it produce multiple outputs, which we call *multi-output targets*. To define a multi-output target, you  specify a *loop* variable in the target definition, which has two sub-variables: an array (with the content to iterate over for each output), and a variable name to populate with each array element. 
 
 ## Motivation
 
-This is useful for something like a mail merge, where you'd write a single letter, but want to produce it with slight differences such as the name of the recipient. Or, if you want to load in a large piece of data one time (like a list of publications), and then produce several different versions or subsets of it without reloading the input.
+This is useful for something like a mail merge, where you'd write a single letter, but want to produce it with slight differences such as the name of the recipient. Another use case is that you want to load in a large piece of data one time (like a list of publications), and then produce several different versions or subsets of it without reloading the input.
 
 
 ## Quick start
 
-You do this by adding a loop variable to a target in `_markmeld.yaml`:
+Create a multi-output target by adding a loop variable to a target in `_markmeld.yaml`:
 
-```
+```yaml
 targets:
   target_name:
     loop:
       loop_data: recipients
       assign_to: recipient
 ```
+
 The *loop* attribute has two sub-attributes:
+
 - **loop_data**: Specify the name of the object that contains the array you want to loop over. This target will create one output per element in this array. The array can be either of primitive types (like strings), or can be an array of objects.
 - **assign_to**: This is the name of the variable that each element in loop_data will be assigned to. This is how you will access the individual element, both in the command templates and in the jinja templates.
 
