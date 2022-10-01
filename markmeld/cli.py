@@ -87,6 +87,14 @@ def main(test_args=None):
             raise ConfigError(msg)
 
     cfg = load_config_file(args.config, args.autocomplete)
+
+    if args.autocomplete:
+        if "targets" not in cfg:
+            raise TargetError(f"No targets specified in config.")
+        for t, k in cfg["targets"].items():
+            sys.stdout.write(t + " ")
+        sys.exit(1)
+
     if not args.target: 
         args.list = True
     if args.list:
@@ -94,13 +102,6 @@ def main(test_args=None):
             raise TargetError(f"No targets specified in config.")
         tarlist = [x for x, k in cfg["targets"].items()]
         _LOGGER.error(f"Targets: {tarlist}")
-        sys.exit(1)
-
-    if args.autocomplete:
-        if "targets" not in cfg:
-            raise TargetError(f"No targets specified in config.")
-        for t, k in cfg["targets"].items():
-            sys.stdout.write(t + " ")
         sys.exit(1)
 
     _LOGGER.debug("Melding...")  # Meld it!
