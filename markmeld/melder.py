@@ -1,6 +1,7 @@
 
 import datetime
 import frontmatter
+import glob
 import jinja2
 import os
 import re
@@ -124,15 +125,58 @@ def populate_md_data(cfg, data):
         if not v:
             data[k] = v
             continue
-        if is_url(v):
-            # Do url stuff
+        if is_url(v):  # Do url stuff
             import requests
-
             response = requests.get(v)
             p = frontmatter.loads(response.text)
         else:
             vabs = make_abspath(v, cfg)
+            if os.path.exists(vabs):
+                p = frontmatter.load(vabs)
+            else:
+                _LOGGER.warning(f"Skipping file that does not exist: {vabs}")
+                data[k] = {}
+                data["md"][k] = {}
+                data[k]["all"] = ""
+                continue
+        data[k] = p.__dict__
+        data["md"][k] = p.__dict__
+        data[k]["all"] = frontmatter.dumps(p)
+        _LOGGER.debug(data[k])
+        if len(p.metadata) > 0:
+            data[k]["metadata_yaml"] = yaml.dump(p.metadata)
 
+    return data
+
+
+def process_data_block(data_block, cfg):
+    _LOGGER.info(f"MM | Processing data block...")
+    data = {"md":{}}  # Initialize return value
+    md_files = {}
+    if "md_globs" in data_block:
+        _LOGGER.info(f"MM | Populating md data globs...")
+        for folder in data_block["md_globs"]:
+            path = make_abspath(folder, cfg)
+            files = glob.glob(path)
+            _LOGGER.info(f"MM | Glob path: {path}")
+            for file in files:
+                k = os.path.splitext(os.path.basename(file))[0]
+                _LOGGER.info(f"MM | [key:value] {k}:{file}")
+                md_files[k] = file
+    if "md" in data_block:
+        md_files.update(data_block["md"])
+
+    for k, v in md_files.items():
+        _LOGGER.info(f"MM | Processing md file {k}:{v}")
+        if not v:
+            data[k] = v
+            continue
+        if is_url(v):  # Do url stuff
+            import requests
+            response = requests.get(v)
+            p = frontmatter.loads(response.text)
+        else:
+            vabs = make_abspath(v, cfg)
             if os.path.exists(vabs):
                 p = frontmatter.load(vabs)
             else:
@@ -185,12 +229,12 @@ def make_abspath(relpath, cfg, root=None):
 
 
 def load_template(cfg):
-    if "md_template" not in cfg:
+    if "jinja_template" not in cfg:
         return None
 
     md_tpl = None
     root = cfg["mm_templates"] if "mm_templates" in cfg else None
-    md_tpl = make_abspath(cfg["md_template"], cfg, root)
+    md_tpl = make_abspath(cfg["jinja_template"], cfg, root)
 
     # # if os.path.isfile(cfg["md_template"]):
     # #     md_tpl = cfg["md_template"]
@@ -200,7 +244,7 @@ def load_template(cfg):
     #     md_tpl = os.path.join(, cfg["md_template"])
     if not os.path.isfile(md_tpl):
         print(cfg)
-        raise Exception(f"md_template file not found: {md_tpl}")
+        raise Exception(f"jinja_template file not found: {md_tpl}")
     
     try:
         if is_url(md_tpl):            
@@ -212,7 +256,7 @@ def load_template(cfg):
                 md_tpl_contents = f.read()
         t = Template(md_tpl_contents)
     except TypeError:
-        _LOGGER.error(f"Unable to open md_template. Path:{md_tpl}")
+        _LOGGER.error(f"Unable to open jinja_template. Path:{md_tpl}")
     return t
 
 
@@ -324,14 +368,21 @@ class MarkdownMelder(object):
 
     def meld_inputs(self, target):
         data_copy = deepcopy(target.data)
-        data_copy["yaml"] = {}
-        data_copy["raw"] = {}
-        data_copy = populate_data_md_globs(target.target_meta, data_copy)
-        data_copy = populate_yaml_data(target.target_meta, data_copy)
-        data_copy = populate_yaml_keyed(target.target_meta, data_copy)
-        data_copy = populate_md_data(target.target_meta, data_copy)
-        if "data_variables" in target.target_meta:
-            data_copy.update(target.target_meta["data_variables"])
+
+        if not "version" in data_copy:
+            data_copy["yaml"] = {}
+            data_copy["raw"] = {}
+            data_copy = populate_data_md_globs(target.target_meta, data_copy)
+            data_copy = populate_yaml_data(target.target_meta, data_copy)
+            data_copy = populate_yaml_keyed(target.target_meta, data_copy)
+            data_copy = populate_md_data(target.target_meta, data_copy)
+            if "data_variables" in target.target_meta:
+                data_copy.update(target.target_meta["data_variables"])
+        elif data_copy["version"] == 2:
+            print("V2")
+            processed_data_block = process_data_block(target.target_meta["data"], data_copy)
+            print("processed_data_block", processed_data_block)
+            data_copy.update(processed_data_block)
 
         return data_copy
 
@@ -340,11 +391,16 @@ class MarkdownMelder(object):
         if "data" not in melded_input:
             melded_input["data"] = {}
         if "md_template" in target.target_meta:
+            _LOGGER.error("Please update your config! 'md_template' was renamed to 'jinja_template'.")
+            target.target_meta['jinja_template'] = target.target_meta['md_template']
+
+        if "jinja_template" in target.target_meta:
+            print(target.target_meta)
             tpl = load_template(target.target_meta)
         else:
-            # cmd_data["md_template"] = None
+            # cmd_data["jinja_template"] = None
             tpl = Template(tpl_generic)
-            _LOGGER.error("No md_template provided. Using generic markmeld template.")
+            _LOGGER.error("No jinja_template provided. Using generic markmeld jinja_template.")
         if double:
             return Template(tpl.render(melded_input)).render(melded_input)  # two times
         else:

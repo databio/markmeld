@@ -1,0 +1,42 @@
+version: 2
+output_file: "{today}_demo_output.pdf"
+targets:
+  test_process_md:
+    jinja_template: jinja_template.jinja
+    recursive_render: false
+    data:
+      md:
+        some_text_data: some_text.md
+        file2: md_files/file3.md
+      md_globs:
+        - "md_files/*.md"
+  test_process_yaml:
+    jinja_template: jinja_template.jinja
+    recursive_render: false
+    data:
+      md:
+        some_text_data: some_text.md
+        file2: md_files/file3.md
+      md_globs:
+        - "md_files/*.md"
+      yaml:
+        key1: file1.yaml
+        key2: file2.yaml
+      yaml_globs:
+        - "files/*.yaml"
+  test_data_variables:
+    jinja_template: jinja_template.jinja
+    recursive_render: false
+    data:
+      md:
+        some_text_data: some_text.md
+        file2: md_files/file3.md
+      md_globs:
+        - "md_files/*.md"
+      yaml:
+        key1: file1.yaml
+        key2: file2.yaml
+      yaml_globs:
+        - "files/*.yaml"
+      variables:
+        x: 5

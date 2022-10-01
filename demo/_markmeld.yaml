@@ -1,6 +1,6 @@
 targets:
   default:
-    md_template: md_template.jinja
+    jinja_template: md_template.jinja
     recursive_render: false
 output_file: "{today}_demo_output.pdf"
 data_yaml:

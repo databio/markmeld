@@ -2,11 +2,17 @@ print("Run test")
 
 import markmeld
 import os
+import pytest
 
 from datetime import date
 
 cfg = {"test": True}
 today = date.today().strftime("%Y-%m-%d")
+
+# We want our logger to print verbosely during testing
+N_LOGGING_FMT = "%(filename)12.12s:%(funcName)16.16s:%(lineno)4.4d |%(levelname)5.5s| %(message)s "
+import logmuse
+_LOGGER = logmuse.init_logger(name="markmeld", level="DEBUG", datefmt="%H:%M:%S", fmt=N_LOGGING_FMT)
 
 
 def compare_to_file(file, string_to_compare):
@@ -17,7 +23,8 @@ def compare_to_file(file, string_to_compare):
 
 def test_cli():
     from markmeld.cli import main
-    main(test_args={"config":"tests/_markmeld.yaml"})
+    with pytest.raises(SystemExit):
+    	main(test_args={"config":"tests/_markmeld.yaml"})
 
 def test_MarkdownMelder_demo():
     cfg = markmeld.load_config_file("demo/_markmeld.yaml")
@@ -31,7 +38,6 @@ def test_MarkdownMelder_demo():
     print(f"res:", res)
 
     # os.remove()
-
 
 def test_loop():
     cfg = markmeld.load_config_file("demo_loop/_markmeld.yaml")
@@ -61,3 +67,10 @@ def test_factory():
     res = x.build_target("target1", print_only=True)
     # print(f"res:", res)
     assert "Target1" in str(res.melded_output)
+
+
+def test_v2():
+    cfg = markmeld.load_config_file("tests/_markmeld2.yaml")
+    x = markmeld.MarkdownMelder(cfg)
+    # print(x.cfg)
+    res = x.build_target("test_process_md", print_only=True)
