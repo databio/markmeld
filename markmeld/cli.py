@@ -11,6 +11,7 @@ from .melder import MarkdownMelder
 from .utilities import load_config_file
 from ._version import __version__
 
+
 def build_argparser():
     """
     Builds argument parser.
@@ -66,7 +67,6 @@ def build_argparser():
     return parser
 
 
-
 def main(test_args=None):
     """
     Main command-line interface function
@@ -87,7 +87,8 @@ def main(test_args=None):
             raise ConfigError(msg)
 
     cfg = load_config_file(args.config, args.autocomplete)
-
+    if not args.target: 
+        args.list = True
     if args.list:
         if "targets" not in cfg:
             raise TargetError(f"No targets specified in config.")
@@ -102,22 +103,19 @@ def main(test_args=None):
             sys.stdout.write(t + " ")
         sys.exit(1)
 
-    # Set up cmd_data object (it's variables for the command population)
-    # cmd_data = populate_cmd_data(cfg, args.target, args.vars)
-
-    _LOGGER.debug("Melding...")
-
+    _LOGGER.debug("Melding...")  # Meld it!
     mm = MarkdownMelder(cfg)
-
-    # Meld it!
     built_target = mm.build_target(args.target, print_only=args.print)
-    # returncode = mm.meld_output(data, cmd_data, cfg, print_only=args.print)
+    
     # Open the file
 
-    # if returncode == 0 and cmd_data["output_file"] and not "stopopen" in cmd_data:
     output_file = built_target.target_meta["output_file"]
-
-    if built_target.returncode == 0 and output_file and not "stopopen" in built_target.target_meta:
+    if (
+        built_target.returncode == 0
+        and output_file
+        and not "stopopen" in built_target.target_meta
+        and not args.print
+    ):
         cmd_open = ["xdg-open", output_file]
         _LOGGER.info(" ".join(cmd_open))
         subprocess.call(cmd_open)
