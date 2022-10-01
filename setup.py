@@ -43,7 +43,7 @@ setup(
     license="BSD2",
     entry_points={
         "console_scripts": [
-            "mm = markmeld.markmeld:main",
+            "mm = markmeld.cli:main",
         ],
     },
     keywords="bioinformatics, sequencing, ngs",

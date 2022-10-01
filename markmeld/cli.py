@@ -1,6 +1,14 @@
 import argparse
+import logmuse
+import os
+import subprocess
+import sys
+
 from ubiquerg import VersionInHelpParser
 
+from .exceptions import *
+from .melder import MarkdownMelder
+from .utilities import load_config_file
 from ._version import __version__
 
 def build_argparser():
@@ -56,3 +64,64 @@ def build_argparser():
     )
 
     return parser
+
+
+
+def main(test_args=None):
+    """
+    Main command-line interface function
+    """
+    parser = logmuse.add_logging_options(build_argparser())
+    args, _ = parser.parse_known_args()
+    if test_args:
+        args.__dict__.update(test_args)
+    global _LOGGER
+    _LOGGER = logmuse.logger_via_cli(args, make_root=True)
+
+    if not args.config:
+        if os.path.exists("_markmeld.yaml"):
+            args.config = "_markmeld.yaml"
+        else:
+            msg = "You must provide config file or be in a dir with _markmeld.yaml."
+            _LOGGER.error(msg)
+            raise ConfigError(msg)
+
+    cfg = load_config_file(args.config, args.autocomplete)
+
+    if args.list:
+        if "targets" not in cfg:
+            raise TargetError(f"No targets specified in config.")
+        tarlist = [x for x, k in cfg["targets"].items()]
+        _LOGGER.error(f"Targets: {tarlist}")
+        sys.exit(1)
+
+    if args.autocomplete:
+        if "targets" not in cfg:
+            raise TargetError(f"No targets specified in config.")
+        for t, k in cfg["targets"].items():
+            sys.stdout.write(t + " ")
+        sys.exit(1)
+
+    # Set up cmd_data object (it's variables for the command population)
+    # cmd_data = populate_cmd_data(cfg, args.target, args.vars)
+
+    _LOGGER.debug("Melding...")
+
+    mm = MarkdownMelder(cfg)
+
+    # Meld it!
+    built_target = mm.build_target(args.target, print_only=args.print)
+    # returncode = mm.meld_output(data, cmd_data, cfg, print_only=args.print)
+    # Open the file
+
+    # if returncode == 0 and cmd_data["output_file"] and not "stopopen" in cmd_data:
+    output_file = built_target.target_meta["output_file"]
+
+    if built_target.returncode == 0 and output_file and not "stopopen" in built_target.target_meta:
+        cmd_open = ["xdg-open", output_file]
+        _LOGGER.info(" ".join(cmd_open))
+        subprocess.call(cmd_open)
+    else:
+        _LOGGER.info(f"Return code: {built_target.returncode}")
+
+    return

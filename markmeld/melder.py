@@ -2,16 +2,14 @@
 import datetime
 import frontmatter
 import jinja2
-import logmuse
 import os
 import re
-import subprocess
 import sys
 import time
 import yaml
 
 from copy import deepcopy
-from collections.abc import Mapping
+
 from datetime import date
 from jinja2 import Template
 from jinja2.filters import FILTERS, pass_environment
@@ -20,13 +18,11 @@ from logging import getLogger
 from ubiquerg import expandpath
 from ubiquerg import is_url
 
-
-from.cli import build_argparser
+from .const import PKG_NAME
 from .exceptions import *
-from .glob_factory import glob_factory
-from ._version import __version__
 
-PKG_NAME = "markmeld"
+from .utilities import format_command, recursive_get, run_cmd 
+from .utilities import *
 
 _LOGGER = getLogger(PKG_NAME)
 
@@ -59,7 +55,6 @@ def datetimeformat(environment, value, to_format="%Y-%m-%d", from_format="%Y-%m-
         _LOGGER.warning(VE)
         return value
 
-
 # Filter used by the nih_biosketch template to find references
 # in a given prose block. Used to add citations to NIH
 # "contributions" sections.
@@ -68,94 +63,17 @@ def extract_refs(environment, value):
     m = re.findall("@([a-zA-Z0-9_]+)", value)
     return m
 
+# Add custom date formatter filter
+FILTERS["date"] = datetimeformat
+# Add custom reference extraction filter
+FILTERS["extract_refs"] = extract_refs
+
+
 # m = extract_refs("abc; hello @test;me @second one; and finally @three")
 # m
 
-def deep_update(old, new):
-    """
-    Like built-in dict update, but recursive.
-    """
-    for k, v in new.items():
-        if isinstance(v, Mapping):
-            old[k] = deep_update(old.get(k, {}), v)
-        else:
-            old[k] = v
-    return old
 
 
-
-def load_config_file(filepath, autocomplete=True):
-    """
-    Loads a configuration file.
-
-    @param str filepath Path to configuration file to load
-    @return dict Loaded yaml data object.
-    """
-
-    try: 
-        with open(filepath, "r") as f:
-            cfg_data = f.read()
-        return load_config_data(cfg_data, os.path.abspath(filepath), autocomplete)
-    except Exception as e:
-        _LOGGER.error(f"Couldn't load config file: {filepath}")
-        _LOGGER.error(e)
-        return {}
-
-def load_plugins():
-    from pkg_resources import iter_entry_points
-
-    built_in_plugins = {"glob": glob_factory}
-
-    installed_plugins = {
-        ep.name: ep.load() for ep in iter_entry_points("markmeld.factories")
-    }
-    built_in_plugins.update(installed_plugins)
-    return built_in_plugins
-
-
-def load_config_data(cfg_data, filepath=None, autocomplete=True):
-    """
-    Recursive loader that parses a yaml string, and handles imports.
-    """
-
-
-    higher_cfg = yaml.load(cfg_data, Loader=yaml.SafeLoader)
-    higher_cfg["_cfg_file_path"] = filepath
-    lower_cfg = {}
-
-    # Add date to targets?
-    if "targets" in higher_cfg:
-        for tgt in higher_cfg["targets"]:
-            _LOGGER.debug(tgt, higher_cfg["targets"][tgt])
-            higher_cfg["targets"][tgt]["_filepath"] = filepath
-            
-    # Imports
-    if "imports" in higher_cfg:
-        _LOGGER.debug("Found imports")
-        for import_file in higher_cfg["imports"]:
-            if not autocomplete:
-                _LOGGER.error(f"Specified config file to import: {import_file}")
-            deep_update(lower_cfg, load_config_file(expandpath(import_file)))
-
-    deep_update(lower_cfg, higher_cfg)
-
-    # Target factories
-    if "target_factories" in lower_cfg:
-        plugins = load_plugins()
-        _LOGGER.debug(f"Available plugins: {plugins}")
-        for fac in lower_cfg["target_factories"]:
-            fac_name = list(fac.keys())[0]
-            fac_vals = list(fac.values())[0]
-            _LOGGER.debug(f"Processing target factory: {fac_name}")
-            # Look up function to call.
-            func = plugins[fac_name]
-            factory_targets = func(fac_vals, lower_cfg)
-            for k,v in factory_targets.items():
-                factory_targets[k]["_filepath"] = filepath
-            deep_update(lower_cfg, {"targets": factory_targets})
-
-    _LOGGER.debug("Lower cfg: " + str(lower_cfg))
-    return lower_cfg
 
 
 def populate_yaml_data(cfg, data):
@@ -260,13 +178,11 @@ def populate_data_md_globs(cfg, data):
     return data
 
 
-
 def make_abspath(relpath, cfg, root=None):
     if root:
         return os.path.join(root, relpath)
     return os.path.join(os.path.dirname(cfg["_cfg_file_path"]), relpath)
 
-    
 
 def load_template(cfg):
     if "md_template" not in cfg:
@@ -300,62 +216,18 @@ def load_template(cfg):
     return t
 
 
-
-
 class Target(object):
     """
     Holds 2 dicts: real data and metadata for a target
     """
     def __init__(self, data={}, target_name=None):
         self.data = data
+        self.data["now"] = date.today().strftime("%s")
         self.target_name = target_name
         self.target_meta = populate_cmd_data(self.data, target_name)
+        # I feel like this shouldn't be necessary...
+        self.target_meta["_filepath"] = self.data["_cfg_file_path"]
         _LOGGER.info(f"MM | Output file: {self.target_meta['output_file']}")
-
-
-# define some useful functions
-def recursive_get(dat, indices):
-    """
-    Indexes into a nested dict with a list of indexes.
-    """
-    for i in indices:
-        if i not in dat:
-            return None
-        dat = dat[i]
-    return dat
-
-def run_cmd(cmd, stdin=None, workdir=None):
-    """ Runs a command from a given workdir"""
-    _LOGGER.info(f"MM | Command: {cmd}; CWD: {workdir}")
-    if stdin:
-        # Call command (default: pandoc), passing the rendered template to stdin
-        p = subprocess.Popen(cmd, shell=True, stdin=subprocess.PIPE, cwd=os.path.dirname(workdir))
-        p.communicate(input=stdin)
-        return p.returncode
-    else:
-        p = subprocess.Popen(cmd, shell=True, cwd=os.path.dirname(workdir))
-        p.communicate()
-        return p.returncode
-
-    # In case I need to make it NOT use the shell in the future
-    # here's how:
-    # cmd_fmt2 = cmd_fmt.replace("\n", "").replace("\\","")
-    # cmd_ary = shlex.split(cmd_fmt2)
-    # _LOGGER.debug(cmd_ary)
-    # p = subprocess.Popen(cmd_fmt, shell=True, stdin=subprocess.PIPE)
-    # p.communicate(input=tpl.render(data).encode())
-
-
-
-
-def format_command(target):
-    cmd = target.target_meta["command"]
-    if "output_file" in target.target_meta:
-        target.target_meta["output_file"] = target.target_meta["output_file"].format(**target.target_meta)
-    else:
-        target.target_meta["output_file"] = None
-    cmd_fmt = cmd.format(**target.target_meta)
-    return cmd_fmt    
 
 
 class MarkdownMelder(object):
@@ -419,6 +291,7 @@ class MarkdownMelder(object):
                 # Recursive rendering allows your template to include variables
                 melded_output = self.render_template(melded_input, tgt, double=True).encode()
             tgt.melded_output = melded_output
+            print(tgt.target_meta)
             tgt.returncode = run_cmd(cmd_fmt, melded_output, tgt.target_meta["_filepath"])
 
         return tgt
@@ -463,6 +336,9 @@ class MarkdownMelder(object):
         return data_copy
 
     def render_template(self, melded_input, target, double=True):
+        # print(melded_input)
+        if "data" not in melded_input:
+            melded_input["data"] = {}
         if "md_template" in target.target_meta:
             tpl = load_template(target.target_meta)
         else:
@@ -474,151 +350,6 @@ class MarkdownMelder(object):
         else:
             return tpl.render(melded_input)
 
-
-
-    def meld_output(self, data, cmd_data, config=None, print_only=False, in_loop=False):
-        """
-        Melds input markdown and yaml through a jinja template to produce text output.
-        """
-        cfg = config if config else self.cfg
-        print("loop", loop)
-
-        def call_hook(cmd_data, data, tgt):
-            # if tgt in mm_targets:
-
-            #     cmd = mm_targets[tgt].format(**cmd_data)
-            #     return run_cmd(cmd)
-            # el
-
-            if tgt in cmd_data["targets"]:
-                return meld_output(data, populate_cmd_data(cfg, tgt), cfg, print_only)
-            else:
-                _LOGGER.warning(f"MM | No target called {tgt}.")
-                return False
-
-        if "md_template" in cmd_data:
-            tpl = load_template(cmd_data)
-        else:
-            cmd_data["md_template"] = None
-            tpl = Template(tpl_generic)
-            _LOGGER.error("No md_template provided. Using generic markmeld template.")
-
-        if "latex_template" not in cmd_data:
-            cmd_data["latex_template"] = None
-
-        # all the data goes into a big dict, with markdown data under a '.content' attribute
-        # for the file name
-        # use this to populate the template.
-
-
-        if "prebuild" in cmd_data:
-            # prebuild hooks
-            for tgt in cmd_data["prebuild"]:
-                _LOGGER.info(f"MM | Run prebuild hooks: {tgt}")
-                call_hook(cmd_data, data, tgt)
-
-        if not in_loop:
-            # If we're not looping, then these were already populated
-            # by the parent loop. We don't want to repopulate
-            data["yaml"] = {}
-            data["raw"] = {}
-            data = populate_data_md_globs(cmd_data, data)
-            data = populate_yaml_data(cmd_data, data)
-            data = populate_yaml_keyed(cmd_data, data)
-            data = populate_md_data(cmd_data, data)
-            # _LOGGER.info(data)
-            if "data_variables" in cmd_data:
-                data.update(cmd_data["data_variables"])
-
-            print(cmd_data)
-            _LOGGER.info(f"MM | Today's date: {cmd_data['today']}")
-            _LOGGER.info(f"MM | latex_template: {cmd_data['latex_template']}")
-            _LOGGER.info(f"MM | Output md_template: {cmd_data['md_template']}")
-
-        if "loop" in cmd_data and not in_loop:
-            loop_dat = recursive_get(data,cmd_data["loop"]["loop_data"].split("."))
-            n = len(loop_dat)
-            _LOGGER.info(f"Loop found: {n} elements.")
-            _LOGGER.debug(loop_dat)
-
-            return_codes = []
-            for i in loop_dat:
-                var = cmd_data["loop"]["assign_to"]
-                _LOGGER.info(f"{var}: {i}")
-                data.update({ var: i })
-                cmd_data.update({ var: i })
-                _LOGGER.debug(cmd_data)
-                return_codes.append(meld_output(data, deepcopy(cmd_data), cfg, print_only=args.print, in_loop=True))
-
-            _LOGGER.info(f"Return codes: {return_codes}")
-            cmd_data["stopopen"] = True
-            return max(return_codes)
-        else:
-            _LOGGER.debug("MM | No loop here.")
-
-        if "output_file" in cmd_data:
-            cmd_data["output_file"] = cmd_data["output_file"].format(**cmd_data)
-        else:
-            cmd_data["output_file"] = None
-
-        _LOGGER.info(f"MM | Output file: {cmd_data['output_file']}")
-
-        return data
-
-
-
-    def meld_to_command(self, data, cmd_data):
-        """
-        This function takes the melded output and runs the command on it.
-        """
-
-        def run_cmd(cmd, cwd=None):
-            _LOGGER.info(f"MM | Command: {cmd}; CWD: {cwd}")
-            p = subprocess.Popen(cmd, shell=True, cwd=os.path.dirname(cwd))
-            return p.communicate()
-
-        returncode = -1
-
-        if "type" in cmd_data and cmd_data["type"] == "raw":
-            # Raw = No subprocess stdin printing. (so, it doesn't render anything)
-            cmd = cmd_data["command"]
-            cmd_fmt = cmd.format(**cmd_data)
-            _LOGGER.info(cmd_fmt)        
-            run_cmd(cmd_fmt, cmd_data["_filepath"])  
-        elif print_only:
-            # return print(tpl.render(data))  # one time
-            return print(Template(tpl.render(data)).render(data))  # two times
-        elif cmd_data["command"]:
-            cmd = cmd_data["command"]
-            cmd_fmt = cmd.format(**cmd_data)
-            _LOGGER.info(cmd_fmt)
-            # Call command (pandoc), passing the rendered template to stdin
-            import shlex
-
-            _LOGGER.debug(cmd_fmt)
-            # In case I need to make it NOT use the shell in the future
-            # here's how:
-            # cmd_fmt2 = cmd_fmt.replace("\n", "").replace("\\","")
-            # cmd_ary = shlex.split(cmd_fmt2)
-            # _LOGGER.debug(cmd_ary)
-            p = subprocess.Popen(cmd_fmt, shell=True, stdin=subprocess.PIPE)
-            # p.communicate(input=tpl.render(data).encode())
-            if "recursive_render" in cmd_data and not cmd_data["recursive_render"]:
-                rendered_in = tpl.render(data).encode()
-            else:
-                # Recursive rendering allows your template to include variables
-                rendered_in = Template(tpl.render(data)).render(data).encode()
-            p.communicate(input=rendered_in)
-            returncode = p.returncode
-            # _LOGGER.info(rendered_in)
-
-        if "postbuild" in cmd_data:
-            # postbuild hooks
-            for tgt in cmd_data["postbuild"]:
-                _LOGGER.info(f"MM | Run postbuild hooks: {tgt}")
-                call_hook(cmd_data, data, tgt)
-
-        return returncode
 
 def populate_cmd_data(cfg, target=None, vardata=None):
     cmd_data = {}
@@ -654,78 +385,5 @@ def populate_cmd_data(cfg, target=None, vardata=None):
         # default command
         options = " ".join(options_array)
         cmd_data["command"] = f"pandoc {options}"
-
     return cmd_data
 
-
-def main():
-    parser = logmuse.add_logging_options(build_argparser())
-    args, _ = parser.parse_known_args()
-    global _LOGGER
-    _LOGGER = logmuse.logger_via_cli(args, make_root=True)
-
-    if not args.config:
-        if os.path.exists("_markmeld.yaml"):
-            args.config = "_markmeld.yaml"
-        else:
-            _LOGGER.error(
-                "You must provide config file or be in a dir with _markmeld.yaml."
-            )
-            sys.exit(1)
-
-    cfg = load_config_file(args.config, args.autocomplete)
-
-    if args.list:
-        if "targets" not in cfg:
-            raise TargetError(f"No targets specified in config.")
-        tarlist = [x for x, k in cfg["targets"].items()]
-        _LOGGER.error(f"Targets: {tarlist}")
-        sys.exit(1)
-
-    if args.autocomplete:
-        if "targets" not in cfg:
-            raise TargetError(f"No targets specified in config.")
-        for t, k in cfg["targets"].items():
-            sys.stdout.write(t + " ")
-        sys.exit(1)
-
-    _LOGGER.debug("Custom date formatting...")
-    # Add custom date formatter filter
-    FILTERS["date"] = datetimeformat
-
-    data = MMDict({"md": {}})
-    data["now"] = date.today().strftime("%s")
-
-    # Add custom reference extraction filter
-    FILTERS["extract_refs"] = extract_refs
-
-    # Set up cmd_data object (it's variables for the command population)
-    cmd_data = populate_cmd_data(cfg, args.target, args.vars)
-    _LOGGER.debug("Melding...")
-
-    mm = MarkdownMelder(cfg)
-
-    # Meld it!
-    built_target = mm.build_target(args.target, print_only=args.print)
-    # returncode = mm.meld_output(data, cmd_data, cfg, print_only=args.print)
-    # Open the file
-
-    # if returncode == 0 and cmd_data["output_file"] and not "stopopen" in cmd_data:
-    output_file = built_target.target_meta["output_file"]
-
-    if built_target.returncode == 0 and output_file and not "stopopen" in built_target.target_meta:
-        cmd_open = ["xdg-open", output_file]
-        _LOGGER.info(" ".join(cmd_open))
-        subprocess.call(cmd_open)
-    else:
-        _LOGGER.info(f"Return code: {built_target.returncode}")
-
-    return
-
-
-if __name__ == "__main__":
-    try:
-        sys.exit(main())
-    except KeyboardInterrupt:
-        print("Program canceled by user.")
-        sys.exit(1)
