@@ -24,7 +24,7 @@ def compare_to_file(file, string_to_compare):
 def test_cli():
     from markmeld.cli import main
     with pytest.raises(SystemExit):
-    	main(test_args={"config":"tests/_markmeld.yaml"})
+        main(test_args={"config":"tests/_markmeld.yaml"})
 
 def test_MarkdownMelder_demo():
     cfg = markmeld.load_config_file("demo/_markmeld.yaml")
@@ -71,6 +71,11 @@ def test_factory():
 
 def test_v2():
     cfg = markmeld.load_config_file("tests/_markmeld2.yaml")
-    x = markmeld.MarkdownMelder(cfg)
+    mm = markmeld.MarkdownMelder(cfg)
     # print(x.cfg)
-    res = x.build_target("test_process_md", print_only=True)
+    res = mm.build_target("test_process_md", print_only=True)
+
+    res = mm.build_target("test_process_yaml", print_only=True)
+    assert "22" in str(res.melded_output)
+    print(res.melded_output)
+

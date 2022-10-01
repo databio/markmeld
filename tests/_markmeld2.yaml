@@ -11,7 +11,7 @@ targets:
       md_globs:
         - "md_files/*.md"
   test_process_yaml:
-    jinja_template: jinja_template.jinja
+    jinja_template: show_variables.jinja
     recursive_render: false
     data:
       md:
@@ -21,9 +21,8 @@ targets:
         - "md_files/*.md"
       yaml:
         key1: file1.yaml
-        key2: file2.yaml
       yaml_globs:
-        - "files/*.yaml"
+        - "yaml_files/*.yaml"
   test_data_variables:
     jinja_template: jinja_template.jinja
     recursive_render: false

@@ -149,22 +149,50 @@ def populate_md_data(cfg, data):
     return data
 
 
+def resolve_globs(globs, cfg_path):
+    return_items = {}
+    for item in globs:
+        path = os.path.join(os.path.dirname(cfg_path), item)
+        _LOGGER.info(f"MM | Glob path: {path}")
+        files = glob.glob(path)
+        for file in files:
+            k = os.path.splitext(os.path.basename(file))[0]
+            _LOGGER.info(f"MM | [key:value] {k}:{file}")
+            return_items[k] = file
+    return return_items
+
 def process_data_block(data_block, cfg):
     _LOGGER.info(f"MM | Processing data block...")
-    data = {"md":{}}  # Initialize return value
+    data = {"md":{}, "yaml":{}, "raw":{}}  # Initialize return value
     md_files = {}
+    yaml_files = {}
     if "md_globs" in data_block:
         _LOGGER.info(f"MM | Populating md data globs...")
-        for folder in data_block["md_globs"]:
-            path = make_abspath(folder, cfg)
-            files = glob.glob(path)
-            _LOGGER.info(f"MM | Glob path: {path}")
-            for file in files:
-                k = os.path.splitext(os.path.basename(file))[0]
-                _LOGGER.info(f"MM | [key:value] {k}:{file}")
-                md_files[k] = file
+        md_files.update(resolve_globs(data_block["md_globs"], cfg["_cfg_file_path"]))
+    if "yaml_globs" in data_block:
+        _LOGGER.info(f"MM | Populating yaml data globs...")
+        yaml_files.update(resolve_globs(data_block["yaml_globs"], cfg["_cfg_file_path"]))
+
     if "md" in data_block:
         md_files.update(data_block["md"])
+
+    if "yaml" in data_block:
+        yaml_files.update(data_block["yaml"])
+
+    _LOGGER.info(f"MM | Populating keyed yaml data...")
+    for k,v in yaml_files.items():
+        _LOGGER.info(f"MM | --> {k}: {v}")
+        vabs = make_abspath(v, cfg)
+        with open(vabs, "r") as f:
+            yaml_dict = yaml.load(f, Loader=yaml.SafeLoader)
+            print(yaml_dict)
+            data[k] = yaml_dict
+            data["yaml"][k] = yaml_dict
+            data["raw"][k] = yaml.dump(yaml_dict)
+            # 2022-08-12 Original way, this doesn't work in the case that data[k] is a list 
+            # (if the yaml file is an array, not an object)
+            # So I changed it put the raw value under ["raw"][k] instead of [k]["raw"]
+            # data[k]["raw"] = yaml.dump(yaml_dict)
 
     for k, v in md_files.items():
         _LOGGER.info(f"MM | Processing md file {k}:{v}")
