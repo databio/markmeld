@@ -1,4 +1,4 @@
-import argparse
+
 import datetime
 import frontmatter
 import jinja2
@@ -16,11 +16,12 @@ from datetime import date
 from jinja2 import Template
 from jinja2.filters import FILTERS, pass_environment
 from logging import getLogger
-from ubiquerg import VersionInHelpParser
+
 from ubiquerg import expandpath
 from ubiquerg import is_url
 
 
+from.cli import build_argparser
 from .exceptions import *
 from .glob_factory import glob_factory
 from ._version import __version__
@@ -28,7 +29,6 @@ from ._version import __version__
 PKG_NAME = "markmeld"
 
 _LOGGER = getLogger(PKG_NAME)
-
 
 # Embed these in the package?
 mm_targets = {
@@ -68,64 +68,8 @@ def extract_refs(environment, value):
     m = re.findall("@([a-zA-Z0-9_]+)", value)
     return m
 
-
 # m = extract_refs("abc; hello @test;me @second one; and finally @three")
 # m
-
-def build_argparser():
-    """
-    Builds argument parser.
-
-    :return argparse.ArgumentParser
-    """
-
-    banner = "%(prog)s - markdown melder"
-    additional_description = "\nhttps://markmeld.databio.org"
-
-    parser = VersionInHelpParser(
-        prog="markmeld",
-        version=f"{__version__}",
-        description=banner,
-        epilog=additional_description,
-    )
-
-    parser.add_argument(
-        "-c",
-        "--config",
-        dest="config",
-        metavar="C",
-        help="Path to mm configuration file.",
-    )
-
-    # position 1
-    parser.add_argument(dest="target", metavar="T", help="Target", nargs="?")
-
-    parser.add_argument(
-        "-l", "--list", action="store_true", default=False, help="List targets"
-    )
-
-    parser.add_argument(
-        "--autocomplete", action="store_true", default=False, help=argparse.SUPPRESS
-    )
-
-    parser.add_argument(
-        "-p",
-        "--print",
-        action="store_true",
-        default=False,
-        help="Print template output instead of going to pandoc.",
-    )
-
-    parser.add_argument(
-        "-v",
-        "--vars",
-        nargs="+",
-        default=None,
-        help="Extra key=value variable pairs",
-    )
-
-    return parser
-
 
 def deep_update(old, new):
     """
