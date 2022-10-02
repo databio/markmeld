@@ -24,10 +24,10 @@ def compare_to_file(file, string_to_compare):
 def test_cli():
     from markmeld.cli import main
     with pytest.raises(SystemExit):
-        main(test_args={"config":"tests/_markmeld.yaml"})
+        main(test_args={"config":"tests/test_data/demo.yaml"})
 
 def test_MarkdownMelder_demo():
-    cfg = markmeld.load_config_file("demo/_markmeld.yaml")
+    cfg = markmeld.load_config_file("tests/test_data/demo.yaml")
     # cmd_data = markmeld.populate_cmd_data(cfg, "default", {})
     x = markmeld.MarkdownMelder(cfg)
 
@@ -35,9 +35,11 @@ def test_MarkdownMelder_demo():
     compare_to_file("demo/rendered.md", res.melded_output)
 
     res = x.build_target("default", print_only=False)
+    outfile = f"tests/test_data/{today}_demo_output.pdf"
+    assert os.path.isfile(outfile)
     print(f"res:", res)
+    os.remove(outfile)
 
-    # os.remove()
 
 def test_loop():
     cfg = markmeld.load_config_file("demo_loop/_markmeld.yaml")
@@ -70,7 +72,7 @@ def test_factory():
 
 
 def test_v2():
-    cfg = markmeld.load_config_file("tests/_markmeld2.yaml")
+    cfg = markmeld.load_config_file("tests/test_data/_markmeld2.yaml")
     mm = markmeld.MarkdownMelder(cfg)
     # print(x.cfg)
     res = mm.build_target("test_process_md", print_only=True)
@@ -85,4 +87,10 @@ def test_v2():
     print(res.melded_output)
     assert "6s0BoZEiiN" in str(res.melded_output)
 
+
+
+def test_null_jinja_template():
+    cfg = markmeld.load_config_file("tests/test_data/null_jinja_template.yaml")
+    mm = markmeld.MarkdownMelder(cfg)
+    res = mm.build_target("target_name", print_only=True)
 

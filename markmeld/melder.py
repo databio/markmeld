@@ -179,20 +179,23 @@ def process_data_block(data_block, cfg):
     if "yaml" in data_block:
         yaml_files.update(data_block["yaml"])
 
-    _LOGGER.info(f"MM | Populating keyed yaml data...")
+    _LOGGER.info(f"MM | Populating yaml...")
     for k,v in yaml_files.items():
         _LOGGER.info(f"MM | --> {k}: {v}")
         vabs = make_abspath(v, cfg)
-        with open(vabs, "r") as f:
-            yaml_dict = yaml.load(f, Loader=yaml.SafeLoader)
-            print(yaml_dict)
-            data[k] = yaml_dict
-            data["yaml"][k] = yaml_dict
-            data["raw"][k] = yaml.dump(yaml_dict)
-            # 2022-08-12 Original way, this doesn't work in the case that data[k] is a list 
-            # (if the yaml file is an array, not an object)
-            # So I changed it put the raw value under ["raw"][k] instead of [k]["raw"]
-            # data[k]["raw"] = yaml.dump(yaml_dict)
+        if not os.path.exists(vabs):
+        	_LOGGER.error(f"File not found: {vabs}")
+        else:
+	        with open(vabs, "r") as f:
+	            yaml_dict = yaml.load(f, Loader=yaml.SafeLoader)
+	            print(yaml_dict)
+	            data[k] = yaml_dict
+	            data["yaml"][k] = yaml_dict
+	            data["raw"][k] = yaml.dump(yaml_dict)
+	            # 2022-08-12 Original way, this doesn't work in the case that data[k] is a list 
+	            # (if the yaml file is an array, not an object)
+	            # So I changed it put the raw value under ["raw"][k] instead of [k]["raw"]
+	            # data[k]["raw"] = yaml.dump(yaml_dict)
 
     for k, v in md_files.items():
         _LOGGER.info(f"MM | Processing md file {k}:{v}")
@@ -260,7 +263,7 @@ def make_abspath(relpath, cfg, root=None):
 
 
 def load_template(cfg):
-    if "jinja_template" not in cfg:
+    if "jinja_template" not in cfg or not cfg["jinja_template"]:
         return None
 
     md_tpl = None
@@ -425,7 +428,7 @@ class MarkdownMelder(object):
             _LOGGER.error("Please update your config! 'md_template' was renamed to 'jinja_template'.")
             target.target_meta['jinja_template'] = target.target_meta['md_template']
 
-        if "jinja_template" in target.target_meta:
+        if "jinja_template" in target.target_meta and target.target_meta["jinja_template"]:
             print(target.target_meta)
             tpl = load_template(target.target_meta)
         else:

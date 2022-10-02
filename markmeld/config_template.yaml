@@ -1,0 +1,16 @@
+version: 2
+output_file: "{today}_output.pdf"
+data:
+  md:
+    md_key_1: some_text.md
+  md_globs:
+    - "md_files/*.md"
+  yaml:
+    yaml_key_1: file1.yaml
+  yaml_globs:
+    - "files/*.yaml"
+  variables:
+    x: "value"
+targets:
+  target_name:
+    jinja_template: null
