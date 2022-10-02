@@ -25,3 +25,33 @@ The configurable attributes are:
 Any other attributes will be made available to the build system, but not to the jinja templates.
 
 In the demo, the only target you can build is `default`. You can see the list of targets with `mm -l`. 
+
+
+## Version 2
+
+The markmeld config file has three main sections: `targets`, `data`, `imports`, and `build_vars`.
+
+### targets section
+
+The `targets` section defines each target.
+
+```
+targets:
+  target_name_1:
+  	jinja_template: relative/path/to/tpl.jinja
+    ...
+  target_name_2:
+    jinja_template: relative/path/to/tpl2.jinja
+    ...
+```
+
+Each target may then define:
+
+- `jinja_template`: path to the jinja template, relative to the config file where it is defined.
+- `jinja_import_relative`: Set to `true` to make the jinja template relative to the importing file, rather than defaults to `false`)
+
+## Special variables
+
+You'll automatically have access to:
+
+- `{today}` - Today's date in standard form (YYYY-MM-DD).

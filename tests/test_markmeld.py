@@ -74,8 +74,15 @@ def test_v2():
     mm = markmeld.MarkdownMelder(cfg)
     # print(x.cfg)
     res = mm.build_target("test_process_md", print_only=True)
+    # print(res.melded_output)
+    assert "GGnmmicHsG" in str(res.melded_output)
 
     res = mm.build_target("test_process_yaml", print_only=True)
-    assert "22" in str(res.melded_output)
     print(res.melded_output)
+    assert "rVEeqUQ1t5" in str(res.melded_output)
+
+    res = mm.build_target("test_data_variables", print_only=True)
+    print(res.melded_output)
+    assert "6s0BoZEiiN" in str(res.melded_output)
+
 

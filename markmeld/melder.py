@@ -220,6 +220,9 @@ def process_data_block(data_block, cfg):
         if len(p.metadata) > 0:
             data[k]["metadata_yaml"] = yaml.dump(p.metadata)
 
+    if "variables" in data_block:
+        data.update(data_block["variables"])
+
     return data
 
 

@@ -2,8 +2,7 @@ version: 2
 output_file: "{today}_demo_output.pdf"
 targets:
   test_process_md:
-    jinja_template: jinja_template.jinja
-    recursive_render: false
+    jinja_template: md_test.jinja
     data:
       md:
         some_text_data: some_text.md
@@ -11,8 +10,7 @@ targets:
       md_globs:
         - "md_files/*.md"
   test_process_yaml:
-    jinja_template: show_variables.jinja
-    recursive_render: false
+    jinja_template: yaml_test.jinja
     data:
       md:
         some_text_data: some_text.md
@@ -24,8 +22,7 @@ targets:
       yaml_globs:
         - "yaml_files/*.yaml"
   test_data_variables:
-    jinja_template: jinja_template.jinja
-    recursive_render: false
+    jinja_template: variables_test.jinja
     data:
       md:
         some_text_data: some_text.md
@@ -34,8 +31,7 @@ targets:
         - "md_files/*.md"
       yaml:
         key1: file1.yaml
-        key2: file2.yaml
       yaml_globs:
         - "files/*.yaml"
       variables:
-        x: 5
+        x: 6s0BoZEiiN
