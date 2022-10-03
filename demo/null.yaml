@@ -1,0 +1,9 @@
+targets:
+  default:
+    jinja_template: null
+    recursive_render: false
+output_file: "{today}_demo_output.pdf"
+data_yaml:
+  - some_data.yaml
+data_md:
+  some_text_data: some_text.md

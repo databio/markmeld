@@ -43,6 +43,11 @@ tpl_generic = """{% if data.metadata_yaml is defined %}---
 {{ data.content }}"""
 
 
+tpl_generic = """
+{{ data }}
+"""
+
+
 @pass_environment
 def datetimeformat(environment, value, to_format="%Y-%m-%d", from_format="%Y-%m-%d"):
     if from_format == "%s":
@@ -72,10 +77,6 @@ FILTERS["extract_refs"] = extract_refs
 
 # m = extract_refs("abc; hello @test;me @second one; and finally @three")
 # m
-
-
-
-
 
 def populate_yaml_data(cfg, data):
     # Load up yaml data
@@ -163,7 +164,7 @@ def resolve_globs(globs, cfg_path):
 
 def process_data_block(data_block, cfg):
     _LOGGER.info(f"MM | Processing data block...")
-    data = {"md":{}, "yaml":{}, "raw":{}}  # Initialize return value
+    data = {"md":{}, "md_raw": {}, "yaml":{}, "yaml_raw": {}}  # Initialize return value
     md_files = {}
     yaml_files = {}
     if "md_globs" in data_block:
@@ -172,30 +173,27 @@ def process_data_block(data_block, cfg):
     if "yaml_globs" in data_block:
         _LOGGER.info(f"MM | Populating yaml data globs...")
         yaml_files.update(resolve_globs(data_block["yaml_globs"], cfg["_cfg_file_path"]))
-
     if "md" in data_block:
         md_files.update(data_block["md"])
-
     if "yaml" in data_block:
         yaml_files.update(data_block["yaml"])
 
-    _LOGGER.info(f"MM | Populating yaml...")
     for k,v in yaml_files.items():
-        _LOGGER.info(f"MM | --> {k}: {v}")
+        _LOGGER.info(f"MM | Processing yaml file {k}: {v}")
         vabs = make_abspath(v, cfg)
         if not os.path.exists(vabs):
         	_LOGGER.error(f"File not found: {vabs}")
         else:
-	        with open(vabs, "r") as f:
-	            yaml_dict = yaml.load(f, Loader=yaml.SafeLoader)
-	            print(yaml_dict)
-	            data[k] = yaml_dict
-	            data["yaml"][k] = yaml_dict
-	            data["raw"][k] = yaml.dump(yaml_dict)
-	            # 2022-08-12 Original way, this doesn't work in the case that data[k] is a list 
-	            # (if the yaml file is an array, not an object)
-	            # So I changed it put the raw value under ["raw"][k] instead of [k]["raw"]
-	            # data[k]["raw"] = yaml.dump(yaml_dict)
+            with open(vabs, "r") as f:
+                yaml_dict = yaml.load(f, Loader=yaml.SafeLoader)
+                print(yaml_dict)
+                # data[k] = yaml_dict
+                data["yaml"][k] = yaml_dict
+                data["yaml_raw"][k] = yaml.dump(yaml_dict)
+                # 2022-08-12 Original way: data[k]["raw"] = yaml.dump(yaml_dict)
+                # But this doesn't work in the case that data[k] is a list 
+                # (if the yaml file is an array, not an object)
+                # So I changed it put the raw value under ["raw"][k] instead of [k]["raw"]
 
     for k, v in md_files.items():
         _LOGGER.info(f"MM | Processing md file {k}:{v}")
@@ -212,16 +210,19 @@ def process_data_block(data_block, cfg):
                 p = frontmatter.load(vabs)
             else:
                 _LOGGER.warning(f"Skipping file that does not exist: {vabs}")
-                data[k] = {}
-                data["md"][k] = {}
-                data[k]["all"] = ""
+                # data[k] = {}
+                data["md"][k] = {}  # Populate array with empty values
+                # data[k]["all"] = ""
+                data["md_all"][k] = {}
                 continue
-        data[k] = p.__dict__
         data["md"][k] = p.__dict__
-        data[k]["all"] = frontmatter.dumps(p)
+        data["md_all"]  = frontmatter.dumps(p)
+        # data["md_dict"][k] = p.__dict__
+        # data[k]["all"] = frontmatter.dumps(p)
         _LOGGER.debug(data[k])
         if len(p.metadata) > 0:
-            data[k]["metadata_yaml"] = yaml.dump(p.metadata)
+            # data[k]["metadata_yaml"] = yaml.dump(p.metadata)
+            data["md_metadata"] = yaml.dump(p.metadata)
 
     if "variables" in data_block:
         data.update(data_block["variables"])
