@@ -21,6 +21,13 @@ def compare_to_file(file, string_to_compare):
         assert file_contents == string_to_compare
 
 
+def test_output():
+    cfg = markmeld.load_config_file("demo/null.yaml")
+    # cmd_data = markmeld.populate_cmd_data(cfg, "default", {})
+    x = markmeld.MarkdownMelder(cfg)
+    res = x.build_target("default", print_only=True)
+    print(res.melded_output)
+
 def test_cli():
     from markmeld.cli import main
     with pytest.raises(SystemExit):
