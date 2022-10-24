@@ -278,7 +278,7 @@ def load_template(cfg):
     # else:
     #     md_tpl = os.path.join(, cfg["md_template"])
     if not os.path.isfile(md_tpl):
-        print(cfg)
+        _LOGGER.debug(cfg)
         raise Exception(f"jinja_template file not found: {md_tpl}")
     
     try:
@@ -370,7 +370,7 @@ class MarkdownMelder(object):
                 # Recursive rendering allows your template to include variables
                 melded_output = self.render_template(melded_input, tgt, double=True).encode()
             tgt.melded_output = melded_output
-            print(tgt.target_meta)
+            _LOGGER.debug(tgt.target_meta)
             tgt.returncode = run_cmd(cmd_fmt, melded_output, tgt.target_meta["_filepath"])
 
         return tgt
@@ -378,8 +378,8 @@ class MarkdownMelder(object):
     def build_target_in_loop(self, tgt, melded_input, print_only=False):
         #  Process each iteration of the loop
         loop_dat = recursive_get(melded_input,tgt.target_meta["loop"]["loop_data"].split("."))
-        print(loop_dat)
-        print(tgt.data)
+        _LOGGER.debug(loop_dat)
+        _LOGGER.debug(tgt.data)
         n = len(loop_dat)
         _LOGGER.info(f"Loop found: {n} elements.")
         _LOGGER.debug(loop_dat)
