@@ -4,6 +4,7 @@ import yaml
 
 from logging import getLogger
 from collections.abc import Mapping
+from ubiquerg import expandpath
 
 from .const import PKG_NAME
 
@@ -74,8 +75,7 @@ def load_config_file(filepath, autocomplete=True):
             cfg_data = f.read()
         return load_config_data(cfg_data, os.path.abspath(filepath), autocomplete)
     except Exception as e:
-        _LOGGER.error(f"Couldn't load config file: {filepath}")
-        _LOGGER.error(e)
+        _LOGGER.error(f"Couldn't load config file: {filepath} because: {e}")
         return {}
 
 
