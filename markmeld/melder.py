@@ -102,7 +102,7 @@ def populate_yaml_keyed(cfg, data):
         _LOGGER.info(f"MM | --> {k}: {v}")
         with open(v, "r") as f:
             yaml_dict = yaml.load(f, Loader=yaml.SafeLoader)
-            print(yaml_dict)
+            _LOGGER.debug(yaml_dict)
             data[k] = yaml_dict
             data["yaml"][k] = yaml_dict
             data["raw"][k] = yaml.dump(yaml_dict)
@@ -186,7 +186,7 @@ def process_data_block(data_block, cfg):
         else:
             with open(vabs, "r") as f:
                 yaml_dict = yaml.load(f, Loader=yaml.SafeLoader)
-                print(yaml_dict)
+                _LOGGER.debug(yaml_dict)
                 # data[k] = yaml_dict
                 data["yaml"][k] = yaml_dict
                 data["yaml_raw"][k] = yaml.dump(yaml_dict)
@@ -270,7 +270,7 @@ def load_template(cfg):
     md_tpl = None
     root = cfg["mm_templates"] if "mm_templates" in cfg else None
     md_tpl = make_abspath(cfg["jinja_template"], cfg, root)
-
+    _LOGGER.info(f"MM | jinja template: {md_tpl}")
     # # if os.path.isfile(cfg["md_template"]):
     # #     md_tpl = cfg["md_template"]
     # if "mm_templates" in cfg:
@@ -390,11 +390,11 @@ class MarkdownMelder(object):
             melded_input_copy = deepcopy(melded_input)
             tgt_copy = deepcopy(tgt)
             var = tgt_copy.target_meta["loop"]["assign_to"]
-            print(f"{var}: {loop_var_value}")
+            _LOGGER.info(f"{var}: {loop_var_value}")
             _LOGGER.info(f"{var}: {loop_var_value}")
             melded_input_copy.update({ var: loop_var_value })
             tgt_copy.target_meta.update({ var: loop_var_value })
-            print(tgt_copy.target_meta)
+            _LOGGER.debug(tgt_copy.target_meta)
             # _LOGGER.debug(cmd_data)
             rendered_in = self.render_template(melded_input_copy, tgt_copy, double=False).encode()
             return_target_objects[i] = self.run_command_for_target(tgt_copy, melded_input_copy, print_only)
@@ -415,9 +415,9 @@ class MarkdownMelder(object):
             if "data_variables" in target.target_meta:
                 data_copy.update(target.target_meta["data_variables"])
         elif data_copy["version"] == 2:
-            print("V2")
+            _LOGGER.info("Proccessing config version 2...")
             processed_data_block = process_data_block(target.target_meta["data"], data_copy)
-            print("processed_data_block", processed_data_block)
+            _LOGGER.debug("processed_data_block", processed_data_block)
             data_copy.update(processed_data_block)
 
         return data_copy
@@ -431,7 +431,6 @@ class MarkdownMelder(object):
             target.target_meta['jinja_template'] = target.target_meta['md_template']
 
         if "jinja_template" in target.target_meta and target.target_meta["jinja_template"]:
-            print(target.target_meta)
             tpl = load_template(target.target_meta)
         else:
             # cmd_data["jinja_template"] = None
