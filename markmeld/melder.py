@@ -407,6 +407,7 @@ class MarkdownMelder(object):
         if not "version" in data_copy:
             data_copy["yaml"] = {}
             data_copy["raw"] = {}
+            data_copy["md"] = {}
             data_copy = populate_data_md_globs(target.target_meta, data_copy)
             data_copy = populate_yaml_data(target.target_meta, data_copy)
             data_copy = populate_yaml_keyed(target.target_meta, data_copy)
