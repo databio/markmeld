@@ -108,6 +108,9 @@ def main(test_args=None):
     mm = MarkdownMelder(cfg)
     built_target = mm.build_target(args.target, print_only=args.print)
     
+
+    if args.print:
+        print(built_target.melded_output)
     # Open the file
     output_file = built_target.target_meta["output_file"]
     if (
