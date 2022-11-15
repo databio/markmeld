@@ -373,6 +373,7 @@ class Target(object):
         target_meta["_now"] = date.today().strftime("%s")
         target_meta["_today"] = date.today().strftime("%Y-%m-%d")
         target_meta["today"] = target_meta["_today"]  # TODO: Remove this
+        target_meta["now"] = target_meta["_now"]  # TODO: Remove this
 
         # Since a target has available to it all the variables in the _markemeld.yaml
         # config file, we start from there, then make a few changes:

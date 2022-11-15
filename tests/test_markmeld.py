@@ -78,7 +78,7 @@ def test_factory():
     assert "Target1" in str(res.melded_output)
 
 
-def test_v2():
+def test_v2_basic_function():
     cfg = markmeld.load_config_file("tests/test_data/_markmeld_v1.yaml")
     mm = markmeld.MarkdownMelder(cfg)
     # print(x.cfg)
@@ -101,6 +101,7 @@ def test_v2():
     res = mm.build_target("test_unkeyed_yaml", print_only=True)
     print(res.melded_output)
     assert "22" in str(res.melded_output)
+
 
 def test_root_data_propogates_to_target():
     cfg = markmeld.load_config_file("tests/test_data/_markmeld_v1.yaml")
