@@ -141,8 +141,11 @@ def populate_data_md(cfg, data):
                 data[k]["all"] = ""
                 continue
         data[k] = p.__dict__
+        del data[k]["handler"]
         data["md"][k] = p.__dict__
+        del data["md"][k]["handler"]
         data[k]["all"] = frontmatter.dumps(p)
+        del data[k]["all"]["handler"]
         _LOGGER.debug(data[k])
         if len(p.metadata) > 0:
             data[k]["metadata_yaml"] = yaml.dump(p.metadata)
@@ -168,7 +171,9 @@ def populate_data_md_globs(cfg, data):
             _LOGGER.info(f"MM | [key:value] {k}:{file}")
             p = frontmatter.load(file)
             data[k] = p.__dict__
+            del data[k]["handler"]
             data["md"][k] = p.__dict__
+            del data["md"][k]["handler"]
             data[k]["all"] = frontmatter.dumps(p)
             data[k]["path"] = file
             data[k]["ext"] = ext
@@ -243,6 +248,7 @@ def process_data_block(data_block, cfg):
                 data["_md_raw"][k] = {}
                 continue
         data[k] = p.__dict__
+        del data[k]["handler"]
         data["_md_raw"][k] = frontmatter.dumps(p)
         # data["md_dict"][k] = p.__dict__
         # data[k]["all"] = frontmatter.dumps(p)
@@ -320,12 +326,15 @@ class Target(object):
         # 1. Elevate the variables in the given target up one level.
         # 2. To simplify debugging and reduce memory, remove the 'targets' key
 
+        # _LOGGER.info(list(data["targets"].keys()))
+        _LOGGER.debug(f"MM | Creating Target object for target: {target_name}")
+
         if target_name:
             if "targets" not in data:
                 _LOGGER.error(f"No targets specified in config.")
                 raise TargetError(f"No targets specified in config.")
-            if target_name not in data["targets"]:
-                _LOGGER.error(f"target {target} not found")
+            if target_name not in list(data["targets"].keys()):
+                _LOGGER.error(f"target {target_name} not found")
                 raise TargetError(f"Target {target_name} not found")
             target_meta.update(data["targets"][target_name])
             _LOGGER.debug(f'Config for this target: {data["targets"][target_name]}')
@@ -353,8 +362,9 @@ class Target(object):
 
         _LOGGER.debug(f"target_meta: {target_meta}")
         self.target_meta = target_meta
-        _LOGGER.info(f"MM | CFG file path: {self.target_meta['_cfg_file_path']}")
-        _LOGGER.info(f"MM | Output file: {self.target_meta['output_file']}")
+        _LOGGER.debug(f"MM | Config file path: {self.target_meta['_cfg_file_path']}")
+        if "output_file" in self.target_meta:
+            _LOGGER.info(f"MM | Output file: {self.target_meta['output_file']}")
 
 
 class MarkdownMelder(object):
@@ -380,10 +390,11 @@ class MarkdownMelder(object):
 
         # First, run any pre-builds
         if "prebuild" in tgt.target_meta:
+            _LOGGER.info(f"MM | Run prebuilds for target: {tgt.target_name}")
             for pretgt in tgt.target_meta["prebuild"]:
-                _LOGGER.info(f"MM | Run prebuild hooks: {tgt}: {pretgt}")
+                _LOGGER.info(f"MM | Prebuild target: {pretgt}")
                 if pretgt in self.cfg["targets"]:
-                    self.build_target(self.cfg, pretgt)
+                    self.build_target(pretgt)
                 else:
                     _LOGGER.warning(f"MM | No target called {pretgt}, requested prebuild by target {tgt}.")
                     return False
@@ -473,7 +484,7 @@ class MarkdownMelder(object):
         k = list(data_copy.keys())
         _LOGGER.info(f"MM | Available keys: {k}")
         _LOGGER.info(f"MM | Available keys [_md]: {list(data_copy['md'].keys())}")
-        _LOGGER.info(f"MM | Available keys [_md]: {list(data_copy['yaml'].keys())}")
+        _LOGGER.info(f"MM | Available keys [_yaml]: {list(data_copy['yaml'].keys())}")
         return data_copy
 
     def render_template(self, melded_input, target, double=True):

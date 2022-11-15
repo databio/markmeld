@@ -52,7 +52,7 @@ def format_command(target):
     from the target metadata
     """
     cmd = target.target_meta["command"]
-    if "output_file" in target.target_meta:
+    if "output_file" in target.target_meta and target.target_meta["output_file"]:
         target.target_meta["output_file"] = target.target_meta["output_file"].format(
             **target.target_meta
         )
