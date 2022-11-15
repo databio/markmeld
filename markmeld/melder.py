@@ -25,6 +25,12 @@ from .exceptions import *
 from .utilities import format_command, recursive_get, run_cmd 
 from .utilities import *
 
+MD_FILES_KEY = "md_files"
+MD_GLOBS_KEY = "md_globs"
+YAML_FILES_KEY = "yaml_files"
+YAML_GLOBS_KEY = "yaml_globs"
+YAML_GLOBS_UNKEYED_KEY = "yaml_globs_unkeyed"
+
 _LOGGER = getLogger(PKG_NAME)
 
 # Embed these in the package?
@@ -192,21 +198,33 @@ def resolve_globs(globs, cfg_path):
             return_items[k] = file
     return return_items
 
+
 def process_data_block(data_block, cfg):
     _LOGGER.info(f"MM | Processing data block...")
-    data = {"md":{}, "_md_raw": {}, "yaml":{}, "_yaml_raw": {}, "_frontmatter": {}}  # Initialize return value
+    data = {"_raw": {}}  # Initialize return value
+    frontmatter_temp = {}
+    local_frontmatter_temp = {}
+    vars_temp = {}
+
     md_files = {}
     yaml_files = {}
-    if "md_globs" in data_block:
+    unkeyed_yaml_files = []
+
+    if MD_GLOBS_KEY in data_block:
         _LOGGER.info(f"MM | Populating md data globs...")
-        md_files.update(resolve_globs(data_block["md_globs"], cfg["_cfg_file_path"]))
-    if "yaml_globs" in data_block:
+        md_files.update(resolve_globs(data_block[MD_GLOBS_KEY], cfg["_cfg_file_path"]))
+    if YAML_GLOBS_KEY in data_block:
         _LOGGER.info(f"MM | Populating yaml data globs...")
-        yaml_files.update(resolve_globs(data_block["yaml_globs"], cfg["_cfg_file_path"]))
-    if "md" in data_block:
-        md_files.update(data_block["md"])
-    if "yaml" in data_block:
-        yaml_files.update(data_block["yaml"])
+        yaml_files.update(resolve_globs(data_block[YAML_GLOBS_KEY], cfg["_cfg_file_path"]))
+    if YAML_GLOBS_UNKEYED_KEY in data_block:
+        _LOGGER.info(f"MM | Populating unkeyed yaml globs...")
+        tmp_files = resolve_globs(data_block[YAML_GLOBS_UNKEYED_KEY], cfg["_cfg_file_path"])
+        yaml_files.update(tmp_files)
+        unkeyed_yaml_files = tmp_files
+    if MD_FILES_KEY in data_block:
+        md_files.update(data_block[MD_FILES_KEY])
+    if YAML_FILES_KEY in data_block:
+        yaml_files.update(data_block[YAML_FILES_KEY])
 
     for k,v in yaml_files.items():
         _LOGGER.info(f"MM | Processing yaml file {k}: {v}")
@@ -218,12 +236,14 @@ def process_data_block(data_block, cfg):
                 yaml_dict = yaml.load(f, Loader=yaml.SafeLoader)
                 _LOGGER.debug(yaml_dict)
                 # data[k] = yaml_dict
-                data[k] = yaml_dict
-                data["_yaml_raw"][k] = yaml.dump(yaml_dict)
-                # 2022-08-12 Original way: data[k]["raw"] = yaml.dump(yaml_dict)
-                # But this doesn't work in the case that data[k] is a list 
-                # (if the yaml file is an array, not an object)
-                # So I changed it put the raw value under ["raw"][k] instead of [k]["raw"]
+                if k in unkeyed_yaml_files:
+                    data.update(yaml_dict)
+                else:
+                    data[k] = yaml_dict
+                data["_raw"][k] = yaml.dump(yaml_dict)
+                vars_temp.update(yaml_dict)
+                if k[:11] == "frontmatter":
+                    frontmatter_temp.update(yaml_dict)
 
     for k, v in md_files.items():
         _LOGGER.info(f"MM | Processing md file {k}:{v}")
@@ -240,24 +260,56 @@ def process_data_block(data_block, cfg):
                 p = frontmatter.load(vabs)
             else:
                 _LOGGER.warning(f"Skipping file that does not exist: {vabs}")
-                # data[k] = {}
-                data["md"][k] = {}  # Populate array with empty values
-                # data[k]["all"] = ""
+                data[k] = ""  # Populate with empty values
                 data["_md_raw"][k] = {}
                 continue
-        data[k] = p.__dict__
-        del data[k]["handler"]
-        data["_md_raw"][k] = frontmatter.dumps(p)
+        data[k] = p.content
+        frontmatter_temp.update(p.metadata)
+        local_frontmatter_temp[k] = p.metadata
+        data["_raw"][k] = frontmatter.dumps(p)
         # data["md_dict"][k] = p.__dict__
         # data[k]["all"] = frontmatter.dumps(p)
         # _LOGGER.debug(data["md"][k])
         if len(p.metadata) > 0:
             # data[k]["metadata_yaml"] = yaml.dump(p.metadata)
-            data["_frontmatter_raw"] = yaml.dump(p.metadata)
-            data["_frontmatter"].update(p.metadata)
+            vars_temp.update(p.metadata)
+            frontmatter_temp.update(p.metadata)
 
     if "variables" in data_block:
         data.update(data_block["variables"])
+        vars_temp.update(data_block["variables"])
+        for k, v in data_block["variables"].items():
+            if k[:11] == "frontmatter":
+                frontmatter_temp.update({k[12:]: v})
+
+    # vars_raw = yaml.dump(vars_temp)
+    frontmatter_raw = yaml.dump(frontmatter_temp)
+
+
+    # Global vars behaves exactly like global frontmatter, except:
+    # 1. It's all variables, not just those marked with frontmatter_*.
+    # It's like what's in a main data array, except it includes metadata,
+    # and excludes markdown content... Is that useful?
+    data["_global_vars"] = vars_temp
+
+    # Integrated, global frontmatter -- combines all frontmatter from .md files,
+    # Plus any yaml data indexed with frontmatter_*,
+    # Plus any variables indexed with frontmatter_* -- in that priority order.
+    data["_global_frontmatter"] = {
+        "raw": frontmatter_raw,
+        "fenced": f"---\n{frontmatter_raw}---\n",
+        "dict": frontmatter_temp,
+    }
+
+    # Local frontmatter (per markdown file)
+    data["_local_frontmatter"] = {}
+    for k,v in local_frontmatter_temp.items():
+        frontmatter_raw = yaml.dump(v)
+        data["_local_frontmatter"][k] = {
+            "raw": frontmatter_raw,
+            "fenced": f"---\n{frontmatter_raw}---\n",
+            "dict": v,
+        }
 
     return data
 
@@ -476,13 +528,18 @@ class MarkdownMelder(object):
                 data_copy.update(target.target_meta["data_variables"])
         elif target.data["version"] == 2:
             _LOGGER.info("Processing config version 2...")
-            processed_data_block = process_data_block(target.target_meta["data"], data_copy)
-            _LOGGER.debug("processed_data_block", processed_data_block)
-            data_copy.update(processed_data_block)
+            if "data" in target.target_meta:
+                processed_data_block = process_data_block(target.target_meta["data"], data_copy)
+                _LOGGER.debug("processed_data_block", processed_data_block)
+                data_copy.update(processed_data_block)
+            else:
+                processed_data_block = None
         k = list(data_copy.keys())
         _LOGGER.info(f"MM | Available keys: {k}")
-        _LOGGER.info(f"MM | Available keys [_md]: {list(data_copy['md'].keys())}")
-        _LOGGER.info(f"MM | Available keys [_yaml]: {list(data_copy['yaml'].keys())}")
+        if "md" in data_copy:
+            _LOGGER.info(f"MM | Available keys [_md]: {list(data_copy['md'].keys())}")
+        if "yaml" in data_copy:
+            _LOGGER.info(f"MM | Available keys [_yaml]: {list(data_copy['yaml'].keys())}")
         return data_copy
 
     def render_template(self, melded_input, target, double=True):

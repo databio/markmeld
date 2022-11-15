@@ -31,10 +31,10 @@ def test_output():
 def test_cli():
     from markmeld.cli import main
     with pytest.raises(SystemExit):
-        main(test_args={"config":"tests/test_data/demo.yaml"})
+        main(test_args={"config":"tests/test_data/_markmeld_v0.yaml"})
 
 def test_MarkdownMelder_demo():
-    cfg = markmeld.load_config_file("tests/test_data/demo.yaml")
+    cfg = markmeld.load_config_file("tests/test_data/_markmeld_v0.yaml")
     # cmd_data = markmeld.populate_cmd_data(cfg, "default", {})
     x = markmeld.MarkdownMelder(cfg)
 
@@ -79,7 +79,7 @@ def test_factory():
 
 
 def test_v2():
-    cfg = markmeld.load_config_file("tests/test_data/_markmeld2.yaml")
+    cfg = markmeld.load_config_file("tests/test_data/_markmeld_v1.yaml")
     mm = markmeld.MarkdownMelder(cfg)
     # print(x.cfg)
     res = mm.build_target("test_process_md", print_only=True)
@@ -98,11 +98,15 @@ def test_v2():
     print(res.melded_output)
     assert "text_property_value" in str(res.melded_output)
 
+    res = mm.build_target("test_unkeyed_yaml", print_only=True)
+    print(res.melded_output)
+    assert "22" in str(res.melded_output)
+
 
 
 
 def test_null_jinja_template():
-    cfg = markmeld.load_config_file("tests/test_data/null_jinja_template.yaml")
+    cfg = markmeld.load_config_file("tests/test_data/_markmeld_null_jinja_template.yaml")
     mm = markmeld.MarkdownMelder(cfg)
     res = mm.build_target("target_name", print_only=True)
 

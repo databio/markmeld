@@ -1,7 +1,7 @@
 version: 2
 output_file: "{_today}_output.pdf"
 data:
-  md:
+  md_files:
     md_key_1: some_text.md
 targets:
   target_name:
