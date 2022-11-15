@@ -1,3 +1,4 @@
+version: 1
 targets:
   default:
     jinja_template: templates/jinja_template.jinja

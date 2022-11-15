@@ -516,7 +516,7 @@ class MarkdownMelder(object):
     def meld_inputs(self, target):
         data_copy = deepcopy(target.target_meta)
 
-        if not "version" in target.data:
+        if not "version" in target.data or target.data["version"] < 2:
             data_copy["yaml"] = {}
             data_copy["raw"] = {}
             data_copy["md"] = {}
