@@ -102,7 +102,18 @@ def test_v2():
     print(res.melded_output)
     assert "22" in str(res.melded_output)
 
+def test_root_data_propogates_to_target():
+    cfg = markmeld.load_config_file("tests/test_data/_markmeld_v1.yaml")
+    mm = markmeld.MarkdownMelder(cfg)
 
+    res = mm.build_target("test_root_data_propogates_to_target", print_only=True)
+    print(res.melded_output)
+    assert "xs8Nd0D98" in str(res.melded_output)
+
+    res = mm.build_target("test_root_data_merges_into_target", print_only=True)
+    print(res.melded_output)
+    assert "xs8Nd0D98" in str(res.melded_output)  # From root data definition
+    assert "k9XFJOId0" in str(res.melded_output)  # From local target data definition
 
 
 def test_null_jinja_template():

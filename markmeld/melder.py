@@ -226,6 +226,9 @@ def process_data_block(data_block, cfg):
     if YAML_FILES_KEY in data_block:
         yaml_files.update(data_block[YAML_FILES_KEY])
 
+
+    print(data_block)
+
     for k,v in yaml_files.items():
         _LOGGER.info(f"MM | Processing yaml file {k}: {v}")
         vabs = make_abspath(v, cfg)
@@ -362,11 +365,11 @@ class Target(object):
     in both places. But really, I don't see a downside to just combining them.
     Therefore, I should merge these into one concept.
     """
-    def __init__(self, data={}, target_name=None, vardata=None):
-        self.data = data
+    def __init__(self, root_cfg={}, target_name=None, vardata=None):
+        self.root_cfg = root_cfg
         self.target_name = target_name
         target_meta = {}
-        target_meta.update(self.data)
+        target_meta.update(self.root_cfg)
         target_meta["_now"] = date.today().strftime("%s")
         target_meta["_today"] = date.today().strftime("%Y-%m-%d")
         target_meta["today"] = target_meta["_today"]  # TODO: Remove this
@@ -380,14 +383,14 @@ class Target(object):
         _LOGGER.debug(f"MM | Creating Target object for target: {target_name}")
 
         if target_name:
-            if "targets" not in data:
+            if "targets" not in root_cfg:
                 _LOGGER.error(f"No targets specified in config.")
                 raise TargetError(f"No targets specified in config.")
-            if target_name not in list(data["targets"].keys()):
+            if target_name not in list(root_cfg["targets"].keys()):
                 _LOGGER.error(f"target {target_name} not found")
                 raise TargetError(f"Target {target_name} not found")
-            target_meta.update(data["targets"][target_name])
-            _LOGGER.debug(f'Config for this target: {data["targets"][target_name]}')
+            target_meta = deep_update(target_meta, root_cfg["targets"][target_name])
+            _LOGGER.debug(f'Config for this target: {root_cfg["targets"][target_name]}')
 
         del target_meta["targets"]
         if "version" in target_meta:
@@ -460,7 +463,7 @@ class MarkdownMelder(object):
 
     def run_command_for_target(self, tgt, melded_input, print_only, vardump=False):
         cmd_fmt = format_command(tgt)
-        if "type" in tgt.data and tgt.data["type"] == "raw":
+        if "type" in tgt.root_cfg and tgt.root_cfg["type"] == "raw":
             # Raw = No subprocess stdin printing. (so, it doesn't render anything)
             cmd_fmt = format_command(tgt)
             tgt.melded_output = None
@@ -491,7 +494,7 @@ class MarkdownMelder(object):
         #  Process each iteration of the loop
         loop_dat = recursive_get(melded_input,tgt.target_meta["loop"]["loop_data"].split("."))
         _LOGGER.debug(loop_dat)
-        _LOGGER.debug(tgt.data)
+        _LOGGER.debug(tgt.root_cfg)
         n = len(loop_dat)
         _LOGGER.info(f"Loop found: {n} elements.")
         _LOGGER.debug(loop_dat)
@@ -514,9 +517,10 @@ class MarkdownMelder(object):
         return return_target_objects
 
     def meld_inputs(self, target):
-        data_copy = deepcopy(target.target_meta)
+        data_copy = deepcopy(target.root_cfg)
+        data_copy.update(target.target_meta)
 
-        if not "version" in target.data or target.data["version"] < 2:
+        if not "version" in target.root_cfg or target.root_cfg["version"] < 2:
             data_copy["yaml"] = {}
             data_copy["raw"] = {}
             data_copy["md"] = {}
@@ -526,7 +530,7 @@ class MarkdownMelder(object):
             data_copy = populate_data_md(target.target_meta, data_copy)
             if "data_variables" in target.target_meta:
                 data_copy.update(target.target_meta["data_variables"])
-        elif target.data["version"] == 2:
+        elif target.root_cfg["version"] == 2:
             _LOGGER.info("Processing config version 2...")
             if "data" in target.target_meta:
                 processed_data_block = process_data_block(target.target_meta["data"], data_copy)
@@ -536,10 +540,10 @@ class MarkdownMelder(object):
                 processed_data_block = None
         k = list(data_copy.keys())
         _LOGGER.info(f"MM | Available keys: {k}")
-        if "md" in data_copy:
-            _LOGGER.info(f"MM | Available keys [_md]: {list(data_copy['md'].keys())}")
-        if "yaml" in data_copy:
-            _LOGGER.info(f"MM | Available keys [_yaml]: {list(data_copy['yaml'].keys())}")
+        if MD_FILES_KEY in data_copy:
+            _LOGGER.info(f"MM | Available keys [{MD_FILES_KEY}]: {list(data_copy[MD_FILES_KEY].keys())}")
+        if YAML_FILES_KEY in data_copy:
+            _LOGGER.info(f"MM | Available keys [{YAML_FILES_KEY}]: {list(data_copy[YAML_FILES_KEY].keys())}")
         return data_copy
 
     def render_template(self, melded_input, target, double=True):
