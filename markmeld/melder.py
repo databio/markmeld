@@ -142,10 +142,8 @@ def populate_data_md(cfg, data):
                 continue
         data[k] = p.__dict__
         del data[k]["handler"]
-        data["md"][k] = p.__dict__
-        del data["md"][k]["handler"]
+        data["md"][k] = data[k]
         data[k]["all"] = frontmatter.dumps(p)
-        del data[k]["all"]["handler"]
         _LOGGER.debug(data[k])
         if len(p.metadata) > 0:
             data[k]["metadata_yaml"] = yaml.dump(p.metadata)
