@@ -1,14 +1,14 @@
 # Target factories
 
-Target factories^1 are functions that generate targets programatically. Without target factories, every target must be specified individually in your `_markmeld.yaml` config file. With target factories, you can programatically add targets however you want, such as from an external data source or a list of files in a directory. Target factories provide a very powerful way to produce a lot of targets with very little effort. 
+Target factories^1 are functions that generate targets programatically. Without target factories, every target must be specified individually in your `_markmeld.yaml` config file. With target factories, you can add multiple targets with a single definition. These targets are added programatically using a function call . For example, a target factory could build targets from an external data source, or a list of files in a directory. Target factories provide a powerful way to produce a lot of targets with very little effort. 
 
 ## Example use case
 
-Say I have a folder with a bunch of `.md` files and I'd like to build a PDF for each of them. I want to build each one independently, not all at once, so a [multi-output target](/multi_output_targets) is not the right answer -- I need a separate target for each file. I could add each target to the `_markmeld.yaml` file and that would work, but wouldn't it be nice if I could somehow just say, "I want every markdown file in this folder to be its own target", and then leave it at that? This way, I could add a new target to the project by just adding a new `.md` file to the folder -- no change would be required in `_markmeld.yaml`.
+Say I have a folder with a bunch of `.md` files and I'd like to build a separate PDF for each one. If I want a single target that builds all the PDFs at once, I could use a [multi-output target](/multi_output_targets). But if I want to build each one independently, I need a separate target for each file. I could add each target to the `_markmeld.yaml` file and that would work, but wouldn't it be nice if I could somehow just say, "I want every markdown file in this folder to be its own target", and then leave it at that? That's what target factories do. With a target factory, I could add a new target to the project by just adding a new `.md` file to the folder -- no change would be required in `_markmeld.yaml`.
 
 ## How to use target factories
 
-There are built-in target factories and custom target factories. You can use a built-in factory with no further requirement.
+There are built-in target factories and custom target factories. You can use built-in factories with no further prerequisites.
 
 ### 1. Built-in target factories
 
@@ -16,7 +16,7 @@ Right now there is 1 built-in factory, called the *glob factory*.
 
 #### Glob factory 
 
-The `glob` factory solves the above use case. You have a bunch of `.md` files and you want a target for each one. You can add it to your `_markmeld.yaml` config file like this:
+The `glob` factory solves the above use case. You have a bunch of `.md` files and you want a target for each one. You can invoke the glob factory in your `_markmeld.yaml` config file like this:
 
 ```
 target_factories:
