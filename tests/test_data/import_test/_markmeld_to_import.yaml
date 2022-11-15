@@ -1,0 +1,6 @@
+targets:
+  imported_target:
+    description: Updates the all_papers.yaml.
+    type: raw
+    command: |
+      ./dummy.sh
