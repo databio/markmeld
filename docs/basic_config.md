@@ -48,10 +48,15 @@ targets:
 Each target may then define:
 
 - `jinja_template`: path to the jinja template, relative to the config file where it is defined.
-- `jinja_import_relative`: Set to `true` to make the jinja template relative to the importing file, rather than defaults to `false`)
+- `jinja_import_relative`: Set to `true` to make the jinja template relative to the importing file, rather than the working directory. Defaults to `false`.
 
 ## Special variables
 
 You'll automatically have access to:
 
-- `{today}` - Today's date in standard form (YYYY-MM-DD).
+- `{_today}` - Today's date in standard form (YYYY-MM-DD).
+- `{_now}` - Current time in seconds since UNIX epoch.
+- `{_frontmatter}` - A nicely priority-updated flat version of the yaml frontmatter across all provided `.md` files. The rationale here is that pandoc chokes if you provide multiple of the same key, but if you're importing files, then you could accidently include the same information multiple times. This way, these will get populated within markmeld, instead of making you handle that somehow in the jinja template.
+- `_md`, `_yaml` -- these provide the keyed content you specified in your `_markmeld.yaml` config
+
+
