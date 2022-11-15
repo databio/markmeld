@@ -94,6 +94,11 @@ def test_v2():
     print(res.melded_output)
     assert "6s0BoZEiiN" in str(res.melded_output)
 
+    res = mm.build_target("test_merged_frontmatter", print_only=True)
+    print(res.melded_output)
+    assert "text_property_value" in str(res.melded_output)
+
+
 
 
 def test_null_jinja_template():

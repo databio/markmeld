@@ -57,6 +57,15 @@ def build_argparser():
     )
 
     parser.add_argument(
+        "-d",
+        "--dump",
+        action="store_true",
+        default=False,
+        help="Dump content object as passed to jinja2.",
+    )
+
+
+    parser.add_argument(
         "-v",
         "--vars",
         nargs="+",
@@ -106,10 +115,10 @@ def main(test_args=None):
 
     _LOGGER.debug("Melding...")  # Meld it!
     mm = MarkdownMelder(cfg)
-    built_target = mm.build_target(args.target, print_only=args.print)
+    built_target = mm.build_target(args.target, print_only=args.print, vardump=args.dump)
     
 
-    if args.print:
+    if args.print | args.dump:
         print(built_target.melded_output)
     # Open the file
     output_file = built_target.target_meta["output_file"]
@@ -118,6 +127,7 @@ def main(test_args=None):
         and output_file
         and not "stopopen" in built_target.target_meta
         and not args.print
+        and not args.dump
     ):
         cmd_open = ["xdg-open", output_file]
         _LOGGER.info(" ".join(cmd_open))

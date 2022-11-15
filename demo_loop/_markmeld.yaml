@@ -1,6 +1,6 @@
 targets:
   default:
-    output_file: "{today}_demo_output_{recipient}.pdf"
+    output_file: "{_today}_demo_output_{recipient}.pdf"
     loop:
       loop_data: recipients
       assign_to: recipient

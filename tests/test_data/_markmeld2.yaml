@@ -1,5 +1,5 @@
 version: 2
-output_file: "{today}_demo_output.pdf"
+output_file: "{_today}_demo_output.pdf"
 targets:
   test_process_md:
     jinja_template: md_test.jinja
@@ -23,6 +23,20 @@ targets:
         - "yaml_files/*.yaml"
   test_data_variables:
     jinja_template: variables_test.jinja
+    data:
+      md:
+        some_text_data: some_text.md
+        file2: md_files/file3.md
+      md_globs:
+        - "md_files/*.md"
+      yaml:
+        key1: file1.yaml
+      yaml_globs:
+        - "files/*.yaml"
+      variables:
+        x: 6s0BoZEiiN
+  test_merged_frontmatter:
+    jinja_template: templates/frontmatter_test.jinja
     data:
       md:
         some_text_data: some_text.md

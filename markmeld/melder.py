@@ -78,7 +78,7 @@ FILTERS["extract_refs"] = extract_refs
 # m = extract_refs("abc; hello @test;me @second one; and finally @three")
 # m
 
-def populate_yaml_data(cfg, data):
+def populate_data_yaml(cfg, data):
     # Load up yaml data
     if "data_yaml" not in cfg:
         return data
@@ -93,7 +93,7 @@ def populate_yaml_data(cfg, data):
     return data
 
 # For itemized yaml this time...
-def populate_yaml_keyed(cfg, data):
+def populate_data_yaml_keyed(cfg, data):
     # Load up yaml data
     if "data_yaml_keyed" not in cfg:
         return data
@@ -112,7 +112,7 @@ def populate_yaml_keyed(cfg, data):
             # data[k]["raw"] = yaml.dump(yaml_dict)
     return data
 
-def populate_md_data(cfg, data):
+def populate_data_md(cfg, data):
     # Load up markdown data
     if "data_md" not in cfg:
         return data
@@ -150,86 +150,6 @@ def populate_md_data(cfg, data):
     return data
 
 
-def resolve_globs(globs, cfg_path):
-    return_items = {}
-    for item in globs:
-        path = os.path.join(os.path.dirname(cfg_path), item)
-        _LOGGER.info(f"MM | Glob path: {path}")
-        files = glob.glob(path)
-        for file in files:
-            k = os.path.splitext(os.path.basename(file))[0]
-            _LOGGER.info(f"MM | [key:value] {k}:{file}")
-            return_items[k] = file
-    return return_items
-
-def process_data_block(data_block, cfg):
-    _LOGGER.info(f"MM | Processing data block...")
-    data = {"md":{}, "md_raw": {}, "yaml":{}, "yaml_raw": {}}  # Initialize return value
-    md_files = {}
-    yaml_files = {}
-    if "md_globs" in data_block:
-        _LOGGER.info(f"MM | Populating md data globs...")
-        md_files.update(resolve_globs(data_block["md_globs"], cfg["_cfg_file_path"]))
-    if "yaml_globs" in data_block:
-        _LOGGER.info(f"MM | Populating yaml data globs...")
-        yaml_files.update(resolve_globs(data_block["yaml_globs"], cfg["_cfg_file_path"]))
-    if "md" in data_block:
-        md_files.update(data_block["md"])
-    if "yaml" in data_block:
-        yaml_files.update(data_block["yaml"])
-
-    for k,v in yaml_files.items():
-        _LOGGER.info(f"MM | Processing yaml file {k}: {v}")
-        vabs = make_abspath(v, cfg)
-        if not os.path.exists(vabs):
-        	_LOGGER.error(f"File not found: {vabs}")
-        else:
-            with open(vabs, "r") as f:
-                yaml_dict = yaml.load(f, Loader=yaml.SafeLoader)
-                _LOGGER.debug(yaml_dict)
-                # data[k] = yaml_dict
-                data["yaml"][k] = yaml_dict
-                data["yaml_raw"][k] = yaml.dump(yaml_dict)
-                # 2022-08-12 Original way: data[k]["raw"] = yaml.dump(yaml_dict)
-                # But this doesn't work in the case that data[k] is a list 
-                # (if the yaml file is an array, not an object)
-                # So I changed it put the raw value under ["raw"][k] instead of [k]["raw"]
-
-    for k, v in md_files.items():
-        _LOGGER.info(f"MM | Processing md file {k}:{v}")
-        if not v:
-            data[k] = v
-            continue
-        if is_url(v):  # Do url stuff
-            import requests
-            response = requests.get(v)
-            p = frontmatter.loads(response.text)
-        else:
-            vabs = make_abspath(v, cfg)
-            if os.path.exists(vabs):
-                p = frontmatter.load(vabs)
-            else:
-                _LOGGER.warning(f"Skipping file that does not exist: {vabs}")
-                # data[k] = {}
-                data["md"][k] = {}  # Populate array with empty values
-                # data[k]["all"] = ""
-                data["md_all"][k] = {}
-                continue
-        data["md"][k] = p.__dict__
-        data["md_all"]  = frontmatter.dumps(p)
-        # data["md_dict"][k] = p.__dict__
-        # data[k]["all"] = frontmatter.dumps(p)
-        _LOGGER.debug(data[k])
-        if len(p.metadata) > 0:
-            # data[k]["metadata_yaml"] = yaml.dump(p.metadata)
-            data["md_metadata"] = yaml.dump(p.metadata)
-
-    if "variables" in data_block:
-        data.update(data_block["variables"])
-
-    return data
-
-
 def populate_data_md_globs(cfg, data):
     import glob
 
@@ -254,6 +174,87 @@ def populate_data_md_globs(cfg, data):
             data[k]["ext"] = ext
             if len(p.metadata) > 0:
                 data[k]["metadata_yaml"] = yaml.dump(p.metadata)
+    return data
+
+
+def resolve_globs(globs, cfg_path):
+    return_items = {}
+    for item in globs:
+        path = os.path.join(os.path.dirname(cfg_path), item)
+        _LOGGER.info(f"MM | Glob path: {path}")
+        files = glob.glob(path)
+        for file in files:
+            k = os.path.splitext(os.path.basename(file))[0]
+            _LOGGER.info(f"MM | [key:value] {k}:{file}")
+            return_items[k] = file
+    return return_items
+
+def process_data_block(data_block, cfg):
+    _LOGGER.info(f"MM | Processing data block...")
+    data = {"md":{}, "_md_raw": {}, "yaml":{}, "_yaml_raw": {}, "_frontmatter": {}}  # Initialize return value
+    md_files = {}
+    yaml_files = {}
+    if "md_globs" in data_block:
+        _LOGGER.info(f"MM | Populating md data globs...")
+        md_files.update(resolve_globs(data_block["md_globs"], cfg["_cfg_file_path"]))
+    if "yaml_globs" in data_block:
+        _LOGGER.info(f"MM | Populating yaml data globs...")
+        yaml_files.update(resolve_globs(data_block["yaml_globs"], cfg["_cfg_file_path"]))
+    if "md" in data_block:
+        md_files.update(data_block["md"])
+    if "yaml" in data_block:
+        yaml_files.update(data_block["yaml"])
+
+    for k,v in yaml_files.items():
+        _LOGGER.info(f"MM | Processing yaml file {k}: {v}")
+        vabs = make_abspath(v, cfg)
+        if not os.path.exists(vabs):
+        	_LOGGER.error(f"File not found: {vabs}")
+        else:
+            with open(vabs, "r") as f:
+                yaml_dict = yaml.load(f, Loader=yaml.SafeLoader)
+                _LOGGER.debug(yaml_dict)
+                # data[k] = yaml_dict
+                data[k] = yaml_dict
+                data["_yaml_raw"][k] = yaml.dump(yaml_dict)
+                # 2022-08-12 Original way: data[k]["raw"] = yaml.dump(yaml_dict)
+                # But this doesn't work in the case that data[k] is a list 
+                # (if the yaml file is an array, not an object)
+                # So I changed it put the raw value under ["raw"][k] instead of [k]["raw"]
+
+    for k, v in md_files.items():
+        _LOGGER.info(f"MM | Processing md file {k}:{v}")
+        if not v:
+            data[k] = v
+            continue
+        if is_url(v):  # Do url stuff
+            import requests
+            response = requests.get(v)
+            p = frontmatter.loads(response.text)
+        else:
+            vabs = make_abspath(v, cfg)
+            if os.path.exists(vabs):
+                p = frontmatter.load(vabs)
+            else:
+                _LOGGER.warning(f"Skipping file that does not exist: {vabs}")
+                # data[k] = {}
+                data["md"][k] = {}  # Populate array with empty values
+                # data[k]["all"] = ""
+                data["_md_raw"][k] = {}
+                continue
+        data[k] = p.__dict__
+        data["_md_raw"][k] = frontmatter.dumps(p)
+        # data["md_dict"][k] = p.__dict__
+        # data[k]["all"] = frontmatter.dumps(p)
+        # _LOGGER.debug(data["md"][k])
+        if len(p.metadata) > 0:
+            # data[k]["metadata_yaml"] = yaml.dump(p.metadata)
+            data["_frontmatter_raw"] = yaml.dump(p.metadata)
+            data["_frontmatter"].update(p.metadata)
+
+    if "variables" in data_block:
+        data.update(data_block["variables"])
+
     return data
 
 
@@ -297,15 +298,62 @@ def load_template(cfg):
 
 class Target(object):
     """
-    Holds 2 dicts: real data and metadata for a target
+    Holds 2 dicts: Original cfg data, and specific metadata for a target.
+    Really there are 2 classes of variables in a target. One is the variables
+    available for the template rendering. The second is the variables
+    available to execute the command to produce the target, to which
+    the rendered output is passed. Some variables need to be made available
+    in both places. But really, I don't see a downside to just combining them.
+    Therefore, I should merge these into one concept.
     """
-    def __init__(self, data={}, target_name=None):
+    def __init__(self, data={}, target_name=None, vardata=None):
         self.data = data
-        self.data["now"] = date.today().strftime("%s")
         self.target_name = target_name
-        self.target_meta = populate_cmd_data(self.data, target_name)
-        # I feel like this shouldn't be necessary...
-        self.target_meta["_filepath"] = self.data["_cfg_file_path"]
+        target_meta = {}
+        target_meta.update(self.data)
+        target_meta["_now"] = date.today().strftime("%s")
+        target_meta["_today"] = date.today().strftime("%Y-%m-%d")
+        target_meta["today"] = target_meta["_today"]  # TODO: Remove this
+
+        # Since a target has available to it all the variables in the _markemeld.yaml
+        # config file, we start from there, then make a few changes:
+        # 1. Elevate the variables in the given target up one level.
+        # 2. To simplify debugging and reduce memory, remove the 'targets' key
+
+        if target_name:
+            if "targets" not in data:
+                _LOGGER.error(f"No targets specified in config.")
+                raise TargetError(f"No targets specified in config.")
+            if target_name not in data["targets"]:
+                _LOGGER.error(f"target {target} not found")
+                raise TargetError(f"Target {target_name} not found")
+            target_meta.update(data["targets"][target_name])
+            _LOGGER.debug(f'Config for this target: {data["targets"][target_name]}')
+
+        del target_meta["targets"]
+        if "version" in target_meta:
+            del target_meta["version"]
+
+        if vardata:
+            cli_vars = {y[0]: y[1] for y in [x.split("=") for x in vardata]}
+            target_meta.update(cli_vars)
+        else:
+            cli_vars = {}
+
+        if not "command" in target_meta:  
+            # Generally, user should provide a `command`, but for simple default cases, 
+            # we can just route through pandoc as a default command.
+            options_array = []
+            if "latex_template" in target_meta:
+                options_array.append("--template {latex_template}")
+            if "output_file" in target_meta:
+                options_array.append("--output \"{output_file}\"")
+            options = " ".join(options_array)
+            target_meta["command"] = f"pandoc {options}"
+
+        _LOGGER.debug(f"target_meta: {target_meta}")
+        self.target_meta = target_meta
+        _LOGGER.info(f"MM | CFG file path: {self.target_meta['_cfg_file_path']}")
         _LOGGER.info(f"MM | Output file: {self.target_meta['output_file']}")
 
 
@@ -326,16 +374,16 @@ class MarkdownMelder(object):
         else:
             return False
 
-    def build_target(self, target_name, print_only=False):
+    def build_target(self, target_name, print_only=False, vardump=False):
 
         tgt = Target(self.cfg, target_name)
 
         # First, run any pre-builds
-        if "prebuild" in tgt.data:
-            for pretgt in tgt.data["prebuild"]:
+        if "prebuild" in tgt.target_meta:
+            for pretgt in tgt.target_meta["prebuild"]:
                 _LOGGER.info(f"MM | Run prebuild hooks: {tgt}: {pretgt}")
-                if pretgt in self["targets"]:
-                    self.build_target(self, pretgt)
+                if pretgt in self.cfg["targets"]:
+                    self.build_target(self.cfg, pretgt)
                 else:
                     _LOGGER.warning(f"MM | No target called {pretgt}, requested prebuild by target {tgt}.")
                     return False
@@ -344,22 +392,25 @@ class MarkdownMelder(object):
         melded_input = self.meld_inputs(tgt)
 
         if "loop" in tgt.target_meta:
-            return self.build_target_in_loop(tgt, melded_input, print_only)
+            return self.build_target_in_loop(tgt, melded_input, print_only, vardump)
 
         # Run command...
-        return self.run_command_for_target(tgt, melded_input, print_only)
+        return self.run_command_for_target(tgt, melded_input, print_only, vardump)
 
-    def run_command_for_target(self, tgt, melded_input, print_only):
+    def run_command_for_target(self, tgt, melded_input, print_only, vardump=False):
         cmd_fmt = format_command(tgt)
         if "type" in tgt.data and tgt.data["type"] == "raw":
             # Raw = No subprocess stdin printing. (so, it doesn't render anything)
             cmd_fmt = format_command(tgt)
             tgt.melded_output = None
-            tgt.returncode = run_cmd(cmd_fmt, None, tgt.target_meta["_filepath"])
+            tgt.returncode = run_cmd(cmd_fmt, None, tgt.target_meta["_cfg_file_path"])
         elif print_only:
             # Case 2: print_only means just render but run no command.
             # return print(tpl.render(data))  # one time
             tgt.melded_output = self.render_template(melded_input, tgt)
+            tgt.returncode = 0
+        elif vardump:
+            tgt.melded_output = melded_input
             tgt.returncode = 0
         elif tgt.target_meta["command"]:
             cmd_fmt = format_command(tgt)
@@ -371,11 +422,11 @@ class MarkdownMelder(object):
                 melded_output = self.render_template(melded_input, tgt, double=True).encode()
             tgt.melded_output = melded_output
             _LOGGER.debug(tgt.target_meta)
-            tgt.returncode = run_cmd(cmd_fmt, melded_output, tgt.target_meta["_filepath"])
+            tgt.returncode = run_cmd(cmd_fmt, melded_output, tgt.target_meta["_cfg_file_path"])
 
         return tgt
 
-    def build_target_in_loop(self, tgt, melded_input, print_only=False):
+    def build_target_in_loop(self, tgt, melded_input, print_only=False, vardump=False):
         #  Process each iteration of the loop
         loop_dat = recursive_get(melded_input,tgt.target_meta["loop"]["loop_data"].split("."))
         _LOGGER.debug(loop_dat)
@@ -397,29 +448,32 @@ class MarkdownMelder(object):
             _LOGGER.debug(tgt_copy.target_meta)
             # _LOGGER.debug(cmd_data)
             rendered_in = self.render_template(melded_input_copy, tgt_copy, double=False).encode()
-            return_target_objects[i] = self.run_command_for_target(tgt_copy, melded_input_copy, print_only)
+            return_target_objects[i] = self.run_command_for_target(tgt_copy, melded_input_copy, print_only, vardump)
 
         return return_target_objects
 
     def meld_inputs(self, target):
-        data_copy = deepcopy(target.data)
+        data_copy = deepcopy(target.target_meta)
 
-        if not "version" in data_copy:
+        if not "version" in target.data:
             data_copy["yaml"] = {}
             data_copy["raw"] = {}
             data_copy["md"] = {}
             data_copy = populate_data_md_globs(target.target_meta, data_copy)
-            data_copy = populate_yaml_data(target.target_meta, data_copy)
-            data_copy = populate_yaml_keyed(target.target_meta, data_copy)
-            data_copy = populate_md_data(target.target_meta, data_copy)
+            data_copy = populate_data_yaml(target.target_meta, data_copy)
+            data_copy = populate_data_yaml_keyed(target.target_meta, data_copy)
+            data_copy = populate_data_md(target.target_meta, data_copy)
             if "data_variables" in target.target_meta:
                 data_copy.update(target.target_meta["data_variables"])
-        elif data_copy["version"] == 2:
-            _LOGGER.info("Proccessing config version 2...")
+        elif target.data["version"] == 2:
+            _LOGGER.info("Processing config version 2...")
             processed_data_block = process_data_block(target.target_meta["data"], data_copy)
             _LOGGER.debug("processed_data_block", processed_data_block)
             data_copy.update(processed_data_block)
-
+        k = list(data_copy.keys())
+        _LOGGER.info(f"MM | Available keys: {k}")
+        _LOGGER.info(f"MM | Available keys [_md]: {list(data_copy['md'].keys())}")
+        _LOGGER.info(f"MM | Available keys [_md]: {list(data_copy['yaml'].keys())}")
         return data_copy
 
     def render_template(self, melded_input, target, double=True):
@@ -441,40 +495,4 @@ class MarkdownMelder(object):
         else:
             return tpl.render(melded_input)
 
-
-def populate_cmd_data(cfg, target=None, vardata=None):
-    cmd_data = {}
-    cmd_data.update(cfg)
-    cmd_data["today"] = date.today().strftime("%Y-%m-%d")
-
-    if target:
-        if "targets" not in cfg:
-            _LOGGER.error(f"No targets specified in config.")
-            raise TargetError(f"No targets specified in config.")
-        if target not in cfg["targets"]:
-            _LOGGER.error(f"target {target} not found")
-            raise TargetError(f"Target {target} not found")
-        cmd_data.update(cfg["targets"][target])
-        _LOGGER.debug(f'Config for this target: {cfg["targets"][target]}')
-
-    if vardata:
-        cli_vars = {y[0]: y[1] for y in [x.split("=") for x in vardata]}
-        cmd_data.update(cli_vars)
-    else:
-        cli_vars = {}
-
-    if not "command" in cmd_data:
-        # Generally, user should provide a `command`,
-        # But if they don't for simple cases, we can just
-        # route through pandoc.
-        # Populate built-in pandoc auto-options
-        options_array = []
-        if "latex_template" in cmd_data:
-            options_array.append("--template {latex_template}")
-        if "output_file" in cmd_data:
-            options_array.append("--output \"{output_file}\"")
-        # default command
-        options = " ".join(options_array)
-        cmd_data["command"] = f"pandoc {options}"
-    return cmd_data
 

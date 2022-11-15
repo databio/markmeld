@@ -70,8 +70,7 @@ doc/
 site/
 build/
 dist/
-looper.egg-info/
-loopercli.egg-info/
+markmeld.egg-info/
 __pycache__/
 
 

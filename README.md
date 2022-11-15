@@ -1,4 +1,4 @@
-# <img src="docs/img/markmeld_logo_dark.svg" alt="looper logo" height="70">
+# <img src="docs/img/markmeld_logo_long.svg" alt="markmeld logo" height="70">
 
 Read the complete documentation at [markmeld.databio.org](https://markmeld.databio.org).
 
