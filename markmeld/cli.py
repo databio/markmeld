@@ -41,7 +41,7 @@ def build_argparser():
     parser.add_argument(dest="target", metavar="T", help="Target", nargs="?")
 
     parser.add_argument(
-        "-l", "--list", action="store_true", default=False, help="List targets"
+        "-l", "--list", action="store_true", default=False, help="List targets with descriptions"
     )
 
     parser.add_argument(
@@ -63,7 +63,6 @@ def build_argparser():
         default=False,
         help="Dump content object as passed to jinja2.",
     )
-
 
     parser.add_argument(
         "-v",
@@ -104,13 +103,20 @@ def main(test_args=None):
             sys.stdout.write(t + " ")
         sys.exit(0)
 
-    if not args.target: 
-        args.list = True
-    if args.list:
+    if not args.target and not args.list: 
         if "targets" not in cfg:
             raise TargetError(f"No targets specified in config.")
         tarlist = [x for x, k in cfg["targets"].items()]
-        _LOGGER.error(f"Targets: {tarlist}")
+        tarlist_txt = ", ".join(tarlist)
+        _LOGGER.error(f"Targets: {tarlist_txt}.")
+        sys.exit(0)
+    if args.list:
+        if "targets" not in cfg:
+            raise TargetError(f"No targets specified in config.")
+        tarlist = {x:k["description"] if "description" in k else "No description" for x, k in cfg["targets"].items()}
+        _LOGGER.error(f"Targets:")
+        for k, v in tarlist.items():
+            _LOGGER.error(f"  {k}: {v}")
         sys.exit(0)
 
     _LOGGER.debug("Melding...")  # Meld it!
