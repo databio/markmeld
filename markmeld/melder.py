@@ -492,7 +492,6 @@ class MarkdownMelder(object):
             tgt.melded_output = melded_output
             _LOGGER.debug(tgt.target_meta)
             tgt.returncode = run_cmd(cmd_fmt, melded_output, tgt.target_meta["_filepath"])
-
         return tgt
 
     def build_target_in_loop(self, tgt, melded_input, print_only=False, vardump=False):
@@ -510,7 +509,6 @@ class MarkdownMelder(object):
             melded_input_copy = deepcopy(melded_input)
             tgt_copy = deepcopy(tgt)
             var = tgt_copy.target_meta["loop"]["assign_to"]
-            _LOGGER.info(f"{var}: {loop_var_value}")
             _LOGGER.info(f"{var}: {loop_var_value}")
             melded_input_copy.update({ var: loop_var_value })
             tgt_copy.target_meta.update({ var: loop_var_value })
@@ -542,7 +540,7 @@ class MarkdownMelder(object):
                 processed_data_block = process_data_block(target.target_meta["data"], target.target_meta["_filepath"])
             else:
                 processed_data_block = process_data_block({}, target.target_meta["_filepath"])
-            _LOGGER.debug("processed_data_block", processed_data_block)
+            _LOGGER.debug("processed_data_block:", processed_data_block)
             data_copy.update(processed_data_block)
         k = list(data_copy.keys())
         _LOGGER.info(f"MM | Available keys: {k}")

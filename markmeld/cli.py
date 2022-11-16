@@ -122,13 +122,12 @@ def main(test_args=None):
     _LOGGER.debug("Melding...")  # Meld it!
     mm = MarkdownMelder(cfg)
     built_target = mm.build_target(args.target, print_only=args.print, vardump=args.dump)
-    
 
     if args.print | args.dump:
         print(built_target.melded_output)
 
     # Open the file
-    if "output_file" in built_target.target_meta and target_meta["output_file"]:
+    if "output_file" in built_target.target_meta and built_target.target_meta["output_file"]:
         output_file = built_target.target_meta["output_file"]
     else:
         output_file = None
