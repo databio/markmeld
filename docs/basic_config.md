@@ -27,8 +27,6 @@ targets:
 
 The configuration file must define a `targets` block. This block contains a series of named targets, in the example, `target1` is the only target defined in this configuration file.
 
-
-
 The configurable attributes are:
 
 - `targets`: a list of targets (outputs) to build. Each target can contain the other configurable attributes.
@@ -38,7 +36,7 @@ The configurable attributes are:
 - `data_md_globs` - Globs, where each file will be read, and available at the key of the filename.
 Any other attributes will be made available to the build system, but not to the jinja templates.
 
-In the demo, the only target you can build is `default`. You can see the list of targets with `mm -l`. 
+In the demo, the only target you can build is `target1`. You can see the list of targets with `mm -l`. 
 
 ## Version 2
 
@@ -62,14 +60,3 @@ Each target may then define:
 
 - `jinja_template`: path to the jinja template, relative to the config file where it is defined.
 - `jinja_import_relative`: Set to `true` to make the jinja template relative to the importing file, rather than the working directory. Defaults to `false`.
-
-## Special variables
-
-You'll automatically have access to:
-
-- `{_today}` - Today's date in standard form (YYYY-MM-DD).
-- `{_now}` - Current time in seconds since UNIX epoch.
-- `{_frontmatter}` - A nicely priority-updated flat version of the yaml frontmatter across all provided `.md` files. The rationale here is that pandoc chokes if you provide multiple of the same key, but if you're importing files, then you could accidently include the same information multiple times. This way, these will get populated within markmeld, instead of making you handle that somehow in the jinja template.
-- `_md`, `_yaml` -- these provide the keyed content you specified in your `_markmeld.yaml` config
-
-

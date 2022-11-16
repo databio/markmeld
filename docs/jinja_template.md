@@ -68,3 +68,55 @@ This will give us access in the jinja template to a `chapters` array with those 
 ```
 
 And voila! We have the same output, but now we've encoded the chapter order logic in the markmeld config file, and this jinja template can be reused. It's beautiful.
+
+
+
+## Special variables
+
+You'll automatically have access to:
+
+- `{_today}` - Today's date in standard form (YYYY-MM-DD).
+- `{_now}` - Current time in seconds since UNIX epoch.
+- `{_global_frontmatter}` - A nicely priority-updated flat version of the yaml frontmatter across all provided `.md` files. The rationale here is that pandoc chokes if you provide multiple of the same key, but if you're importing files, then you could accidentally include the same information multiple times. This way, these will get populated within markmeld, instead of making you handle that somehow in the jinja template. It's an array with 3 formats of the information
+    - `{_global_frontmatter.fenced}` -- A fenced version
+    - `{_global_frontmatter.raw}` -- in raw, unfenced yaml.
+    - `{_global_frontmatter.dict}` -- A dict version, so you can access individual elements, like `{_global_frontmatter.dict.var2}`
+- `{_local_frontmatter}` - This is an array, where you can get at the individual markdown files that might have contained frontmatter.
+- `_md`, `_yaml` -- these provide the keyed content you specified in your `_markmeld.yaml` config
+
+
+## Global frontmatter
+
+Will accumulate any yaml information from:
+
+- The frontmatter on any `.md` files included via `md_files` or `md_globs`.
+- Any yaml that is keyed with the regex `frontmatter_*`, from `yaml_files` or `yaml_globs`. There is no way to add frontmatter from `yaml_globs_unkeyed`.
+- Any variables with keys that match the regex `frontmatter_*`, where the `*` will be used as the keys added to the frontmatter.
+
+When values clash, the priority is as listed above.
+
+You can then access these in these 3 variables:
+
+`_global_frontmatter.fenced`
+`_global_frontmatter.raw`
+`_global_frontmatter.dict`
+
+## Local frontmatter
+
+Sometimes you need to access the frontmatter from a specific md file, rather than the global integrated version. You can also do that with:
+
+`_local_frontmatter.<VAR>.fenced`
+`_local_frontmatter.<VAR>.raw`
+`_local_frontmatter.<VAR>.dict`
+
+Here, `<VAR>` is the key for the markdown file.
+
+
+Content:
+<VAR>
+
+_raw.<VAR>
+
+Variables:
+`_global_vars.<VAR>`
+
