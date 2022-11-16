@@ -516,7 +516,8 @@ class MarkdownMelder(object):
         data_copy = deepcopy(target.root_cfg)
         data_copy.update(target.target_meta)
 
-        if not "version" in target.root_cfg or target.root_cfg["version"] < 2:
+        if not "version" in target.root_cfg or target.root_cfg["version"] < 1:
+            _LOGGER.info("Processing config version 0...")
             data_copy["yaml"] = {}
             data_copy["raw"] = {}
             data_copy["md"] = {}
@@ -526,8 +527,8 @@ class MarkdownMelder(object):
             data_copy = populate_data_md(target.target_meta, data_copy)
             if "data_variables" in target.target_meta:
                 data_copy.update(target.target_meta["data_variables"])
-        elif target.root_cfg["version"] == 2:
-            _LOGGER.info("Processing config version 2...")
+        elif target.root_cfg["version"] == 1:
+            _LOGGER.info("Processing config version 1...")
             if "data" in target.target_meta:
                 processed_data_block = process_data_block(target.target_meta["data"], target.target_meta["_filepath"])
                 _LOGGER.debug("processed_data_block", processed_data_block)
