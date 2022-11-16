@@ -50,8 +50,12 @@ tpl_generic = """{% if data.metadata_yaml is defined %}---
 
 
 tpl_generic = """
-{{ data }}
+{{ _global_frontmatter.fenced}}{{ content }}
 """
+
+# tpl_generic = """
+# {{ data }}
+# """
 
 
 @pass_environment
@@ -188,6 +192,8 @@ def populate_data_md_globs(cfg, data):
 
 def resolve_globs(globs, cfg_path):
     return_items = {}
+    if not globs:
+        return return_items
     for item in globs:
         path = os.path.join(os.path.dirname(cfg_path), item)
         _LOGGER.info(f"MM | Glob path: {path}")
@@ -210,20 +216,20 @@ def process_data_block(data_block, filepath):
     yaml_files = {}
     unkeyed_yaml_files = []
 
-    if MD_GLOBS_KEY in data_block:
+    if MD_GLOBS_KEY in data_block and data_block[MD_GLOBS_KEY]:
         _LOGGER.info(f"MM | Populating md data globs...")
         md_files.update(resolve_globs(data_block[MD_GLOBS_KEY], filepath))
-    if YAML_GLOBS_KEY in data_block:
+    if YAML_GLOBS_KEY in data_block and data_block[YAML_GLOBS_KEY]:
         _LOGGER.info(f"MM | Populating yaml data globs...")
         yaml_files.update(resolve_globs(data_block[YAML_GLOBS_KEY], filepath))
-    if YAML_GLOBS_UNKEYED_KEY in data_block:
+    if YAML_GLOBS_UNKEYED_KEY in data_block and data_block[YAML_GLOBS_UNKEYED_KEY]:
         _LOGGER.info(f"MM | Populating unkeyed yaml globs...")
         tmp_files = resolve_globs(data_block[YAML_GLOBS_UNKEYED_KEY], filepath)
         yaml_files.update(tmp_files)
         unkeyed_yaml_files = tmp_files
-    if MD_FILES_KEY in data_block:
+    if MD_FILES_KEY in data_block and data_block[MD_FILES_KEY]:
         md_files.update(data_block[MD_FILES_KEY])
-    if YAML_FILES_KEY in data_block:
+    if YAML_FILES_KEY in data_block and data_block[YAML_FILES_KEY]:
         yaml_files.update(data_block[YAML_FILES_KEY])
 
 
@@ -278,7 +284,7 @@ def process_data_block(data_block, filepath):
             vars_temp.update(p.metadata)
             frontmatter_temp.update(p.metadata)
 
-    if "variables" in data_block:
+    if "variables" in data_block and data_block["variables"]:
         data.update(data_block["variables"])
         vars_temp.update(data_block["variables"])
         for k, v in data_block["variables"].items():
@@ -286,8 +292,19 @@ def process_data_block(data_block, filepath):
                 frontmatter_temp.update({k[12:]: v})
 
     # vars_raw = yaml.dump(vars_temp)
-    frontmatter_raw = yaml.dump(frontmatter_temp)
+    def get_frontmatter_formats(frontmatter_temp):
+        if len(frontmatter_temp) == 0:
+            frontmatter_raw = ""
+            frontmatter_fenced = ""
+        else:
+            frontmatter_raw = yaml.dump(frontmatter_temp)
+            frontmatter_fenced = f"---\n{frontmatter_raw}---\n"
 
+        return {
+            "raw": frontmatter_raw,
+            "fenced": frontmatter_fenced,
+            "dict": frontmatter_temp,
+        }
 
     # Global vars behaves exactly like global frontmatter, except:
     # 1. It's all variables, not just those marked with frontmatter_*.
@@ -298,21 +315,12 @@ def process_data_block(data_block, filepath):
     # Integrated, global frontmatter -- combines all frontmatter from .md files,
     # Plus any yaml data indexed with frontmatter_*,
     # Plus any variables indexed with frontmatter_* -- in that priority order.
-    data["_global_frontmatter"] = {
-        "raw": frontmatter_raw,
-        "fenced": f"---\n{frontmatter_raw}---\n",
-        "dict": frontmatter_temp,
-    }
+    data["_global_frontmatter"] = get_frontmatter_formats(frontmatter_temp)
 
     # Local frontmatter (per markdown file)
     data["_local_frontmatter"] = {}
     for k,v in local_frontmatter_temp.items():
-        frontmatter_raw = yaml.dump(v)
-        data["_local_frontmatter"][k] = {
-            "raw": frontmatter_raw,
-            "fenced": f"---\n{frontmatter_raw}---\n",
-            "dict": v,
-        }
+        data["_local_frontmatter"][k] = get_frontmatter_formats(v)
 
     return data
 
@@ -527,14 +535,14 @@ class MarkdownMelder(object):
             data_copy = populate_data_md(target.target_meta, data_copy)
             if "data_variables" in target.target_meta:
                 data_copy.update(target.target_meta["data_variables"])
-        elif target.root_cfg["version"] == 1:
+        elif target.root_cfg["version"] >= 1:
             _LOGGER.info("Processing config version 1...")
             if "data" in target.target_meta:
                 processed_data_block = process_data_block(target.target_meta["data"], target.target_meta["_filepath"])
-                _LOGGER.debug("processed_data_block", processed_data_block)
-                data_copy.update(processed_data_block)
             else:
-                processed_data_block = None
+                processed_data_block = process_data_block({}, target.target_meta["_filepath"])
+            _LOGGER.debug("processed_data_block", processed_data_block)
+            data_copy.update(processed_data_block)
         k = list(data_copy.keys())
         _LOGGER.info(f"MM | Available keys: {k}")
         if MD_FILES_KEY in data_copy:

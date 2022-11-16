@@ -1,3 +1,4 @@
+version: 1
 target_factories:
 - glob:
     path: "*.md"

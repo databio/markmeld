@@ -1,0 +1,11 @@
+version: 1
+targets:
+  target1:
+    output_file: "{_today}_demo_output.txt"
+    data:
+      yaml_files: null
+      md_files: null
+      yaml_globs: null
+      yaml_globs_unkeyed: null
+      md_globs: null
+      variables: null

@@ -38,8 +38,10 @@ def glob_factory(vars, cfg):
         _LOGGER.debug(f"Found target: {tgt}")
         targets[tgt] = {
             "output_file": output_file,
-            "data_md": {
-                "data": glob,
+            "data": {
+                "md_files": {
+                    "content": glob,
+                }
             },
         }
         if "glob_variables" in vars:

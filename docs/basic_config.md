@@ -1,19 +1,33 @@
 
 # Markmeld config file
 
-You produce a file called `_markmeld.yaml` to configure your project. In the file you specify any variables you want,  The `demo/_markmeld.yaml` looks like this:
+## Definition of terms
 
-```
+- **target** - A specific recipe to run that produces an output to build.
+- **configuration file** - A `yaml` file, by default named `_markmeld.yaml`, that configures markmeld. The configuration file contains the targets.
+- **data** - Content, either in markdown or yaml format, used to produce a target.
+- **template** - A template defined in [jinja2](https://palletsprojects.com/p/jinja/).
+
+## A simple example
+
+You produce a file called `_markmeld.yaml` to configure your project. Here's a simple example, `demo/_markmeld.yaml`:
+
+```yaml
 targets:
-  default:
+  target1:
+    latex_template: pandoc_default.tex
+    output_file: "{today}_demo_output.pdf"  
     md_template: md_template.jinja
-latex_template: pandoc_default.tex
-output_file: "{today}_demo_output.pdf"
-data_yaml:
-  - some_data.yaml
-data_md:
-  some_text_data: some_text.md
+    data:
+      yaml_files:
+        - some_data.yaml
+      md_files:
+        some_text_data: some_text.md
 ```
+
+The configuration file must define a `targets` block. This block contains a series of named targets, in the example, `target1` is the only target defined in this configuration file.
+
+
 
 The configurable attributes are:
 
@@ -25,7 +39,6 @@ The configurable attributes are:
 Any other attributes will be made available to the build system, but not to the jinja templates.
 
 In the demo, the only target you can build is `default`. You can see the list of targets with `mm -l`. 
-
 
 ## Version 2
 
