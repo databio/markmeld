@@ -108,17 +108,16 @@ def load_config_data(cfg_data, filepath=None, target_filepath=None, autocomplete
     if "imports" in higher_cfg:
         _LOGGER.debug("Found imports")
         for import_file in higher_cfg["imports"]:
-            import_file_abspath = os.path.relpath(make_abspath(import_file, filepath))
+            import_file_abspath = os.path.relpath(make_abspath(expandpath(import_file), expandpath(filepath)))
             if not autocomplete:
                 _LOGGER.error(f"Specified config file to import: {import_file_abspath}")
-            _LOGGER.error(f"Specified config file to import: {import_file_abspath}")
             deep_update(lower_cfg, load_config_file(import_file_abspath, expandpath(filepath)))
 
 
     if "imports_relative" in higher_cfg:
         _LOGGER.debug("Found relative imports")
         for import_file in higher_cfg["imports_relative"]:
-            import_file_abspath = os.path.relpath(make_abspath(import_file, filepath))
+            import_file_abspath = os.path.relpath(make_abspath(expandpath(import_file), expandpath(filepath)))
             if not autocomplete:
                 _LOGGER.error(f"Specified config file to import: {import_file}")
             deep_update(lower_cfg, load_config_file(expandpath(import_file_abspath)))
