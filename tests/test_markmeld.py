@@ -116,6 +116,22 @@ def test_root_data_propogates_to_target():
     assert "xs8Nd0D98" in str(res.melded_output)  # From root data definition
     assert "k9XFJOId0" in str(res.melded_output)  # From local target data definition
 
+def test_import():
+    cfg = markmeld.load_config_file("tests/test_data/_markmeld_import.yaml")
+    mm = markmeld.MarkdownMelder(cfg)
+
+    res = mm.build_target("imported_target", print_only=True)
+    print(res.melded_output)
+    assert "rVEeqUQ1t5" in str(res.melded_output)
+
+    cfg2 = markmeld.load_config_file("tests/test_data/_markmeld_import_relative.yaml")
+    mm2 = markmeld.MarkdownMelder(cfg2)
+
+    res = mm2.build_target("imported_target", print_only=True)
+    print(res.melded_output)
+    assert "qk32LK6Nv0" in str(res.melded_output)
+
+
 
 def test_null_jinja_template():
     cfg = markmeld.load_config_file("tests/test_data/_markmeld_null_jinja_template.yaml")

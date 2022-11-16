@@ -62,7 +62,7 @@ def format_command(target):
     return cmd_fmt
 
 
-def load_config_file(filepath, autocomplete=True):
+def load_config_file(filepath, target_filepath=None, autocomplete=True):
     """
     Loads a configuration file.
 
@@ -73,33 +73,56 @@ def load_config_file(filepath, autocomplete=True):
     try: 
         with open(filepath, "r") as f:
             cfg_data = f.read()
-        return load_config_data(cfg_data, os.path.abspath(filepath), autocomplete)
+        return load_config_data(cfg_data, os.path.abspath(filepath), target_filepath, autocomplete)
     except Exception as e:
-        _LOGGER.error(f"Couldn't load config file: {filepath} because: {e}")
+        _LOGGER.error(f"Couldn't load config file: {filepath} because: {repr(e)}")
         return {}
 
 
-def load_config_data(cfg_data, filepath=None, autocomplete=True):
+def make_abspath(relpath, filepath, root=None):
+    if root:
+        return os.path.join(root, relpath)
+    return os.path.join(os.path.dirname(filepath), relpath)
+
+
+
+def load_config_data(cfg_data, filepath=None, target_filepath=None, autocomplete=True):
     """
-    Recursive loader that parses a yaml string, and handles imports.
+    Recursive loader that parses a yaml string, handles imports, and runs target factories.
     """
     higher_cfg = yaml.load(cfg_data, Loader=yaml.SafeLoader)
     higher_cfg["_cfg_file_path"] = filepath
     lower_cfg = {}
 
-    # Add date to targets?
+    # Add filepath to targets defined in the current cfg file
     if "targets" in higher_cfg:
         for tgt in higher_cfg["targets"]:
             _LOGGER.debug(tgt, higher_cfg["targets"][tgt])
-            higher_cfg["targets"][tgt]["_filepath"] = filepath
+            if target_filepath: 
+                higher_cfg["targets"][tgt]["_filepath"] = target_filepath
+            else:
+                higher_cfg["targets"][tgt]["_filepath"] = filepath
+
             
     # Imports
     if "imports" in higher_cfg:
         _LOGGER.debug("Found imports")
         for import_file in higher_cfg["imports"]:
+            import_file_abspath = os.path.relpath(make_abspath(import_file, filepath))
+            if not autocomplete:
+                _LOGGER.error(f"Specified config file to import: {import_file_abspath}")
+            _LOGGER.error(f"Specified config file to import: {import_file_abspath}")
+            deep_update(lower_cfg, load_config_file(import_file_abspath, expandpath(filepath)))
+
+
+    if "imports_relative" in higher_cfg:
+        _LOGGER.debug("Found relative imports")
+        for import_file in higher_cfg["imports_relative"]:
+            import_file_abspath = os.path.relpath(make_abspath(import_file, filepath))
             if not autocomplete:
                 _LOGGER.error(f"Specified config file to import: {import_file}")
-            deep_update(lower_cfg, load_config_file(expandpath(import_file)))
+            deep_update(lower_cfg, load_config_file(expandpath(import_file_abspath)))
+
 
     deep_update(lower_cfg, higher_cfg)
 

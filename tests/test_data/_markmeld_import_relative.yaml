@@ -1,0 +1,9 @@
+version: 2
+imports_relative:
+  - import_test/_markmeld_to_import.yaml
+targets:
+  test_import:
+    jinja_template: templates/test_import.jinja
+    data:
+      yaml_files:
+        my_variable: yaml_files/y1.yaml

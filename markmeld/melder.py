@@ -22,7 +22,7 @@ from ubiquerg import is_url
 from .const import PKG_NAME
 from .exceptions import *
 
-from .utilities import format_command, recursive_get, run_cmd 
+from .utilities import format_command, recursive_get, run_cmd, make_abspath
 from .utilities import *
 
 MD_FILES_KEY = "md_files"
@@ -91,7 +91,7 @@ def populate_data_yaml(cfg, data):
     _LOGGER.info(f"MM | Populating yaml data...")
     for d in cfg["data_yaml"]:
         _LOGGER.info(f"MM | {d}")
-        dabs = make_abspath(d, cfg)
+        dabs = make_abspath(d, cfg["_cfg_file_path"])
 
         with open(dabs, "r") as f:
             data.update(yaml.load(f, Loader=yaml.SafeLoader))
@@ -137,7 +137,7 @@ def populate_data_md(cfg, data):
             response = requests.get(v)
             p = frontmatter.loads(response.text)
         else:
-            vabs = make_abspath(v, cfg)
+            vabs = make_abspath(v, cfg["_cfg_file_path"])
             if os.path.exists(vabs):
                 p = frontmatter.load(vabs)
             else:
@@ -199,7 +199,7 @@ def resolve_globs(globs, cfg_path):
     return return_items
 
 
-def process_data_block(data_block, cfg):
+def process_data_block(data_block, filepath):
     _LOGGER.info(f"MM | Processing data block...")
     data = {"_raw": {}}  # Initialize return value
     frontmatter_temp = {}
@@ -212,13 +212,13 @@ def process_data_block(data_block, cfg):
 
     if MD_GLOBS_KEY in data_block:
         _LOGGER.info(f"MM | Populating md data globs...")
-        md_files.update(resolve_globs(data_block[MD_GLOBS_KEY], cfg["_cfg_file_path"]))
+        md_files.update(resolve_globs(data_block[MD_GLOBS_KEY], filepath))
     if YAML_GLOBS_KEY in data_block:
         _LOGGER.info(f"MM | Populating yaml data globs...")
-        yaml_files.update(resolve_globs(data_block[YAML_GLOBS_KEY], cfg["_cfg_file_path"]))
+        yaml_files.update(resolve_globs(data_block[YAML_GLOBS_KEY], filepath))
     if YAML_GLOBS_UNKEYED_KEY in data_block:
         _LOGGER.info(f"MM | Populating unkeyed yaml globs...")
-        tmp_files = resolve_globs(data_block[YAML_GLOBS_UNKEYED_KEY], cfg["_cfg_file_path"])
+        tmp_files = resolve_globs(data_block[YAML_GLOBS_UNKEYED_KEY], filepath)
         yaml_files.update(tmp_files)
         unkeyed_yaml_files = tmp_files
     if MD_FILES_KEY in data_block:
@@ -231,7 +231,7 @@ def process_data_block(data_block, cfg):
 
     for k,v in yaml_files.items():
         _LOGGER.info(f"MM | Processing yaml file {k}: {v}")
-        vabs = make_abspath(v, cfg)
+        vabs = make_abspath(v, filepath)
         if not os.path.exists(vabs):
         	_LOGGER.error(f"File not found: {vabs}")
         else:
@@ -258,7 +258,7 @@ def process_data_block(data_block, cfg):
             response = requests.get(v)
             p = frontmatter.loads(response.text)
         else:
-            vabs = make_abspath(v, cfg)
+            vabs = make_abspath(v, filepath)
             if os.path.exists(vabs):
                 p = frontmatter.load(vabs)
             else:
@@ -317,19 +317,13 @@ def process_data_block(data_block, cfg):
     return data
 
 
-def make_abspath(relpath, cfg, root=None):
-    if root:
-        return os.path.join(root, relpath)
-    return os.path.join(os.path.dirname(cfg["_cfg_file_path"]), relpath)
-
-
 def load_template(cfg):
     if "jinja_template" not in cfg or not cfg["jinja_template"]:
         return None
 
     md_tpl = None
     root = cfg["mm_templates"] if "mm_templates" in cfg else None
-    md_tpl = make_abspath(cfg["jinja_template"], cfg, root)
+    md_tpl = make_abspath(cfg["jinja_template"], cfg["_cfg_file_path"], root)
     _LOGGER.info(f"MM | jinja template: {md_tpl}")
     # # if os.path.isfile(cfg["md_template"]):
     # #     md_tpl = cfg["md_template"]
@@ -464,11 +458,12 @@ class MarkdownMelder(object):
 
     def run_command_for_target(self, tgt, melded_input, print_only, vardump=False):
         cmd_fmt = format_command(tgt)
+        _LOGGER.info(f"File path for this target: {tgt.target_meta['_filepath']}")
         if "type" in tgt.root_cfg and tgt.root_cfg["type"] == "raw":
             # Raw = No subprocess stdin printing. (so, it doesn't render anything)
             cmd_fmt = format_command(tgt)
             tgt.melded_output = None
-            tgt.returncode = run_cmd(cmd_fmt, None, tgt.target_meta["_cfg_file_path"])
+            tgt.returncode = run_cmd(cmd_fmt, None, tgt.target_meta["_filepath"])
         elif print_only:
             # Case 2: print_only means just render but run no command.
             # return print(tpl.render(data))  # one time
@@ -487,7 +482,7 @@ class MarkdownMelder(object):
                 melded_output = self.render_template(melded_input, tgt, double=True).encode()
             tgt.melded_output = melded_output
             _LOGGER.debug(tgt.target_meta)
-            tgt.returncode = run_cmd(cmd_fmt, melded_output, tgt.target_meta["_cfg_file_path"])
+            tgt.returncode = run_cmd(cmd_fmt, melded_output, tgt.target_meta["_filepath"])
 
         return tgt
 
@@ -534,7 +529,7 @@ class MarkdownMelder(object):
         elif target.root_cfg["version"] == 2:
             _LOGGER.info("Processing config version 2...")
             if "data" in target.target_meta:
-                processed_data_block = process_data_block(target.target_meta["data"], data_copy)
+                processed_data_block = process_data_block(target.target_meta["data"], target.target_meta["_filepath"])
                 _LOGGER.debug("processed_data_block", processed_data_block)
                 data_copy.update(processed_data_block)
             else:

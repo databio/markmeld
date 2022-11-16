@@ -95,7 +95,7 @@ def main(test_args=None):
             _LOGGER.error(msg)
             raise ConfigError(msg)
 
-    cfg = load_config_file(args.config, args.autocomplete)
+    cfg = load_config_file(args.config, None, args.autocomplete)
 
     if args.autocomplete:
         if "targets" not in cfg:
