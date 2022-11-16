@@ -120,8 +120,12 @@ def main(test_args=None):
 
     if args.print | args.dump:
         print(built_target.melded_output)
+
     # Open the file
-    output_file = built_target.target_meta["output_file"]
+    if "output_file" in built_target.target_meta and target_meta["output_file"]:
+        output_file = built_target.target_meta["output_file"]
+    else:
+        output_file = None
     if (
         built_target.returncode == 0
         and output_file

@@ -232,9 +232,6 @@ def process_data_block(data_block, filepath):
     if YAML_FILES_KEY in data_block and data_block[YAML_FILES_KEY]:
         yaml_files.update(data_block[YAML_FILES_KEY])
 
-
-    print(data_block)
-
     for k,v in yaml_files.items():
         _LOGGER.info(f"MM | Processing yaml file {k}: {v}")
         vabs = make_abspath(v, filepath)
@@ -270,7 +267,7 @@ def process_data_block(data_block, filepath):
             else:
                 _LOGGER.warning(f"Skipping file that does not exist: {vabs}")
                 data[k] = ""  # Populate with empty values
-                data["_md_raw"][k] = {}
+                data["_raw"][k] = {}
                 continue
         data[k] = p.content
         frontmatter_temp.update(p.metadata)
@@ -443,6 +440,7 @@ class MarkdownMelder(object):
     def build_target(self, target_name, print_only=False, vardump=False):
 
         tgt = Target(self.cfg, target_name)
+        _LOGGER.info(f"MM | Building target: {tgt.target_name}")
 
         # First, run any pre-builds
         if "prebuild" in tgt.target_meta:
@@ -465,13 +463,16 @@ class MarkdownMelder(object):
         return self.run_command_for_target(tgt, melded_input, print_only, vardump)
 
     def run_command_for_target(self, tgt, melded_input, print_only, vardump=False):
-        cmd_fmt = format_command(tgt)
         _LOGGER.info(f"File path for this target: {tgt.target_meta['_filepath']}")
-        if "type" in tgt.root_cfg and tgt.root_cfg["type"] == "raw":
+        if "type" in tgt.target_meta and tgt.target_meta["type"] == "raw":
             # Raw = No subprocess stdin printing. (so, it doesn't render anything)
             cmd_fmt = format_command(tgt)
             tgt.melded_output = None
             tgt.returncode = run_cmd(cmd_fmt, None, tgt.target_meta["_filepath"])
+        elif "type" in tgt.target_meta and tgt.target_meta["type"] == "meta":
+            # Meta = No command, it's a meta-target used for prebuilds or something else
+            tgt.melded_output = None
+            tgt.returncode = 0
         elif print_only:
             # Case 2: print_only means just render but run no command.
             # return print(tpl.render(data))  # one time
@@ -525,7 +526,7 @@ class MarkdownMelder(object):
         data_copy.update(target.target_meta)
 
         if not "version" in target.root_cfg or target.root_cfg["version"] < 1:
-            _LOGGER.info("Processing config version 0...")
+            _LOGGER.info("MM | Processing config version 0...")
             data_copy["yaml"] = {}
             data_copy["raw"] = {}
             data_copy["md"] = {}
@@ -536,7 +537,7 @@ class MarkdownMelder(object):
             if "data_variables" in target.target_meta:
                 data_copy.update(target.target_meta["data_variables"])
         elif target.root_cfg["version"] >= 1:
-            _LOGGER.info("Processing config version 1...")
+            _LOGGER.info("MM | Processing config version 1...")
             if "data" in target.target_meta:
                 processed_data_block = process_data_block(target.target_meta["data"], target.target_meta["_filepath"])
             else:
