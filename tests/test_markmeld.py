@@ -50,7 +50,7 @@ def test_MarkdownMelder_demo():
     compare_to_file("demo/rendered.md", res.melded_output)
 
     res = x.build_target("default", print_only=False)
-    outfile = f"tests/test_data/{today}_demo_output.pdf"
+    outfile = f"tests/test_data/{today}_demo_output.txt"
     assert os.path.isfile(outfile)
     print(f"res:", res)
     os.remove(outfile)
@@ -66,10 +66,10 @@ def test_loop():
 
     # Check actual build (requires pandoc)
     res = x.build_target("default")
-    assert os.path.isfile(f"demo_loop/{today}_demo_output_John Doe.pdf")
-    assert os.path.isfile(f"demo_loop/{today}_demo_output_Jane Doe.pdf")
-    os.remove(f"demo_loop/{today}_demo_output_John Doe.pdf")
-    os.remove(f"demo_loop/{today}_demo_output_Jane Doe.pdf")
+    assert os.path.isfile(f"demo_loop/{today}_demo_output_John Doe.txt")
+    assert os.path.isfile(f"demo_loop/{today}_demo_output_Jane Doe.txt")
+    os.remove(f"demo_loop/{today}_demo_output_John Doe.txt")
+    os.remove(f"demo_loop/{today}_demo_output_Jane Doe.txt")
 
     res2 = x.build_target("complex_loop", print_only=True)
     assert "John Doe" in str(res2[0].melded_output)
