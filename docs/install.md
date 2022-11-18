@@ -1,10 +1,14 @@
 # Install
 
+Use some variant of:
+
 ```
-pip install https://github.com/databio/markmeld/archive/refs/heads/master.zip
+pip install markmeld
 ```
 
-Markmeld provides the `mm` executable:
+## Testing
+
+Markmeld provides the `mm` executable. You can test using the demos in the mm repository if you clone it:
 
 ```
 cd demo
@@ -16,3 +20,5 @@ This will produce the output, automatically piping to pandoc. You can also get t
 ```
 mm default -p > rendered.md
 ```
+
+Next, move on to basic configuration.
