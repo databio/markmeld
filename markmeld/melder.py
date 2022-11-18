@@ -1,6 +1,5 @@
 import datetime
 import frontmatter
-import glob
 import jinja2
 import os
 import re
@@ -20,8 +19,6 @@ from ubiquerg import is_url
 
 from .const import PKG_NAME
 from .exceptions import *
-
-from .utilities import format_command, recursive_get, run_cmd, make_abspath
 from .utilities import *
 
 MD_FILES_KEY = "md_files"
@@ -69,26 +66,24 @@ FILTERS["extract_refs"] = extract_refs
 # m
 
 
-def resolve_globs(globs, cfg_path):
+def get_frontmatter_formats(frontmatter):
     """
-    Given some globs, resolve them to the actual files, and return them in a
-    dict that is keyed by the base file name, without extension or parent folders.
+    Given a dictionary of content, return 3 versions of it: the dict, a yaml dumped version, and a fenced yaml dumped
 
-    @param globs Iterable[str] List of globs to convert to files.
-    @param cfg_path str Path to configuration file
+    @param dict frontmatter A dict representing some yaml frontmatter for a md file
     """
-    return_items = {}
-    if not globs:
-        return return_items
-    for item in globs:
-        path = os.path.join(os.path.dirname(cfg_path), item)
-        _LOGGER.info(f"MM | Glob path: {path}")
-        files = glob.glob(path)
-        for file in files:
-            k = os.path.splitext(os.path.basename(file))[0]
-            _LOGGER.info(f"MM | [key:value] {k}:{file}")
-            return_items[k] = file
-    return return_items
+    if len(frontmatter) == 0:
+        frontmatter_raw = ""
+        frontmatter_fenced = ""
+    else:
+        frontmatter_raw = yaml.dump(frontmatter)
+        frontmatter_fenced = f"---\n{frontmatter_raw}---\n"
+
+    return {
+        "raw": frontmatter_raw,
+        "fenced": frontmatter_fenced,
+        "dict": frontmatter,
+    }
 
 
 def process_data(data_block, filepath):
@@ -104,13 +99,13 @@ def process_data(data_block, filepath):
 
     if MD_GLOBS_KEY in data_block and data_block[MD_GLOBS_KEY]:
         _LOGGER.info(f"MM | Populating md data globs...")
-        md_files.update(resolve_globs(data_block[MD_GLOBS_KEY], filepath))
+        md_files.update(globs_to_dict(data_block[MD_GLOBS_KEY], filepath))
     if YAML_GLOBS_KEY in data_block and data_block[YAML_GLOBS_KEY]:
         _LOGGER.info(f"MM | Populating yaml data globs...")
-        yaml_files.update(resolve_globs(data_block[YAML_GLOBS_KEY], filepath))
+        yaml_files.update(globs_to_dict(data_block[YAML_GLOBS_KEY], filepath))
     if YAML_GLOBS_UNKEYED_KEY in data_block and data_block[YAML_GLOBS_UNKEYED_KEY]:
         _LOGGER.info(f"MM | Populating unkeyed yaml globs...")
-        tmp_files = resolve_globs(data_block[YAML_GLOBS_UNKEYED_KEY], filepath)
+        tmp_files = globs_to_dict(data_block[YAML_GLOBS_UNKEYED_KEY], filepath)
         yaml_files.update(tmp_files)
         unkeyed_yaml_files = tmp_files
     if MD_FILES_KEY in data_block and data_block[MD_FILES_KEY]:
@@ -176,19 +171,6 @@ def process_data(data_block, filepath):
                 frontmatter_temp.update({k[12:]: v})
 
     # vars_raw = yaml.dump(vars_temp)
-    def get_frontmatter_formats(frontmatter_temp):
-        if len(frontmatter_temp) == 0:
-            frontmatter_raw = ""
-            frontmatter_fenced = ""
-        else:
-            frontmatter_raw = yaml.dump(frontmatter_temp)
-            frontmatter_fenced = f"---\n{frontmatter_raw}---\n"
-
-        return {
-            "raw": frontmatter_raw,
-            "fenced": frontmatter_fenced,
-            "dict": frontmatter_temp,
-        }
 
     # Global vars behaves exactly like global frontmatter, except:
     # 1. It's all variables, not just those marked with frontmatter_*.
@@ -196,9 +178,8 @@ def process_data(data_block, filepath):
     # and excludes markdown content... Is that useful?
     data["_global_vars"] = vars_temp
 
-    # Integrated, global frontmatter -- combines all frontmatter from .md files,
-    # Plus any yaml data indexed with frontmatter_*,
-    # Plus any variables indexed with frontmatter_* -- in that priority order.
+    # Integrated, global frontmatter from 3 sources, in order: 
+    # .md frontmatter, yaml data named frontmatter_*, variables named frontmatter_*
     data["_global_frontmatter"] = get_frontmatter_formats(frontmatter_temp)
 
     # Local frontmatter (per markdown file)

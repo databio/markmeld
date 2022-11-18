@@ -1,3 +1,4 @@
+import glob
 import os
 import subprocess
 import yaml
@@ -171,3 +172,25 @@ def load_plugins():
     }
     built_in_plugins.update(installed_plugins)
     return built_in_plugins
+
+
+def globs_to_dict(globs, cfg_path):
+    """
+    Given some globs, resolve them to the actual files, and return them in a
+    dict that is keyed by the base file name, without extension or parent folders.
+
+    @param globs Iterable[str] List of globs to convert to files.
+    @param cfg_path str Path to configuration file
+    """
+    return_items = {}
+    if not globs:
+        return return_items
+    for item in globs:
+        path = os.path.join(os.path.dirname(cfg_path), item)
+        _LOGGER.info(f"MM | Glob path: {path}")
+        files = glob.glob(path)
+        for file in files:
+            k = os.path.splitext(os.path.basename(file))[0]
+            _LOGGER.info(f"MM | [key:value] {k}:{file}")
+            return_items[k] = file
+    return return_items
