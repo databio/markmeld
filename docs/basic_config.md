@@ -3,21 +3,21 @@
 
 ## Definition of terms
 
-- **target** - A specific recipe to run that produces an output to build.
-- **configuration file** - A `yaml` file, by default named `_markmeld.yaml`, that configures markmeld. The configuration file contains the targets.
+- **target** - A specific recipe to run that usually produces an output to build.
+- **configuration file** - A `yaml` file that configures markmeld and specifies targets (Default:  `_markmeld.yaml`).
 - **data** - Content, either in markdown or yaml format, used to produce a target.
-- **template** - A template defined in [jinja2](https://palletsprojects.com/p/jinja/).
+- **template** - A [jinja2](https://palletsprojects.com/p/jinja/) file defining how the input will be integrated to produce the output.
 
 ## A simple example
 
-You produce a file called `_markmeld.yaml` to configure your project. Here's a simple example, `demo/_markmeld.yaml`:
+You write `_markmeld.yaml` to configure your project. Here's a simple example, `demo/_markmeld.yaml`:
 
 ```yaml
 targets:
   target1:
     latex_template: pandoc_default.tex
     output_file: "{today}_demo_output.pdf"  
-    md_template: md_template.jinja
+    jinja_template: jinja_template.jinja
     data:
       yaml_files:
         - some_data.yaml
@@ -25,38 +25,32 @@ targets:
         some_text_data: some_text.md
 ```
 
+## Root config file variables
+
+
 The configuration file must define a `targets` block. This block contains a series of named targets, in the example, `target1` is the only target defined in this configuration file.
 
 The configurable attributes are:
 
+- `version`: Should be "1" for the version 1 of the markmeld configuration specification.
 - `targets`: a list of targets (outputs) to build. Each target can contain the other configurable attributes.
-- `data_yaml` - a list of yaml files to make available to the templates
-- `data_md` - a named list of markdown files, which will be made available to the templates
-- `data_variables` - direct yaml data made available to the templates.
-- `data_md_globs` - Globs, where each file will be read, and available at the key of the filename.
-Any other attributes will be made available to the build system, but not to the jinja templates.
+- `target_factories`: a list of target factories
+- `imports`: A list of markmeld configuration files imported by the current file.
+- `imports_relative`: Exactly like `imports`, but the imported targets will be built relative to the importing file.
 
-In the demo, the only target you can build is `target1`. You can see the list of targets with `mm -l`. 
+## The targets section
 
-## Version 2
-
-The markmeld config file has three main sections: `targets`, `data`, `imports`, and `build_vars`.
-
-### targets section
-
-The `targets` section defines each target.
-
-```
-targets:
-  target_name_1:
-  	jinja_template: relative/path/to/tpl.jinja
-    ...
-  target_name_2:
-    jinja_template: relative/path/to/tpl2.jinja
-    ...
-```
-
-Each target may then define:
-
+- `data`: the main section that points to the content. Data sub-attributes:
+    - `md_files`: a named list of markdown files, which will be made available to the templates
+    - `md_globs`: Globs, where each file will be read, and available at the key of the filename.
+    - `yaml_files`: a list of yaml files to make available to the templates
+    - `yaml_globs`: a list of globs (regexes) to yaml files, which will be keyed by filename
+    - `yaml_globs_unkeyed`: a list of globs (regexes) to yaml files, which will be directly available
+    - `variables`: direct yaml data made available to the templates.
+- `base`: Defines a base target; any base attributes will be available to the current target, with the local target taking priority in case of conflict.
 - `jinja_template`: path to the jinja template, relative to the config file where it is defined.
-- `jinja_import_relative`: Set to `true` to make the jinja template relative to the importing file, rather than the working directory. Defaults to `false`.
+- `loop`: used to specify a `multi-output` target.
+- `prebuild`: A list of other targets to build before the current target is built
+- `command`: Shell command to execute to build the target. 
+
+Any other attributes will be made available to the build system, but not to the jinja templates.
