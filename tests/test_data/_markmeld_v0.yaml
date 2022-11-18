@@ -3,7 +3,9 @@ targets:
   default:
     jinja_template: templates/jinja_template.jinja
     recursive_render: false
-output_file: "{today}_demo_output.pdf"
+output_file: "{today}_demo_output.txt"
+command: |
+  cat > {output_file}
 data_yaml:
   - some_data.yaml
 data_md:

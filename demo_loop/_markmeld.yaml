@@ -1,6 +1,7 @@
 targets:
   default:
-    output_file: "{_today}_demo_output_{recipient}.pdf"
+    command: cat > "{output_file}"
+    output_file: "{_today}_demo_output_{recipient}.txt"
     loop:
       loop_data: recipients
       assign_to: recipient
@@ -9,7 +10,8 @@ targets:
     data_yaml:
     - some_data.yaml
   complex_loop:
-    output_file: "{today}_demo_output_complex_{recipient[name]}.pdf"
+    command: cat > "{output_file}"
+    output_file: "{today}_demo_output_complex_{recipient[name]}.txt"
     loop:
       loop_data: recipients
       assign_to: recipient
