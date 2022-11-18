@@ -503,24 +503,13 @@ class MarkdownMelder(object):
         elif tgt.target_meta["command"]:
             cmd_fmt = format_command(tgt)
             _LOGGER.debug(cmd_fmt)
-            if (
-                "recursive_render" in tgt.target_meta
-                and not tgt.target_meta["recursive_render"]
-            ):
-                melded_output = self.render_template(
-                    melded_input, tgt, double=False
-                ).encode()
-            else:
-                # Recursive rendering allows your template to include variables
-                melded_output = self.render_template(
-                    melded_input, tgt, double=True
-                ).encode()
-            tgt.melded_output = melded_output
-            _LOGGER.debug(tgt.target_meta)
+            tgt.melded_output = self.render_template(melded_input, tgt)
+            _LOGGER.info(tgt.melded_output)
             tgt.returncode = run_cmd(
-                cmd_fmt, melded_output, tgt.target_meta["_filepath"]
+                cmd_fmt, tgt.melded_output.encode(), tgt.target_meta["_filepath"]
             )
         return tgt
+
 
     def build_target_in_loop(self, tgt, melded_input, print_only=False, vardump=False):
         #  Process each iteration of the loop
@@ -592,7 +581,7 @@ class MarkdownMelder(object):
             )
         return data_copy
 
-    def render_template(self, melded_input, target, double=True):
+    def render_template(self, melded_input, target, double=None):
         # print(melded_input)
         if "data" not in melded_input:
             melded_input["data"] = {}
@@ -613,6 +602,17 @@ class MarkdownMelder(object):
             _LOGGER.error(
                 "No jinja_template provided. Using generic markmeld jinja_template."
             )
+
+        if double is None:
+            if (
+                "recursive_render" in target.target_meta
+                and not target.target_meta["recursive_render"]
+            ):
+                double = False
+            else:
+                # Recursive rendering allows your template to include variables
+                double = True
+
         if double:
             return Template(tpl.render(melded_input)).render(melded_input)  # two times
         else:
