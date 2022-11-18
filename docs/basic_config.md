@@ -27,7 +27,6 @@ targets:
 
 ## Root config file variables
 
-
 The configuration file must define a `targets` block. This block contains a series of named targets, in the example, `target1` is the only target defined in this configuration file.
 
 The configurable attributes are:
@@ -47,10 +46,31 @@ The configurable attributes are:
     - `yaml_globs`: a list of globs (regexes) to yaml files, which will be keyed by filename
     - `yaml_globs_unkeyed`: a list of globs (regexes) to yaml files, which will be directly available
     - `variables`: direct yaml data made available to the templates.
-- `base`: Defines a base target; any base attributes will be available to the current target, with the local target taking priority in case of conflict.
+- `inherit_from`: Defines a base target; any base attributes will be available to the current target, with the local target taking priority in case of conflict.
 - `jinja_template`: path to the jinja template, relative to the config file where it is defined.
 - `loop`: used to specify a `multi-output` target.
 - `prebuild`: A list of other targets to build before the current target is built
 - `command`: Shell command to execute to build the target. 
 
 Any other attributes will be made available to the build system, but not to the jinja templates.
+
+
+## Target inheritance
+
+Sometimes you want to define multiple targets that all share some content, or template, or other properties. Markmeld handles this with the `inherit_from` directive.
+
+Example:
+
+```
+targets:
+  base_target:
+    ...
+  target2:
+    inherits_from: base_target
+    data:
+      ...
+```
+
+If a target has an `inherit_from` attribute, then one or more targets will first be pre-loaded and processed. The targets are loaded in the order listed, with the specified target the last one, so attributes with the same name will have the highest priority.
+
+

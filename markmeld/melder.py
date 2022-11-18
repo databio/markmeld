@@ -341,7 +341,22 @@ class MarkdownMelder(object):
             return self.build_target_in_loop(tgt, print_only, vardump)
 
         # Run command...
-        return self.run_command_for_target(tgt, print_only, vardump)
+        result = self.run_command_for_target(tgt, print_only, vardump)
+
+        # Finally, run any postbuilds
+        if "postbuild" in tgt.meta:
+            _LOGGER.info(f"MM | Run postbuilds for target: {tgt.target_name}")
+            for posttgt in tgt.meta["postbuild"]:
+                _LOGGER.info(f"MM | Postbuild target: {posttgt}")
+                if posttgt in self.cfg["targets"]:
+                    self.build_target(posttgt)
+                else:
+                    _LOGGER.warning(
+                        f"MM | No target called {posttgt}, requested prebuild by target {tgt}."
+                    )
+                    return False
+
+        return result
 
     def run_command_for_target(self, tgt, print_only, vardump=False):
 
