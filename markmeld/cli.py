@@ -137,10 +137,7 @@ def main(test_args=None):
 
     def report_result(built_target):
         # Open the file
-        if (
-            "output_file" in built_target.meta
-            and built_target.meta["output_file"]
-        ):
+        if "output_file" in built_target.meta and built_target.meta["output_file"]:
             output_file = built_target.meta["output_file"]
         else:
             output_file = None
@@ -160,8 +157,10 @@ def main(test_args=None):
 
     if type(built_target) == dict:
         # Mult-output target
-        for i,tgt in built_target.items():
-            _LOGGER.info(f"Output {i}: Return code: {tgt.returncode}. Output: {tgt.meta['output_file']}")
+        for i, tgt in built_target.items():
+            _LOGGER.info(
+                f"Output {i}: Return code: {tgt.returncode}. Output: {tgt.meta['output_file']}"
+            )
     else:
         report_result(built_target)
 

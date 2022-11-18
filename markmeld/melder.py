@@ -36,6 +36,7 @@ tpl_generic = """
 {{ _global_frontmatter.fenced}}{{ content }}
 """
 
+
 @pass_environment
 def datetimeformat(environment, value, to_format="%Y-%m-%d", from_format="%Y-%m-%d"):
     if from_format == "%s":
@@ -48,6 +49,7 @@ def datetimeformat(environment, value, to_format="%Y-%m-%d", from_format="%Y-%m-
     except ValueError as VE:
         _LOGGER.warning(VE)
         return value
+
 
 # Filter used by the nih_biosketch template to find references
 # in a given prose block. Used to add citations to NIH
@@ -66,7 +68,15 @@ FILTERS["extract_refs"] = extract_refs
 # m = extract_refs("abc; hello @test;me @second one; and finally @three")
 # m
 
+
 def resolve_globs(globs, cfg_path):
+    """
+    Given some globs, resolve them to the actual files, and return them in a
+    dict that is keyed by the base file name, without extension or parent folders.
+
+    @param globs Iterable[str] List of globs to convert to files.
+    @param cfg_path str Path to configuration file
+    """
     return_items = {}
     if not globs:
         return return_items
@@ -423,9 +433,7 @@ class MarkdownMelder(object):
 
         _LOGGER.info("MM | Processing config version 1...")
         if "data" in tgt.meta:
-            processed_data_block = process_data(
-                tgt.meta["data"], tgt.meta["_filepath"]
-            )
+            processed_data_block = process_data(tgt.meta["data"], tgt.meta["_filepath"])
         else:
             processed_data_block = process_data({}, tgt.meta["_filepath"])
         _LOGGER.debug("processed_data_block:", processed_data_block)

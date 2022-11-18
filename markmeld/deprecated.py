@@ -17,6 +17,7 @@ tpl_generic = """{% if data.metadata_yaml is defined %}---
 
 {{ data.content }}"""
 
+
 def meld_output(self, data, cmd_data, config=None, print_only=False, in_loop=False):
     """
     Melds input markdown and yaml through a jinja template to produce text output.
@@ -269,16 +270,14 @@ def populate_data_md_globs(cfg, data):
     return data
 
 
-
-not "version" in tgt.root_cfg or tgt.root_cfg["version"] < 1:
-            _LOGGER.info("MM | Processing config version 0...")
-            data_copy["yaml"] = {}
-            data_copy["raw"] = {}
-            data_copy["md"] = {}
-            data_copy = populate_data_md_globs(tgt.meta, data_copy)
-            data_copy = populate_data_yaml(tgt.meta, data_copy)
-            data_copy = populate_data_yaml_keyed(tgt.meta, data_copy)
-            data_copy = populate_data_md(tgt.meta, data_copy)
-            if "data_variables" in tgt.meta:
-                data_copy.update(tgt.meta["data_variables"])
-        elif
+if not "version" in tgt.root_cfg or tgt.root_cfg["version"] < 1:
+    _LOGGER.info("MM | Processing config version 0...")
+    data_copy["yaml"] = {}
+    data_copy["raw"] = {}
+    data_copy["md"] = {}
+    data_copy = populate_data_md_globs(tgt.meta, data_copy)
+    data_copy = populate_data_yaml(tgt.meta, data_copy)
+    data_copy = populate_data_yaml_keyed(tgt.meta, data_copy)
+    data_copy = populate_data_md(tgt.meta, data_copy)
+    if "data_variables" in tgt.meta:
+        data_copy.update(tgt.meta["data_variables"])
