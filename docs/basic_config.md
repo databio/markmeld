@@ -61,7 +61,7 @@ Sometimes you want to define multiple targets that all share some content, or te
 
 Example:
 
-```
+```yaml
 targets:
   base_target:
     ...

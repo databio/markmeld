@@ -28,7 +28,7 @@ The *loop* attribute has two sub-attributes:
 
 In the simple example, the array data (found in `some_data.yaml`) looks like this:
 
-```
+```yaml
 recipients:
   - "John Doe"
   - "Jane Doe"
@@ -38,9 +38,9 @@ This target will create 1 output for each recipient.
 
 ### Loop data: array of objects
 
-If you have a more complicated needs, like more than one element per loop iteration, then you can use am array of objects like this:
+If you have a more complicated needs, like more than one element per loop iteration, then you can use an array of objects like this:
 
-```
+```yaml
 recipients:
   - name: "John Doe"
     institution: "University of Virginia"
@@ -50,28 +50,32 @@ recipients:
 
 See how the `_markmeld.yaml` file uses this information:
 
-```
+```yaml
 targets:
   default:
     output_file: "{today}_demo_output_{recipient}.pdf"
+    jinja_template: jinja_template.jinja
+    recursive_render: false
     loop:
       loop_data: recipients
       assign_to: recipient
-    md_template: md_template.jinja
-    recursive_render: false
-    data_yaml:
-    - some_data.yaml
+    data:
+      md_files:
+        some_text_data: some_text.md
+      yaml_globs_unkeyed:
+      - some_data.yaml
   complex_loop:
     output_file: "{today}_demo_output_complex_{recipient[name]}.pdf"
+    jinja_template: jinja_template_complex.jinja
+    recursive_render: false
     loop:
       loop_data: recipients
       assign_to: recipient
-    md_template: md_template_complex.jinja
-    recursive_render: false
-    data_yaml:
-    - complex_loop.yaml
-data_md:
-  some_text_data: some_text.md
+    data:
+      md_files:
+        some_text_data: some_text.md
+      yaml_globs_unkeyed:
+      - complex_loop.yaml
 ```
 
 We just have to make sure the `output_file` variable uses the `assign_to` variable in some way (in this case, it's `{recipient}`). This will create a separate output, with a separate output file name, for each iteration of the loop. The jinja template specified in `md_template` should also use `recipient`, so that each output is unique.

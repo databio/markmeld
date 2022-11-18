@@ -299,6 +299,30 @@ class Target(object):
             _LOGGER.info(f"MM | Output file: {self.meta['output_file']}")
 
 
+def build_side_targets(tgt, side_list_key="prebuild"):
+    """
+    Builds side targets for a target, which are prebuilds or postbuilds.
+
+    Side targets accompany a target, are built either before (prebuild)
+    or after (postbuild) a main target.
+
+    @param tgt Target The main target to build
+    @param side_list_key Iterable[str] The key of the target that contains a list of side targets. e.g. "prebuild" or "postbuild"
+    """
+    if side_list_key in tgt.meta:
+        _LOGGER.info(f"MM | Run {side_list_key} for target: {tgt.target_name}")
+        for side_tgt in tgt.meta[side_list_key]:
+            _LOGGER.info(f"MM | {side_list_key} target: {side_tgt}")
+            if side_tgt in self.cfg["targets"]:
+                self.build_target(side_tgt)
+            else:
+                _LOGGER.warning(
+                    f"MM | No target called {side_tgt}, requested prebuild by target {tgt}."
+                )
+                return False
+    return True
+
+
 class MarkdownMelder(object):
     def __init__(self, cfg):
         """
@@ -322,18 +346,9 @@ class MarkdownMelder(object):
         _LOGGER.info(f"MM | Building target: {tgt.target_name}")
 
         # First, run any pre-builds
-        if "prebuild" in tgt.meta:
-            _LOGGER.info(f"MM | Run prebuilds for target: {tgt.target_name}")
-            for pretgt in tgt.meta["prebuild"]:
-                _LOGGER.info(f"MM | Prebuild target: {pretgt}")
-                if pretgt in self.cfg["targets"]:
-                    self.build_target(pretgt)
-                else:
-                    _LOGGER.warning(
-                        f"MM | No target called {pretgt}, requested prebuild by target {tgt}."
-                    )
-                    return False
-
+        if not build_side_targets(tgt, "prebuild"):
+            return False
+            
         # Next, meld the inputs. This can be time-consuming, it reads data to populate variables
         tgt.melded_input = self.meld_inputs(tgt)
         _LOGGER.debug(f"Melded input: {tgt.melded_input}")
@@ -344,17 +359,8 @@ class MarkdownMelder(object):
         result = self.run_command_for_target(tgt, print_only, vardump)
 
         # Finally, run any postbuilds
-        if "postbuild" in tgt.meta:
-            _LOGGER.info(f"MM | Run postbuilds for target: {tgt.target_name}")
-            for posttgt in tgt.meta["postbuild"]:
-                _LOGGER.info(f"MM | Postbuild target: {posttgt}")
-                if posttgt in self.cfg["targets"]:
-                    self.build_target(posttgt)
-                else:
-                    _LOGGER.warning(
-                        f"MM | No target called {posttgt}, requested prebuild by target {tgt}."
-                    )
-                    return False
+        if not build_side_targets(tgt, "postbuild"):
+            return False
 
         return result
 

@@ -18,7 +18,7 @@ Right now there is 1 built-in factory, called the *glob factory*.
 
 The `glob` factory solves the above use case. You have a bunch of `.md` files and you want a target for each one. You can invoke the glob factory in your `_markmeld.yaml` config file like this:
 
-```
+```yaml
 target_factories:
 - glob:
     path: "*.md"
@@ -26,9 +26,7 @@ target_factories:
     name_levels: 2
     path: "*/*.md"
     glob_variables:
-      md_template: ...    
-md_template: /home/nsheff/code/sciquill/markmeld_templates/generic.jinja
-latex_template: /home/nsheff/code/sciquill/tex_templates/shefflab.tex
+      jinja_template: ...    
 ```
 
 Parameters for `glob` factory:
@@ -60,7 +58,7 @@ The format is: 'markmeld.factories': 'FACTORY_NAME=FACTORY_PACKAGE_NAME:FUNCTION
 
 The factory function name must correspond to what you specify in `setup.py` in the entry points above. These functions must take a Python `dict` object as sole parameter, and must return a `targets` object. The `dict` object provided will be any additional variables given by the user in `_markmeld.yaml`, which is how users can parameterize the factory. For example:
 
-```
+```yaml
 target_factories:
 - glob:
     path: "*/*.md"
