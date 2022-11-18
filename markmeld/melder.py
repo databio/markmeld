@@ -375,13 +375,13 @@ class Target(object):
     def __init__(self, root_cfg={}, target_name=None, vardata=None):
         self.root_cfg = root_cfg
         self.target_name = target_name
-        target_meta = {}
+        meta = {}
         # Old way would update based on root config:
-        # target_meta.update(self.root_cfg)
-        target_meta["_now"] = date.today().strftime("%s")
-        target_meta["_today"] = date.today().strftime("%Y-%m-%d")
-        target_meta["today"] = target_meta["_today"]  # TODO: Remove this
-        target_meta["now"] = target_meta["_now"]  # TODO: Remove this
+        # meta.update(self.root_cfg)
+        meta["_now"] = date.today().strftime("%s")
+        meta["_today"] = date.today().strftime("%Y-%m-%d")
+        meta["today"] = meta["_today"]  # TODO: Remove this
+        meta["now"] = meta["_now"]  # TODO: Remove this
 
         # Since a target has available to it all the variables in the _markemeld.yaml
         # config file, we start from there, then make a few changes:
@@ -404,37 +404,37 @@ class Target(object):
                     inherit_from = [inherit_from]
                 for base_target in inherit_from:
                     _LOGGER.info(f"Loading from base target: {base_target}")
-                    target_meta = deep_update(target_meta, root_cfg["targets"][base_target])
-            target_meta = deep_update(target_meta, root_cfg["targets"][target_name])
+                    meta = deep_update(meta, root_cfg["targets"][base_target])
+            meta = deep_update(meta, root_cfg["targets"][target_name])
             _LOGGER.debug(f'Config for this target: {root_cfg["targets"][target_name]}')
 
-        # del target_meta["targets"]
-        target_meta['_cfg_file_path'] = root_cfg["_cfg_file_path"]
-        if "version" in target_meta:
-            del target_meta["version"]
+        # del meta["targets"]
+        meta["_cfg_file_path"] = root_cfg["_cfg_file_path"]
+        if "version" in meta:
+            del meta["version"]
 
         if vardata:
             cli_vars = {y[0]: y[1] for y in [x.split("=") for x in vardata]}
-            target_meta.update(cli_vars)
+            meta.update(cli_vars)
         else:
             cli_vars = {}
 
-        if not "command" in target_meta:
+        if not "command" in meta:
             # Generally, user should provide a `command`, but for simple default cases,
             # we can just route through pandoc as a default command.
             options_array = []
-            if "latex_template" in target_meta:
+            if "latex_template" in meta:
                 options_array.append("--template {latex_template}")
-            if "output_file" in target_meta:
+            if "output_file" in meta:
                 options_array.append('--output "{output_file}"')
             options = " ".join(options_array)
-            target_meta["command"] = f"pandoc {options}"
+            meta["command"] = f"pandoc {options}"
 
-        _LOGGER.debug(f"target_meta: {target_meta}")
-        self.target_meta = target_meta
-        _LOGGER.debug(f"MM | Config file path: {self.target_meta['_cfg_file_path']}")
-        if "output_file" in self.target_meta:
-            _LOGGER.info(f"MM | Output file: {self.target_meta['output_file']}")
+        _LOGGER.debug(f"meta: {meta}")
+        self.meta = meta
+        _LOGGER.debug(f"MM | Config file path: {self.meta['_cfg_file_path']}")
+        if "output_file" in self.meta:
+            _LOGGER.info(f"MM | Output file: {self.meta['output_file']}")
 
 
 class MarkdownMelder(object):
@@ -449,8 +449,8 @@ class MarkdownMelder(object):
     def open_target(self, target_name):
         tgt = Target(self.cfg, target_name)
 
-        if tgt.target_meta["output_file"] and not "stopopen" in tgt.target_meta:
-            return tgt.target_meta["output_file"]
+        if tgt.meta["output_file"] and not "stopopen" in tgt.meta:
+            return tgt.meta["output_file"]
         else:
             return False
 
@@ -460,9 +460,9 @@ class MarkdownMelder(object):
         _LOGGER.info(f"MM | Building target: {tgt.target_name}")
 
         # First, run any pre-builds
-        if "prebuild" in tgt.target_meta:
+        if "prebuild" in tgt.meta:
             _LOGGER.info(f"MM | Run prebuilds for target: {tgt.target_name}")
-            for pretgt in tgt.target_meta["prebuild"]:
+            for pretgt in tgt.meta["prebuild"]:
                 _LOGGER.info(f"MM | Prebuild target: {pretgt}")
                 if pretgt in self.cfg["targets"]:
                     self.build_target(pretgt)
@@ -474,21 +474,21 @@ class MarkdownMelder(object):
 
         # Next, meld the inputs. This can be time-consuming, it reads data to populate variables
         melded_input = self.meld_inputs(tgt)
-
-        if "loop" in tgt.target_meta:
+        _LOGGER.debug(f"Melded input: {melded_input}")
+        if "loop" in tgt.meta:
             return self.build_target_in_loop(tgt, melded_input, print_only, vardump)
 
         # Run command...
         return self.run_command_for_target(tgt, melded_input, print_only, vardump)
 
     def run_command_for_target(self, tgt, melded_input, print_only, vardump=False):
-        _LOGGER.info(f"File path for this target: {tgt.target_meta['_filepath']}")
-        if "type" in tgt.target_meta and tgt.target_meta["type"] == "raw":
+        _LOGGER.info(f"File path for this target: {tgt.meta['_filepath']}")
+        if "type" in tgt.meta and tgt.meta["type"] == "raw":
             # Raw = No subprocess stdin printing. (so, it doesn't render anything)
             cmd_fmt = format_command(tgt)
             tgt.melded_output = None
-            tgt.returncode = run_cmd(cmd_fmt, None, tgt.target_meta["_filepath"])
-        elif "type" in tgt.target_meta and tgt.target_meta["type"] == "meta":
+            tgt.returncode = run_cmd(cmd_fmt, None, tgt.meta["_filepath"])
+        elif "type" in tgt.meta and tgt.meta["type"] == "meta":
             # Meta = No command, it's a meta-target used for prebuilds or something else
             tgt.melded_output = None
             tgt.returncode = 0
@@ -500,22 +500,20 @@ class MarkdownMelder(object):
         elif vardump:
             tgt.melded_output = melded_input
             tgt.returncode = 0
-        elif tgt.target_meta["command"]:
+        elif tgt.meta["command"]:
             cmd_fmt = format_command(tgt)
             _LOGGER.debug(cmd_fmt)
             tgt.melded_output = self.render_template(melded_input, tgt)
-            _LOGGER.info(tgt.melded_output)
             tgt.returncode = run_cmd(
-                cmd_fmt, tgt.melded_output.encode(), tgt.target_meta["_filepath"]
+                cmd_fmt, tgt.melded_output.encode(), tgt.meta["_filepath"]
             )
         return tgt
 
-
     def build_target_in_loop(self, tgt, melded_input, print_only=False, vardump=False):
         #  Process each iteration of the loop
-        loop_dat = recursive_get(
-            melded_input, tgt.target_meta["loop"]["loop_data"].split(".")
-        )
+        loop_data_var = tgt.meta["loop"]["loop_data"].split(".")
+        _LOGGER.debug(f"Retrieve loop data variable named {loop_data_var}")
+        loop_dat = recursive_get(melded_input, loop_data_var)
         _LOGGER.debug(loop_dat)
         _LOGGER.debug(tgt.root_cfg)
         n = len(loop_dat)
@@ -527,11 +525,11 @@ class MarkdownMelder(object):
             loop_var_value = loop_dat[i]
             melded_input_copy = deepcopy(melded_input)
             tgt_copy = deepcopy(tgt)
-            var = tgt_copy.target_meta["loop"]["assign_to"]
+            var = tgt_copy.meta["loop"]["assign_to"]
             _LOGGER.info(f"{var}: {loop_var_value}")
             melded_input_copy.update({var: loop_var_value})
-            tgt_copy.target_meta.update({var: loop_var_value})
-            _LOGGER.debug(tgt_copy.target_meta)
+            tgt_copy.meta.update({var: loop_var_value})
+            _LOGGER.debug(tgt_copy.meta)
             # _LOGGER.debug(cmd_data)
             rendered_in = self.render_template(
                 melded_input_copy, tgt_copy, double=False
@@ -544,29 +542,27 @@ class MarkdownMelder(object):
 
     def meld_inputs(self, target):
         data_copy = deepcopy(target.root_cfg)
-        data_copy.update(target.target_meta)
+        data_copy.update(target.meta)
 
         if not "version" in target.root_cfg or target.root_cfg["version"] < 1:
             _LOGGER.info("MM | Processing config version 0...")
             data_copy["yaml"] = {}
             data_copy["raw"] = {}
             data_copy["md"] = {}
-            data_copy = populate_data_md_globs(target.target_meta, data_copy)
-            data_copy = populate_data_yaml(target.target_meta, data_copy)
-            data_copy = populate_data_yaml_keyed(target.target_meta, data_copy)
-            data_copy = populate_data_md(target.target_meta, data_copy)
-            if "data_variables" in target.target_meta:
-                data_copy.update(target.target_meta["data_variables"])
+            data_copy = populate_data_md_globs(target.meta, data_copy)
+            data_copy = populate_data_yaml(target.meta, data_copy)
+            data_copy = populate_data_yaml_keyed(target.meta, data_copy)
+            data_copy = populate_data_md(target.meta, data_copy)
+            if "data_variables" in target.meta:
+                data_copy.update(target.meta["data_variables"])
         elif target.root_cfg["version"] >= 1:
             _LOGGER.info("MM | Processing config version 1...")
-            if "data" in target.target_meta:
+            if "data" in target.meta:
                 processed_data_block = process_data_block(
-                    target.target_meta["data"], target.target_meta["_filepath"]
+                    target.meta["data"], target.meta["_filepath"]
                 )
             else:
-                processed_data_block = process_data_block(
-                    {}, target.target_meta["_filepath"]
-                )
+                processed_data_block = process_data_block({}, target.meta["_filepath"])
             _LOGGER.debug("processed_data_block:", processed_data_block)
             data_copy.update(processed_data_block)
         k = list(data_copy.keys())
@@ -585,17 +581,14 @@ class MarkdownMelder(object):
         # print(melded_input)
         if "data" not in melded_input:
             melded_input["data"] = {}
-        if "md_template" in target.target_meta:
+        if "md_template" in target.meta:
             _LOGGER.error(
                 "Please update your config! 'md_template' was renamed to 'jinja_template'."
             )
-            target.target_meta["jinja_template"] = target.target_meta["md_template"]
+            target.meta["jinja_template"] = target.meta["md_template"]
 
-        if (
-            "jinja_template" in target.target_meta
-            and target.target_meta["jinja_template"]
-        ):
-            tpl = load_template(target.target_meta)
+        if "jinja_template" in target.meta and target.meta["jinja_template"]:
+            tpl = load_template(target.meta)
         else:
             # cmd_data["jinja_template"] = None
             tpl = Template(tpl_generic)
@@ -605,8 +598,8 @@ class MarkdownMelder(object):
 
         if double is None:
             if (
-                "recursive_render" in target.target_meta
-                and not target.target_meta["recursive_render"]
+                "recursive_render" in target.meta
+                and not target.meta["recursive_render"]
             ):
                 double = False
             else:
