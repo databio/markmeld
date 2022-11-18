@@ -19,7 +19,7 @@ extra = {"install_requires": DEPENDENCIES}
 with open(PACKAGE_NAME + "/_version.py", "r") as versionfile:
     version = versionfile.readline().split()[-1].strip("\"'\n")
 
-with open('README.md') as f:
+with open("README.md") as f:
     long_description = f.read()
 
 setup(
@@ -43,13 +43,13 @@ setup(
     license="BSD2",
     entry_points={
         "console_scripts": [
-            "mm = markmeld.markmeld:main",
+            "mm = markmeld.cli:main",
         ],
     },
     keywords="bioinformatics, sequencing, ngs",
     package_data={"refgenie": [os.path.join("refgenie", "*")]},
     include_package_data=True,
     url="http://markmeld.databio.org",
-    author=u"Nathan Sheffield",
+    author="Nathan Sheffield",
     **extra
 )

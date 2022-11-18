@@ -1,0 +1,11 @@
+targets:
+  imported_raw_target:
+    description: Updates the all_papers.yaml.
+    type: raw
+    command: |
+      ./dummy.sh
+  imported_target:
+    jinja_template: templates/test_import.jinja
+    data:
+      yaml_files:
+        my_variable: yaml_files/y1.yaml

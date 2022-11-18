@@ -1,4 +1,3 @@
-{'md_template': 'md_template.jinja'}
 # Template
 
 This is a jinja template. You can write plain markdown text into the template like this.
@@ -21,7 +20,7 @@ The sundance kid
 
 You can refer to *content* in the markdown data with the `.content` attribute, using the name you put in the config file # Text content
 
-Here is some text, which renders like this::
+Here is some text, which renders like this:
 
 ```
 # Text content
