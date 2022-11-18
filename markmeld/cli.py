@@ -135,25 +135,34 @@ def main(test_args=None):
     if args.print | args.dump:
         print(built_target.melded_output)
 
-    # Open the file
-    if (
-        "output_file" in built_target.target_meta
-        and built_target.target_meta["output_file"]
-    ):
-        output_file = built_target.target_meta["output_file"]
+    def report_result(built_target):
+        # Open the file
+        if (
+            "output_file" in built_target.meta
+            and built_target.meta["output_file"]
+        ):
+            output_file = built_target.meta["output_file"]
+        else:
+            output_file = None
+
+        if (
+            built_target.returncode == 0
+            and output_file
+            and not "stopopen" in built_target.meta
+            and not args.print
+            and not args.dump
+        ):
+            cmd_open = ["xdg-open", output_file]
+            _LOGGER.info(" ".join(cmd_open))
+            subprocess.call(cmd_open)
+        else:
+            _LOGGER.info(f"Return code: {built_target.returncode}")
+
+    if type(built_target) == dict:
+        # Mult-output target
+        for i,tgt in built_target.items():
+            _LOGGER.info(f"Output {i}: Return code: {tgt.returncode}. Output: {tgt.meta['output_file']}")
     else:
-        output_file = None
-    if (
-        built_target.returncode == 0
-        and output_file
-        and not "stopopen" in built_target.target_meta
-        and not args.print
-        and not args.dump
-    ):
-        cmd_open = ["xdg-open", output_file]
-        _LOGGER.info(" ".join(cmd_open))
-        subprocess.call(cmd_open)
-    else:
-        _LOGGER.info(f"Return code: {built_target.returncode}")
+        report_result(built_target)
 
     return

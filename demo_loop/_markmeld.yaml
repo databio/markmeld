@@ -1,10 +1,11 @@
+version: 1
 targets:
   basetgt:
     data:
       md_files:
         some_text_data: some_text.md
   default:
-    base: basetgt
+    inherit_from: basetgt
     command: cat > "{output_file}"
     output_file: "{_today}_demo_output_{recipient}.txt"
     loop:
@@ -16,7 +17,7 @@ targets:
       yaml_globs_unkeyed:
         - some_data.yaml
   complex_loop:
-    base: basetgt
+    inherit_from: basetgt
     command: cat > "{output_file}"
     output_file: "{today}_demo_output_complex_{recipient[name]}.txt"
     jinja_template: md_template_complex.jinja

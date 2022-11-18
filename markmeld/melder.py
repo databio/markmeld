@@ -32,30 +32,9 @@ YAML_GLOBS_UNKEYED_KEY = "yaml_globs_unkeyed"
 
 _LOGGER = getLogger(PKG_NAME)
 
-# Embed these in the package?
-mm_targets = {
-    "figs": "/home/nsheff/code/sciquill/bin/build-pdfs fig",
-    "figs_png": "/home/nsheff/code/sciquill/bin/buildfigs fig/*.svg",
-    "yaml_refs": "jabref -n --exportMatches 'groups=shefflab',reflists/ncs_papers.yaml,my_yaml i ${HOME}/code/papers/sheffield.bib",
-    "pubs": "",
-    "split": "/home/nsheff/code/sciquill/bin/splitsupl {combined} {primary} {appendix}",
-}
-
-tpl_generic = """{% if data.metadata_yaml is defined %}---
-{{ data.metadata_yaml }}
----{% endif %}
-
-{{ data.content }}"""
-
-
 tpl_generic = """
 {{ _global_frontmatter.fenced}}{{ content }}
 """
-
-# tpl_generic = """
-# {{ data }}
-# """
-
 
 @pass_environment
 def datetimeformat(environment, value, to_format="%Y-%m-%d", from_format="%Y-%m-%d"):
@@ -69,7 +48,6 @@ def datetimeformat(environment, value, to_format="%Y-%m-%d", from_format="%Y-%m-
     except ValueError as VE:
         _LOGGER.warning(VE)
         return value
-
 
 # Filter used by the nih_biosketch template to find references
 # in a given prose block. Used to add citations to NIH
@@ -85,115 +63,8 @@ FILTERS["date"] = datetimeformat
 # Add custom reference extraction filter
 FILTERS["extract_refs"] = extract_refs
 
-
 # m = extract_refs("abc; hello @test;me @second one; and finally @three")
 # m
-
-
-def populate_data_yaml(cfg, data):
-    # Load up yaml data
-    if "data_yaml" not in cfg:
-        return data
-    _LOGGER.info(f"MM | Populating yaml data...")
-    for d in cfg["data_yaml"]:
-        _LOGGER.info(f"MM | {d}")
-        dabs = make_abspath(d, cfg["_cfg_file_path"])
-
-        with open(dabs, "r") as f:
-            data.update(yaml.load(f, Loader=yaml.SafeLoader))
-
-    return data
-
-
-# For itemized yaml this time...
-def populate_data_yaml_keyed(cfg, data):
-    # Load up yaml data
-    if "data_yaml_keyed" not in cfg:
-        return data
-    _LOGGER.info(f"MM | Populating keyed yaml data...")
-    for k, v in cfg["data_yaml_keyed"].items():
-        _LOGGER.info(f"MM | --> {k}: {v}")
-        with open(v, "r") as f:
-            yaml_dict = yaml.load(f, Loader=yaml.SafeLoader)
-            _LOGGER.debug(yaml_dict)
-            data[k] = yaml_dict
-            data["yaml"][k] = yaml_dict
-            data["raw"][k] = yaml.dump(yaml_dict)
-            # 2022-08-12 Original way, this doesn't work in the case that data[k] is a list
-            # (if the yaml file is an array, not an object)
-            # So I changed it put the raw value under ["raw"][k] instead of [k]["raw"]
-            # data[k]["raw"] = yaml.dump(yaml_dict)
-    return data
-
-
-def populate_data_md(cfg, data):
-    # Load up markdown data
-    if "data_md" not in cfg:
-        return data
-
-    if "md" not in data:
-        data["md"] = {}
-
-    _LOGGER.info(f"MM | Populating md data...")
-    for k, v in cfg["data_md"].items():
-        _LOGGER.info(f"MM | --> {k}: {v}")
-        if not v:
-            data[k] = v
-            continue
-        if is_url(v):  # Do url stuff
-            import requests
-
-            response = requests.get(v)
-            p = frontmatter.loads(response.text)
-        else:
-            vabs = make_abspath(v, cfg["_cfg_file_path"])
-            if os.path.exists(vabs):
-                p = frontmatter.load(vabs)
-            else:
-                _LOGGER.warning(f"Skipping file that does not exist: {vabs}")
-                data[k] = {}
-                data["md"][k] = {}
-                data[k]["all"] = ""
-                continue
-        data[k] = p.__dict__
-        del data[k]["handler"]
-        data["md"][k] = data[k]
-        data[k]["all"] = frontmatter.dumps(p)
-        _LOGGER.debug(data[k])
-        if len(p.metadata) > 0:
-            data[k]["metadata_yaml"] = yaml.dump(p.metadata)
-
-    return data
-
-
-def populate_data_md_globs(cfg, data):
-    import glob
-
-    if "data_md_globs" not in cfg:
-        return data
-    _LOGGER.info(f"MM | Populating md data globs...")
-    for folder in cfg["data_md_globs"]:
-        files = glob.glob(folder)
-        _LOGGER.info(files)
-        for file in files:
-            basename = os.path.basename(file)
-            dirname = os.path.dirname(file)
-            splitext = os.path.splitext(basename)
-            k = splitext[0]
-            ext = splitext[1]
-            _LOGGER.info(f"MM | [key:value] {k}:{file}")
-            p = frontmatter.load(file)
-            data[k] = p.__dict__
-            del data[k]["handler"]
-            data["md"][k] = p.__dict__
-            del data["md"][k]["handler"]
-            data[k]["all"] = frontmatter.dumps(p)
-            data[k]["path"] = file
-            data[k]["ext"] = ext
-            if len(p.metadata) > 0:
-                data[k]["metadata_yaml"] = yaml.dump(p.metadata)
-    return data
-
 
 def resolve_globs(globs, cfg_path):
     return_items = {}
@@ -210,7 +81,7 @@ def resolve_globs(globs, cfg_path):
     return return_items
 
 
-def process_data_block(data_block, filepath):
+def process_data(data_block, filepath):
     _LOGGER.info(f"MM | Processing data block...")
     data = {"_raw": {}}  # Initialize return value
     frontmatter_temp = {}
@@ -473,15 +344,16 @@ class MarkdownMelder(object):
                     return False
 
         # Next, meld the inputs. This can be time-consuming, it reads data to populate variables
-        melded_input = self.meld_inputs(tgt)
-        _LOGGER.debug(f"Melded input: {melded_input}")
+        tgt.melded_input = self.meld_inputs(tgt)
+        _LOGGER.debug(f"Melded input: {tgt.melded_input}")
         if "loop" in tgt.meta:
-            return self.build_target_in_loop(tgt, melded_input, print_only, vardump)
+            return self.build_target_in_loop(tgt, print_only, vardump)
 
         # Run command...
-        return self.run_command_for_target(tgt, melded_input, print_only, vardump)
+        return self.run_command_for_target(tgt, print_only, vardump)
 
-    def run_command_for_target(self, tgt, melded_input, print_only, vardump=False):
+    def run_command_for_target(self, tgt, print_only, vardump=False):
+
         _LOGGER.info(f"File path for this target: {tgt.meta['_filepath']}")
         if "type" in tgt.meta and tgt.meta["type"] == "raw":
             # Raw = No subprocess stdin printing. (so, it doesn't render anything)
@@ -495,27 +367,28 @@ class MarkdownMelder(object):
         elif print_only:
             # Case 2: print_only means just render but run no command.
             # return print(tpl.render(data))  # one time
-            tgt.melded_output = self.render_template(melded_input, tgt)
+            tgt.melded_output = self.render_template(tgt.melded_input, tgt)
             tgt.returncode = 0
         elif vardump:
-            tgt.melded_output = melded_input
+            tgt.melded_output = tgt.melded_input
             tgt.returncode = 0
         elif tgt.meta["command"]:
             cmd_fmt = format_command(tgt)
             _LOGGER.debug(cmd_fmt)
-            tgt.melded_output = self.render_template(melded_input, tgt)
+            tgt.melded_output = self.render_template(tgt.melded_input, tgt)
             tgt.returncode = run_cmd(
                 cmd_fmt, tgt.melded_output.encode(), tgt.meta["_filepath"]
             )
         return tgt
 
-    def build_target_in_loop(self, tgt, melded_input, print_only=False, vardump=False):
+    def build_target_in_loop(self, tgt, print_only=False, vardump=False):
         #  Process each iteration of the loop
+        melded_input = tgt.melded_input
         loop_data_var = tgt.meta["loop"]["loop_data"].split(".")
         _LOGGER.debug(f"Retrieve loop data variable named {loop_data_var}")
         loop_dat = recursive_get(melded_input, loop_data_var)
-        _LOGGER.debug(loop_dat)
-        _LOGGER.debug(tgt.root_cfg)
+        _LOGGER.debug(f"Loop dat: {loop_dat}")
+        _LOGGER.debug(f"Target melded_input: {tgt.melded_input}")
         n = len(loop_dat)
         _LOGGER.info(f"Loop found: {n} elements.")
         _LOGGER.debug(loop_dat)
@@ -527,44 +400,37 @@ class MarkdownMelder(object):
             tgt_copy = deepcopy(tgt)
             var = tgt_copy.meta["loop"]["assign_to"]
             _LOGGER.info(f"{var}: {loop_var_value}")
-            melded_input_copy.update({var: loop_var_value})
+            tgt_copy.melded_input.update({var: loop_var_value})
             tgt_copy.meta.update({var: loop_var_value})
             _LOGGER.debug(tgt_copy.meta)
             # _LOGGER.debug(cmd_data)
             rendered_in = self.render_template(
-                melded_input_copy, tgt_copy, double=False
+                tgt_copy.melded_input, tgt_copy, double=False
             ).encode()
             return_target_objects[i] = self.run_command_for_target(
-                tgt_copy, melded_input_copy, print_only, vardump
+                tgt_copy, print_only, vardump
             )
 
         return return_target_objects
 
-    def meld_inputs(self, target):
-        data_copy = deepcopy(target.root_cfg)
-        data_copy.update(target.meta)
+    def meld_inputs(self, tgt):
+        # data_copy = deepcopy(tgt.root_cfg)
+        # data_copy.update(tgt.meta)
+        data_copy = deepcopy(tgt.meta)
 
-        if not "version" in target.root_cfg or target.root_cfg["version"] < 1:
-            _LOGGER.info("MM | Processing config version 0...")
-            data_copy["yaml"] = {}
-            data_copy["raw"] = {}
-            data_copy["md"] = {}
-            data_copy = populate_data_md_globs(target.meta, data_copy)
-            data_copy = populate_data_yaml(target.meta, data_copy)
-            data_copy = populate_data_yaml_keyed(target.meta, data_copy)
-            data_copy = populate_data_md(target.meta, data_copy)
-            if "data_variables" in target.meta:
-                data_copy.update(target.meta["data_variables"])
-        elif target.root_cfg["version"] >= 1:
-            _LOGGER.info("MM | Processing config version 1...")
-            if "data" in target.meta:
-                processed_data_block = process_data_block(
-                    target.meta["data"], target.meta["_filepath"]
-                )
-            else:
-                processed_data_block = process_data_block({}, target.meta["_filepath"])
-            _LOGGER.debug("processed_data_block:", processed_data_block)
-            data_copy.update(processed_data_block)
+        if "version" in tgt.root_cfg and not tgt.root_cfg["version"] >= 1:
+            _LOGGER.error("Can't process this config version.")
+
+        _LOGGER.info("MM | Processing config version 1...")
+        if "data" in tgt.meta:
+            processed_data_block = process_data(
+                tgt.meta["data"], tgt.meta["_filepath"]
+            )
+        else:
+            processed_data_block = process_data({}, tgt.meta["_filepath"])
+        _LOGGER.debug("processed_data_block:", processed_data_block)
+        data_copy.update(processed_data_block)
+
         k = list(data_copy.keys())
         _LOGGER.info(f"MM | Available keys: {k}")
         if MD_FILES_KEY in data_copy:

@@ -1,3 +1,22 @@
+# tpl_generic = """
+# {{ data }}
+# """
+
+# Embed these in the package?
+mm_targets = {
+    "figs": "/home/nsheff/code/sciquill/bin/build-pdfs fig",
+    "figs_png": "/home/nsheff/code/sciquill/bin/buildfigs fig/*.svg",
+    "yaml_refs": "jabref -n --exportMatches 'groups=shefflab',reflists/ncs_papers.yaml,my_yaml i ${HOME}/code/papers/sheffield.bib",
+    "pubs": "",
+    "split": "/home/nsheff/code/sciquill/bin/splitsupl {combined} {primary} {appendix}",
+}
+
+tpl_generic = """{% if data.metadata_yaml is defined %}---
+{{ data.metadata_yaml }}
+---{% endif %}
+
+{{ data.content }}"""
+
 def meld_output(self, data, cmd_data, config=None, print_only=False, in_loop=False):
     """
     Melds input markdown and yaml through a jinja template to produce text output.
@@ -143,3 +162,123 @@ def meld_to_command(self, data, cmd_data):
             call_hook(cmd_data, data, tgt)
 
     return returncode
+
+
+def populate_data_yaml(cfg, data):
+    # Load up yaml data
+    if "data_yaml" not in cfg:
+        return data
+    _LOGGER.info(f"MM | Populating yaml data...")
+    for d in cfg["data_yaml"]:
+        _LOGGER.info(f"MM | {d}")
+        dabs = make_abspath(d, cfg["_cfg_file_path"])
+
+        with open(dabs, "r") as f:
+            data.update(yaml.load(f, Loader=yaml.SafeLoader))
+
+    return data
+
+
+# For itemized yaml this time...
+def populate_data_yaml_keyed(cfg, data):
+    # Load up yaml data
+    if "data_yaml_keyed" not in cfg:
+        return data
+    _LOGGER.info(f"MM | Populating keyed yaml data...")
+    for k, v in cfg["data_yaml_keyed"].items():
+        _LOGGER.info(f"MM | --> {k}: {v}")
+        with open(v, "r") as f:
+            yaml_dict = yaml.load(f, Loader=yaml.SafeLoader)
+            _LOGGER.debug(yaml_dict)
+            data[k] = yaml_dict
+            data["yaml"][k] = yaml_dict
+            data["raw"][k] = yaml.dump(yaml_dict)
+            # 2022-08-12 Original way, this doesn't work in the case that data[k] is a list
+            # (if the yaml file is an array, not an object)
+            # So I changed it put the raw value under ["raw"][k] instead of [k]["raw"]
+            # data[k]["raw"] = yaml.dump(yaml_dict)
+    return data
+
+
+def populate_data_md(cfg, data):
+    # Load up markdown data
+    if "data_md" not in cfg:
+        return data
+
+    if "md" not in data:
+        data["md"] = {}
+
+    _LOGGER.info(f"MM | Populating md data...")
+    for k, v in cfg["data_md"].items():
+        _LOGGER.info(f"MM | --> {k}: {v}")
+        if not v:
+            data[k] = v
+            continue
+        if is_url(v):  # Do url stuff
+            import requests
+
+            response = requests.get(v)
+            p = frontmatter.loads(response.text)
+        else:
+            vabs = make_abspath(v, cfg["_cfg_file_path"])
+            if os.path.exists(vabs):
+                p = frontmatter.load(vabs)
+            else:
+                _LOGGER.warning(f"Skipping file that does not exist: {vabs}")
+                data[k] = {}
+                data["md"][k] = {}
+                data[k]["all"] = ""
+                continue
+        data[k] = p.__dict__
+        del data[k]["handler"]
+        data["md"][k] = data[k]
+        data[k]["all"] = frontmatter.dumps(p)
+        _LOGGER.debug(data[k])
+        if len(p.metadata) > 0:
+            data[k]["metadata_yaml"] = yaml.dump(p.metadata)
+
+    return data
+
+
+def populate_data_md_globs(cfg, data):
+    import glob
+
+    if "data_md_globs" not in cfg:
+        return data
+    _LOGGER.info(f"MM | Populating md data globs...")
+    for folder in cfg["data_md_globs"]:
+        files = glob.glob(folder)
+        _LOGGER.info(files)
+        for file in files:
+            basename = os.path.basename(file)
+            dirname = os.path.dirname(file)
+            splitext = os.path.splitext(basename)
+            k = splitext[0]
+            ext = splitext[1]
+            _LOGGER.info(f"MM | [key:value] {k}:{file}")
+            p = frontmatter.load(file)
+            data[k] = p.__dict__
+            del data[k]["handler"]
+            data["md"][k] = p.__dict__
+            del data["md"][k]["handler"]
+            data[k]["all"] = frontmatter.dumps(p)
+            data[k]["path"] = file
+            data[k]["ext"] = ext
+            if len(p.metadata) > 0:
+                data[k]["metadata_yaml"] = yaml.dump(p.metadata)
+    return data
+
+
+
+not "version" in tgt.root_cfg or tgt.root_cfg["version"] < 1:
+            _LOGGER.info("MM | Processing config version 0...")
+            data_copy["yaml"] = {}
+            data_copy["raw"] = {}
+            data_copy["md"] = {}
+            data_copy = populate_data_md_globs(tgt.meta, data_copy)
+            data_copy = populate_data_yaml(tgt.meta, data_copy)
+            data_copy = populate_data_yaml_keyed(tgt.meta, data_copy)
+            data_copy = populate_data_md(tgt.meta, data_copy)
+            if "data_variables" in tgt.meta:
+                data_copy.update(tgt.meta["data_variables"])
+        elif
