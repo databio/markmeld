@@ -10,9 +10,14 @@ cfg = {"test": True}
 today = date.today().strftime("%Y-%m-%d")
 
 # We want our logger to print verbosely during testing
-N_LOGGING_FMT = "%(filename)12.12s:%(funcName)16.16s:%(lineno)4.4d |%(levelname)5.5s| %(message)s "
+N_LOGGING_FMT = (
+    "%(filename)12.12s:%(funcName)16.16s:%(lineno)4.4d |%(levelname)5.5s| %(message)s "
+)
 import logmuse
-_LOGGER = logmuse.init_logger(name="markmeld", level="DEBUG", datefmt="%H:%M:%S", fmt=N_LOGGING_FMT)
+
+_LOGGER = logmuse.init_logger(
+    name="markmeld", level="DEBUG", datefmt="%H:%M:%S", fmt=N_LOGGING_FMT
+)
 
 
 def compare_to_file(file, string_to_compare):
@@ -28,10 +33,13 @@ def test_output():
     res = x.build_target("default", print_only=True)
     print(res.melded_output)
 
+
 def test_cli():
     from markmeld.cli import main
+
     with pytest.raises(SystemExit):
-        main(test_args={"config":"tests/test_data/_markmeld_v0.yaml"})
+        main(test_args={"config": "tests/test_data/_markmeld_v0.yaml"})
+
 
 def test_MarkdownMelder_demo():
     cfg = markmeld.load_config_file("tests/test_data/_markmeld_v0.yaml")
@@ -116,6 +124,7 @@ def test_root_data_propogates_to_target():
     assert "xs8Nd0D98" in str(res.melded_output)  # From root data definition
     assert "k9XFJOId0" in str(res.melded_output)  # From local target data definition
 
+
 def test_import():
     cfg = markmeld.load_config_file("tests/test_data/_markmeld_import.yaml")
     mm = markmeld.MarkdownMelder(cfg)
@@ -132,9 +141,9 @@ def test_import():
     assert "qk32LK6Nv0" in str(res.melded_output)
 
 
-
 def test_null_jinja_template():
-    cfg = markmeld.load_config_file("tests/test_data/_markmeld_null_jinja_template.yaml")
+    cfg = markmeld.load_config_file(
+        "tests/test_data/_markmeld_null_jinja_template.yaml"
+    )
     mm = markmeld.MarkdownMelder(cfg)
     res = mm.build_target("target_name", print_only=True)
-

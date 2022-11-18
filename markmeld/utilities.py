@@ -70,10 +70,12 @@ def load_config_file(filepath, target_filepath=None, autocomplete=True):
     @return dict Loaded yaml data object.
     """
 
-    try: 
+    try:
         with open(filepath, "r") as f:
             cfg_data = f.read()
-        return load_config_data(cfg_data, os.path.abspath(filepath), target_filepath, autocomplete)
+        return load_config_data(
+            cfg_data, os.path.abspath(filepath), target_filepath, autocomplete
+        )
     except Exception as e:
         _LOGGER.error(f"Couldn't load config file: {filepath} because: {repr(e)}")
         return {}
@@ -83,7 +85,6 @@ def make_abspath(relpath, filepath, root=None):
     if root:
         return os.path.join(root, relpath)
     return os.path.join(os.path.dirname(filepath), relpath)
-
 
 
 def load_config_data(cfg_data, filepath=None, target_filepath=None, autocomplete=True):
@@ -98,30 +99,33 @@ def load_config_data(cfg_data, filepath=None, target_filepath=None, autocomplete
     if "targets" in higher_cfg:
         for tgt in higher_cfg["targets"]:
             _LOGGER.debug(tgt, higher_cfg["targets"][tgt])
-            if target_filepath: 
+            if target_filepath:
                 higher_cfg["targets"][tgt]["_filepath"] = target_filepath
             else:
                 higher_cfg["targets"][tgt]["_filepath"] = filepath
 
-            
     # Imports
     if "imports" in higher_cfg:
         _LOGGER.debug("Found imports")
         for import_file in higher_cfg["imports"]:
-            import_file_abspath = os.path.relpath(make_abspath(expandpath(import_file), expandpath(filepath)))
+            import_file_abspath = os.path.relpath(
+                make_abspath(expandpath(import_file), expandpath(filepath))
+            )
             if not autocomplete:
                 _LOGGER.error(f"Specified config file to import: {import_file_abspath}")
-            deep_update(lower_cfg, load_config_file(import_file_abspath, expandpath(filepath)))
-
+            deep_update(
+                lower_cfg, load_config_file(import_file_abspath, expandpath(filepath))
+            )
 
     if "imports_relative" in higher_cfg:
         _LOGGER.debug("Found relative imports")
         for import_file in higher_cfg["imports_relative"]:
-            import_file_abspath = os.path.relpath(make_abspath(expandpath(import_file), expandpath(filepath)))
+            import_file_abspath = os.path.relpath(
+                make_abspath(expandpath(import_file), expandpath(filepath))
+            )
             if not autocomplete:
                 _LOGGER.error(f"Specified config file to import: {import_file}")
             deep_update(lower_cfg, load_config_file(expandpath(import_file_abspath)))
-
 
     deep_update(lower_cfg, higher_cfg)
 
@@ -136,7 +140,7 @@ def load_config_data(cfg_data, filepath=None, target_filepath=None, autocomplete
             # Look up function to call.
             func = plugins[fac_name]
             factory_targets = func(fac_vals, lower_cfg)
-            for k,v in factory_targets.items():
+            for k, v in factory_targets.items():
                 factory_targets[k]["_filepath"] = filepath
             deep_update(lower_cfg, {"targets": factory_targets})
 
@@ -154,6 +158,7 @@ def deep_update(old, new):
         else:
             old[k] = v
     return old
+
 
 from .glob_factory import glob_factory
 
