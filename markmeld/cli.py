@@ -41,7 +41,11 @@ def build_argparser():
     parser.add_argument(dest="target", metavar="T", help="Target", nargs="?")
 
     parser.add_argument(
-        "-l", "--list", action="store_true", default=False, help="List targets with descriptions"
+        "-l",
+        "--list",
+        action="store_true",
+        default=False,
+        help="List targets with descriptions",
     )
 
     parser.add_argument(
@@ -103,7 +107,7 @@ def main(test_args=None):
             sys.stdout.write(t + " ")
         sys.exit(0)
 
-    if not args.target and not args.list: 
+    if not args.target and not args.list:
         if "targets" not in cfg:
             raise TargetError(f"No targets specified in config.")
         tarlist = [x for x, k in cfg["targets"].items()]
@@ -113,7 +117,10 @@ def main(test_args=None):
     if args.list:
         if "targets" not in cfg:
             raise TargetError(f"No targets specified in config.")
-        tarlist = {x:k["description"] if "description" in k else "No description" for x, k in cfg["targets"].items()}
+        tarlist = {
+            x: k["description"] if "description" in k else "No description"
+            for x, k in cfg["targets"].items()
+        }
         _LOGGER.error(f"Targets:")
         for k, v in tarlist.items():
             _LOGGER.error(f"  {k}: {v}")
@@ -121,13 +128,18 @@ def main(test_args=None):
 
     _LOGGER.debug("Melding...")  # Meld it!
     mm = MarkdownMelder(cfg)
-    built_target = mm.build_target(args.target, print_only=args.print, vardump=args.dump)
+    built_target = mm.build_target(
+        args.target, print_only=args.print, vardump=args.dump
+    )
 
     if args.print | args.dump:
         print(built_target.melded_output)
 
     # Open the file
-    if "output_file" in built_target.target_meta and built_target.target_meta["output_file"]:
+    if (
+        "output_file" in built_target.target_meta
+        and built_target.target_meta["output_file"]
+    ):
         output_file = built_target.target_meta["output_file"]
     else:
         output_file = None

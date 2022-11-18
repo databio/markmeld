@@ -1,4 +1,3 @@
-
 import datetime
 import frontmatter
 import glob
@@ -71,6 +70,7 @@ def datetimeformat(environment, value, to_format="%Y-%m-%d", from_format="%Y-%m-
         _LOGGER.warning(VE)
         return value
 
+
 # Filter used by the nih_biosketch template to find references
 # in a given prose block. Used to add citations to NIH
 # "contributions" sections.
@@ -78,6 +78,7 @@ def datetimeformat(environment, value, to_format="%Y-%m-%d", from_format="%Y-%m-
 def extract_refs(environment, value):
     m = re.findall("@([a-zA-Z0-9_]+)", value)
     return m
+
 
 # Add custom date formatter filter
 FILTERS["date"] = datetimeformat
@@ -87,6 +88,7 @@ FILTERS["extract_refs"] = extract_refs
 
 # m = extract_refs("abc; hello @test;me @second one; and finally @three")
 # m
+
 
 def populate_data_yaml(cfg, data):
     # Load up yaml data
@@ -102,13 +104,14 @@ def populate_data_yaml(cfg, data):
 
     return data
 
+
 # For itemized yaml this time...
 def populate_data_yaml_keyed(cfg, data):
     # Load up yaml data
     if "data_yaml_keyed" not in cfg:
         return data
     _LOGGER.info(f"MM | Populating keyed yaml data...")
-    for k,v in cfg["data_yaml_keyed"].items():
+    for k, v in cfg["data_yaml_keyed"].items():
         _LOGGER.info(f"MM | --> {k}: {v}")
         with open(v, "r") as f:
             yaml_dict = yaml.load(f, Loader=yaml.SafeLoader)
@@ -116,11 +119,12 @@ def populate_data_yaml_keyed(cfg, data):
             data[k] = yaml_dict
             data["yaml"][k] = yaml_dict
             data["raw"][k] = yaml.dump(yaml_dict)
-            # 2022-08-12 Original way, this doesn't work in the case that data[k] is a list 
+            # 2022-08-12 Original way, this doesn't work in the case that data[k] is a list
             # (if the yaml file is an array, not an object)
             # So I changed it put the raw value under ["raw"][k] instead of [k]["raw"]
             # data[k]["raw"] = yaml.dump(yaml_dict)
     return data
+
 
 def populate_data_md(cfg, data):
     # Load up markdown data
@@ -138,6 +142,7 @@ def populate_data_md(cfg, data):
             continue
         if is_url(v):  # Do url stuff
             import requests
+
             response = requests.get(v)
             p = frontmatter.loads(response.text)
         else:
@@ -173,7 +178,7 @@ def populate_data_md_globs(cfg, data):
         for file in files:
             basename = os.path.basename(file)
             dirname = os.path.dirname(file)
-            splitext =os.path.splitext(basename) 
+            splitext = os.path.splitext(basename)
             k = splitext[0]
             ext = splitext[1]
             _LOGGER.info(f"MM | [key:value] {k}:{file}")
@@ -232,11 +237,11 @@ def process_data_block(data_block, filepath):
     if YAML_FILES_KEY in data_block and data_block[YAML_FILES_KEY]:
         yaml_files.update(data_block[YAML_FILES_KEY])
 
-    for k,v in yaml_files.items():
+    for k, v in yaml_files.items():
         _LOGGER.info(f"MM | Processing yaml file {k}: {v}")
         vabs = make_abspath(v, filepath)
         if not os.path.exists(vabs):
-        	_LOGGER.error(f"File not found: {vabs}")
+            _LOGGER.error(f"File not found: {vabs}")
         else:
             with open(vabs, "r") as f:
                 yaml_dict = yaml.load(f, Loader=yaml.SafeLoader)
@@ -258,6 +263,7 @@ def process_data_block(data_block, filepath):
             continue
         if is_url(v):  # Do url stuff
             import requests
+
             response = requests.get(v)
             p = frontmatter.loads(response.text)
         else:
@@ -316,7 +322,7 @@ def process_data_block(data_block, filepath):
 
     # Local frontmatter (per markdown file)
     data["_local_frontmatter"] = {}
-    for k,v in local_frontmatter_temp.items():
+    for k, v in local_frontmatter_temp.items():
         data["_local_frontmatter"][k] = get_frontmatter_formats(v)
 
     return data
@@ -339,10 +345,11 @@ def load_template(cfg):
     if not os.path.isfile(md_tpl):
         _LOGGER.debug(cfg)
         raise Exception(f"jinja_template file not found: {md_tpl}")
-    
+
     try:
-        if is_url(md_tpl):            
+        if is_url(md_tpl):
             import requests
+
             response = requests.get(md_tpl)
             md_tpl_contents = response.text
         else:
@@ -364,6 +371,7 @@ class Target(object):
     in both places. But really, I don't see a downside to just combining them.
     Therefore, I should merge these into one concept.
     """
+
     def __init__(self, root_cfg={}, target_name=None, vardata=None):
         self.root_cfg = root_cfg
         self.target_name = target_name
@@ -402,14 +410,14 @@ class Target(object):
         else:
             cli_vars = {}
 
-        if not "command" in target_meta:  
-            # Generally, user should provide a `command`, but for simple default cases, 
+        if not "command" in target_meta:
+            # Generally, user should provide a `command`, but for simple default cases,
             # we can just route through pandoc as a default command.
             options_array = []
             if "latex_template" in target_meta:
                 options_array.append("--template {latex_template}")
             if "output_file" in target_meta:
-                options_array.append("--output \"{output_file}\"")
+                options_array.append('--output "{output_file}"')
             options = " ".join(options_array)
             target_meta["command"] = f"pandoc {options}"
 
@@ -428,7 +436,7 @@ class MarkdownMelder(object):
         _LOGGER.info("Initializing MarkdownMelder...")
         self.cfg = cfg
         self.target_objects = {}
-       
+
     def open_target(self, target_name):
         tgt = Target(self.cfg, target_name)
 
@@ -450,7 +458,9 @@ class MarkdownMelder(object):
                 if pretgt in self.cfg["targets"]:
                     self.build_target(pretgt)
                 else:
-                    _LOGGER.warning(f"MM | No target called {pretgt}, requested prebuild by target {tgt}.")
+                    _LOGGER.warning(
+                        f"MM | No target called {pretgt}, requested prebuild by target {tgt}."
+                    )
                     return False
 
         # Next, meld the inputs. This can be time-consuming, it reads data to populate variables
@@ -484,19 +494,30 @@ class MarkdownMelder(object):
         elif tgt.target_meta["command"]:
             cmd_fmt = format_command(tgt)
             _LOGGER.debug(cmd_fmt)
-            if "recursive_render" in tgt.target_meta and not tgt.target_meta["recursive_render"]:
-                melded_output = self.render_template(melded_input, tgt, double=False).encode()
+            if (
+                "recursive_render" in tgt.target_meta
+                and not tgt.target_meta["recursive_render"]
+            ):
+                melded_output = self.render_template(
+                    melded_input, tgt, double=False
+                ).encode()
             else:
                 # Recursive rendering allows your template to include variables
-                melded_output = self.render_template(melded_input, tgt, double=True).encode()
+                melded_output = self.render_template(
+                    melded_input, tgt, double=True
+                ).encode()
             tgt.melded_output = melded_output
             _LOGGER.debug(tgt.target_meta)
-            tgt.returncode = run_cmd(cmd_fmt, melded_output, tgt.target_meta["_filepath"])
+            tgt.returncode = run_cmd(
+                cmd_fmt, melded_output, tgt.target_meta["_filepath"]
+            )
         return tgt
 
     def build_target_in_loop(self, tgt, melded_input, print_only=False, vardump=False):
         #  Process each iteration of the loop
-        loop_dat = recursive_get(melded_input,tgt.target_meta["loop"]["loop_data"].split("."))
+        loop_dat = recursive_get(
+            melded_input, tgt.target_meta["loop"]["loop_data"].split(".")
+        )
         _LOGGER.debug(loop_dat)
         _LOGGER.debug(tgt.root_cfg)
         n = len(loop_dat)
@@ -510,12 +531,16 @@ class MarkdownMelder(object):
             tgt_copy = deepcopy(tgt)
             var = tgt_copy.target_meta["loop"]["assign_to"]
             _LOGGER.info(f"{var}: {loop_var_value}")
-            melded_input_copy.update({ var: loop_var_value })
-            tgt_copy.target_meta.update({ var: loop_var_value })
+            melded_input_copy.update({var: loop_var_value})
+            tgt_copy.target_meta.update({var: loop_var_value})
             _LOGGER.debug(tgt_copy.target_meta)
             # _LOGGER.debug(cmd_data)
-            rendered_in = self.render_template(melded_input_copy, tgt_copy, double=False).encode()
-            return_target_objects[i] = self.run_command_for_target(tgt_copy, melded_input_copy, print_only, vardump)
+            rendered_in = self.render_template(
+                melded_input_copy, tgt_copy, double=False
+            ).encode()
+            return_target_objects[i] = self.run_command_for_target(
+                tgt_copy, melded_input_copy, print_only, vardump
+            )
 
         return return_target_objects
 
@@ -537,17 +562,25 @@ class MarkdownMelder(object):
         elif target.root_cfg["version"] >= 1:
             _LOGGER.info("MM | Processing config version 1...")
             if "data" in target.target_meta:
-                processed_data_block = process_data_block(target.target_meta["data"], target.target_meta["_filepath"])
+                processed_data_block = process_data_block(
+                    target.target_meta["data"], target.target_meta["_filepath"]
+                )
             else:
-                processed_data_block = process_data_block({}, target.target_meta["_filepath"])
+                processed_data_block = process_data_block(
+                    {}, target.target_meta["_filepath"]
+                )
             _LOGGER.debug("processed_data_block:", processed_data_block)
             data_copy.update(processed_data_block)
         k = list(data_copy.keys())
         _LOGGER.info(f"MM | Available keys: {k}")
         if MD_FILES_KEY in data_copy:
-            _LOGGER.info(f"MM | Available keys [{MD_FILES_KEY}]: {list(data_copy[MD_FILES_KEY].keys())}")
+            _LOGGER.info(
+                f"MM | Available keys [{MD_FILES_KEY}]: {list(data_copy[MD_FILES_KEY].keys())}"
+            )
         if YAML_FILES_KEY in data_copy:
-            _LOGGER.info(f"MM | Available keys [{YAML_FILES_KEY}]: {list(data_copy[YAML_FILES_KEY].keys())}")
+            _LOGGER.info(
+                f"MM | Available keys [{YAML_FILES_KEY}]: {list(data_copy[YAML_FILES_KEY].keys())}"
+            )
         return data_copy
 
     def render_template(self, melded_input, target, double=True):
@@ -555,18 +588,23 @@ class MarkdownMelder(object):
         if "data" not in melded_input:
             melded_input["data"] = {}
         if "md_template" in target.target_meta:
-            _LOGGER.error("Please update your config! 'md_template' was renamed to 'jinja_template'.")
-            target.target_meta['jinja_template'] = target.target_meta['md_template']
+            _LOGGER.error(
+                "Please update your config! 'md_template' was renamed to 'jinja_template'."
+            )
+            target.target_meta["jinja_template"] = target.target_meta["md_template"]
 
-        if "jinja_template" in target.target_meta and target.target_meta["jinja_template"]:
+        if (
+            "jinja_template" in target.target_meta
+            and target.target_meta["jinja_template"]
+        ):
             tpl = load_template(target.target_meta)
         else:
             # cmd_data["jinja_template"] = None
             tpl = Template(tpl_generic)
-            _LOGGER.error("No jinja_template provided. Using generic markmeld jinja_template.")
+            _LOGGER.error(
+                "No jinja_template provided. Using generic markmeld jinja_template."
+            )
         if double:
             return Template(tpl.render(melded_input)).render(melded_input)  # two times
         else:
             return tpl.render(melded_input)
-
-
