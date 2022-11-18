@@ -368,7 +368,8 @@ class Target(object):
         self.root_cfg = root_cfg
         self.target_name = target_name
         target_meta = {}
-        target_meta.update(self.root_cfg)
+        # Old way would update based on root config:
+        # target_meta.update(self.root_cfg)
         target_meta["_now"] = date.today().strftime("%s")
         target_meta["_today"] = date.today().strftime("%Y-%m-%d")
         target_meta["today"] = target_meta["_today"]  # TODO: Remove this
@@ -389,10 +390,18 @@ class Target(object):
             if target_name not in list(root_cfg["targets"].keys()):
                 _LOGGER.error(f"target {target_name} not found")
                 raise TargetError(f"Target {target_name} not found")
+            if "inherit_from" in root_cfg["targets"][target_name]:
+                inherit_from = root_cfg["targets"][target_name]["inherit_from"]
+                if type(inherit_from) is not list:
+                    inherit_from = [inherit_from]
+                for base_target in inherit_from:
+                    _LOGGER.info(f"Loading from base target: {base_target}")
+                    target_meta = deep_update(target_meta, root_cfg["targets"][base_target])
             target_meta = deep_update(target_meta, root_cfg["targets"][target_name])
             _LOGGER.debug(f'Config for this target: {root_cfg["targets"][target_name]}')
 
-        del target_meta["targets"]
+        # del target_meta["targets"]
+        target_meta['_cfg_file_path'] = root_cfg["_cfg_file_path"]
         if "version" in target_meta:
             del target_meta["version"]
 

@@ -1,8 +1,5 @@
 version: 2
 output_file: "{_today}_demo_output.pdf"
-data:
-  yaml_files:
-    root_in_config: yaml_files_2/file1.yaml
 targets:
   test_process_md:
     jinja_template: templates/md_test.jinja
@@ -69,13 +66,19 @@ targets:
         frontmatter_1: yaml_files/fm1.yaml
       yaml_globs_unkeyed:
         - "yaml_files/*.yaml"
+  base_target:
+    data:
+      yaml_files:
+        root_in_config: yaml_files_2/file1.yaml
   test_root_data_propogates_to_target:
     jinja_template: templates/test_root_data.jinja
+    inherit_from: base_target
     data:
       md_files:
         some_text_data: some_text.md
   test_root_data_merges_into_target:
     jinja_template: templates/test_root_data.jinja
+    inherit_from: base_target
     data:
       md_files:
         some_text_data: some_text.md
