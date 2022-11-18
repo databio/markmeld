@@ -1,4 +1,4 @@
-# <img src="docs/img/markmeld_logo_long.svg" alt="markmeld logo" height="70">
+# <img src="https://raw.githubusercontent.com/databio/markmeld/master/docs/img/markmeld_logo_long.svg?sanitize=true" alt="markmeld logo" height="70">
 
 Read the complete documentation at [markmeld.databio.org](https://markmeld.databio.org).
 
