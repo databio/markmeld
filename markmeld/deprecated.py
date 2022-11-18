@@ -1,4 +1,4 @@
-   def meld_output(self, data, cmd_data, config=None, print_only=False, in_loop=False):
+    def meld_output(self, data, cmd_data, config=None, print_only=False, in_loop=False):
         """
         Melds input markdown and yaml through a jinja template to produce text output.
         """
