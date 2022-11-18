@@ -46,19 +46,17 @@ def run_cmd(cmd, stdin=None, workdir=None):
     # p.communicate(input=tpl.render(data).encode())
 
 
-def format_command(target):
+def format_command(tgt):
     """
     Given a command from a user config file, populate variables
     from the target metadata
     """
-    cmd = target.target_meta["command"]
-    if "output_file" in target.target_meta and target.target_meta["output_file"]:
-        target.target_meta["output_file"] = target.target_meta["output_file"].format(
-            **target.target_meta
-        )
+    cmd = tgt.meta["command"]
+    if "output_file" in tgt.meta and tgt.meta["output_file"]:
+        tgt.meta["output_file"] = tgt.meta["output_file"].format(**tgt.meta)
     else:
-        target.target_meta["output_file"] = None
-    cmd_fmt = cmd.format(**target.target_meta)
+        tgt.meta["output_file"] = None
+    cmd_fmt = cmd.format(**tgt.meta)
     return cmd_fmt
 
 
