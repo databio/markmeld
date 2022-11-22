@@ -38,11 +38,11 @@ def test_cli():
     from markmeld.cli import main
 
     with pytest.raises(SystemExit):
-        main(test_args={"config": "tests/test_data/_markmeld_v0.yaml"})
+        main(test_args={"config": "tests/test_data/_markmeld_basic.yaml"})
 
 
 def test_MarkdownMelder_demo():
-    cfg = markmeld.load_config_file("tests/test_data/_markmeld_v0.yaml")
+    cfg = markmeld.load_config_file("tests/test_data/_markmeld_basic.yaml")
     # cmd_data = markmeld.populate_cmd_data(cfg, "default", {})
     x = markmeld.MarkdownMelder(cfg)
 
@@ -147,3 +147,23 @@ def test_null_jinja_template():
     )
     mm = markmeld.MarkdownMelder(cfg)
     res = mm.build_target("target_name", print_only=True)
+
+
+def test_variable_variables():
+    cfg = markmeld.load_config_file("demo_book/book_basic/_markmeld.yaml")
+    mm = markmeld.MarkdownMelder(cfg)
+    res = mm.build_target("default", print_only=True)
+
+    cfg2 = markmeld.load_config_file("demo_book/book_var1/_markmeld.yaml")
+    mm2 = markmeld.MarkdownMelder(cfg2)
+    res2 = mm2.build_target("default", print_only=True)
+
+    cfg3 = markmeld.load_config_file("demo_book/book_var2/_markmeld.yaml")
+    mm3 = markmeld.MarkdownMelder(cfg3)
+    res3 = mm3.build_target("default", print_only=True)
+    # print("/////" + res.melded_output + "/////")
+    # print("/////" + res2.melded_output + "/////")
+    # print("/////" + res3.melded_output + "/////")
+
+    assert res.melded_output == res2.melded_output
+    assert res.melded_output == res3.melded_output

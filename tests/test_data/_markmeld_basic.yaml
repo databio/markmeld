@@ -1,0 +1,13 @@
+version: 1
+targets:
+  default:
+    jinja_template: templates/jinja_template_v2.jinja
+    recursive_render: false
+    output_file: "{_today}_demo_output.txt"
+    command: |
+      cat > {output_file}
+    data:
+      yaml_globs_unkeyed:
+      - some_data.yaml
+      md_files:
+        some_text_data: some_text.md

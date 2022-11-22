@@ -32,7 +32,7 @@ imports:
   - $MMDIR/$HOSTNAME.yaml
 targets:
   links:
-    md_template: letter_template.jinja
+    jinja_template: letter_template.jinja
     output_file: "{today}.html"
     data_yaml:
       - data.yaml

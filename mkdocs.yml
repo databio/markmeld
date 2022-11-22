@@ -10,16 +10,17 @@ nav:
       - Install: install.md
       - Basic configuration: basic_config.md
   - How-to guides:
-      - Jinja template: jinja_template.md
+      - Referencing content in template: jinja_template.md
       - Imports: imports.md
-      - Prebuild hooks: prebuild_hooks.md
-      - Multi-output targets: multi_output_targets.md
       - Remote templates: remote_templates.md
+      - Prebuild and postbuild targets: side_targets.md
+      - Multi-output targets: multi_output_targets.md
       - Target factories: target_factories.md
-      - Alternative commands: alternative_commands.md
+      - Output-less targets: outputless_targets.md
       - Mail merges: mail_merge.md
+      - Advanced variable templates: variable_variables.md
+      - Recursive rendering: recursive_rendering.md
   - Reference:
-      - API: autodoc_build/markmeld.md
       - Changelog: changelog.md
 
 theme: databio

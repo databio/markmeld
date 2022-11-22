@@ -1,3 +1,4 @@
+import glob
 import os
 import subprocess
 import yaml
@@ -46,19 +47,17 @@ def run_cmd(cmd, stdin=None, workdir=None):
     # p.communicate(input=tpl.render(data).encode())
 
 
-def format_command(target):
+def format_command(tgt):
     """
     Given a command from a user config file, populate variables
     from the target metadata
     """
-    cmd = target.target_meta["command"]
-    if "output_file" in target.target_meta and target.target_meta["output_file"]:
-        target.target_meta["output_file"] = target.target_meta["output_file"].format(
-            **target.target_meta
-        )
+    cmd = tgt.meta["command"]
+    if "output_file" in tgt.meta and tgt.meta["output_file"]:
+        tgt.meta["output_file"] = tgt.meta["output_file"].format(**tgt.meta)
     else:
-        target.target_meta["output_file"] = None
-    cmd_fmt = cmd.format(**target.target_meta)
+        tgt.meta["output_file"] = None
+    cmd_fmt = cmd.format(**tgt.meta)
     return cmd_fmt
 
 
@@ -173,3 +172,25 @@ def load_plugins():
     }
     built_in_plugins.update(installed_plugins)
     return built_in_plugins
+
+
+def globs_to_dict(globs, cfg_path):
+    """
+    Given some globs, resolve them to the actual files, and return them in a
+    dict that is keyed by the base file name, without extension or parent folders.
+
+    @param globs Iterable[str] List of globs to convert to files.
+    @param cfg_path str Path to configuration file
+    """
+    return_items = {}
+    if not globs:
+        return return_items
+    for item in globs:
+        path = os.path.join(os.path.dirname(cfg_path), item)
+        _LOGGER.info(f"MM | Glob path: {path}")
+        files = glob.glob(path)
+        for file in files:
+            k = os.path.splitext(os.path.basename(file))[0]
+            _LOGGER.info(f"MM | [key:value] {k}:{file}")
+            return_items[k] = file
+    return return_items
