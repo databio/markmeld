@@ -88,7 +88,7 @@ def get_frontmatter_formats(frontmatter):
 
 def process_data(data_block, filepath):
     _LOGGER.info(f"MM | Processing data block...")
-    data = {"_raw": {}}  # Initialize return value
+    data = {"_raw": {}, "_md": {}, "_yaml":{}}  # Initialize return value
     frontmatter_temp = {}
     local_frontmatter_temp = {}
     vars_temp = {}
@@ -125,10 +125,12 @@ def process_data(data_block, filepath):
                 # data[k] = yaml_dict
                 if k in unkeyed_yaml_files:
                     data.update(yaml_dict)
+                    data["_yaml"].update(yaml_dict)
                 else:
                     data[k] = yaml_dict
+                    data["_yaml"][k] = yaml_dict
+                    vars_temp[k] = yaml_dict
                 data["_raw"][k] = yaml.dump(yaml_dict)
-                vars_temp.update(yaml_dict)
                 if k[:11] == "frontmatter":
                     frontmatter_temp.update(yaml_dict)
 
@@ -152,6 +154,7 @@ def process_data(data_block, filepath):
                 data["_raw"][k] = {}
                 continue
         data[k] = p.content
+        data["_md"][k] = p.content
         frontmatter_temp.update(p.metadata)
         local_frontmatter_temp[k] = p.metadata
         data["_raw"][k] = frontmatter.dumps(p)

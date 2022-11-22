@@ -1,0 +1,13 @@
+version: 1
+targets:
+  default:
+    jinja_template: book.jinja
+    output_file: "{today}_demo_output.txt"
+    command: cat > {output_file}
+    data:
+      md_files:
+        intro: ../md/01-intro.md
+        credit: ../md/02-credit.md
+        savings: ../md/03-savings.md
+      yaml_files:
+        chapters: chapters.yaml

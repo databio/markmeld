@@ -13,7 +13,7 @@ Here's an example. Say I'm writing a book on finances. I have 3 chapters: *intro
 ```
 targets:
   default:
-    md_template: book.jinja
+    jinja_template: book.jinja
     output_file: "{today}_demo_output.pdf"
     data_md:
       intro: md/01-intro.md
@@ -25,9 +25,9 @@ targets:
 My `book.jinja` template could simply be like this, which puts the chapters in order:
 
 ```
-{{ intro.content }}
-{{ credit.content }}
-{{ savings.content }}
+{{ intro }}
+{{ credit }}
+{{ savings }}
 ```
 
 Great. That works. But the problem is that this jinja template is specific now to this particular set of chapters, and adding new chapters means changing the template, which is a pain. Could I make `book.jinja` adaptable and generic, so it will work with *any* chapters I add, and even extend to work with any book I may write in the future, regardless of what I name the chapter files and variables? Yes! You can do this using the magic of `data.variables`. Instead of specifying chapters directly in `book.jinja`, we'll take advantage of 2 markmeld features: 1. The `_md` variable contains an array of all the `.md` files in our target's `data`, indexed by key we specify; and 2. we can specify custom data to the jinja tempalte using `data.variables`. We'll define an array of variable names, and then use a jinja loop to loop through that array and use those values to index into the `_md` object.
