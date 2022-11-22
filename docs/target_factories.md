@@ -56,7 +56,7 @@ The format is: 'markmeld.factories': 'FACTORY_NAME=FACTORY_PACKAGE_NAME:FUNCTION
 
 #### 2.2. Write functions to call
 
-The factory function name must correspond to what you specify in `setup.py` in the entry points above. These functions must take a Python `dict` object as sole parameter, and must return a `targets` object. The `dict` object provided will be any additional variables given by the user in `_markmeld.yaml`, which is how users can parameterize the factory. For example:
+The factory function name must correspond to what you specify in `setup.py` in the entry points above. These functions must take exactly 2 arguments. The first is a Python `dict` object representing variables configuring this factory, the second is the parent config file object. The function must return a `targets` object. The `dict` object provided will be any additional variables given by the user in `_markmeld.yaml`, which is how users can parameterize the factory. For example:
 
 ```yaml
 target_factories:
