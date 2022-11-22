@@ -88,7 +88,7 @@ def get_frontmatter_formats(frontmatter):
 
 def process_data(data_block, filepath):
     _LOGGER.info(f"MM | Processing data block...")
-    data = {"_raw": {}, "_md": {}, "_yaml":{}}  # Initialize return value
+    data = {"_raw": {}, "_md": {}, "_yaml": {}}  # Initialize return value
     frontmatter_temp = {}
     local_frontmatter_temp = {}
     vars_temp = {}

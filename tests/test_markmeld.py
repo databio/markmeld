@@ -150,21 +150,15 @@ def test_null_jinja_template():
 
 
 def test_variable_variables():
-    cfg = markmeld.load_config_file(
-        "demo_book/book_basic/_markmeld.yaml"
-    )
+    cfg = markmeld.load_config_file("demo_book/book_basic/_markmeld.yaml")
     mm = markmeld.MarkdownMelder(cfg)
     res = mm.build_target("default", print_only=True)
 
-    cfg2 = markmeld.load_config_file(
-        "demo_book/book_var1/_markmeld.yaml"
-    )
+    cfg2 = markmeld.load_config_file("demo_book/book_var1/_markmeld.yaml")
     mm2 = markmeld.MarkdownMelder(cfg2)
     res2 = mm2.build_target("default", print_only=True)
 
-    cfg3 = markmeld.load_config_file(
-        "demo_book/book_var2/_markmeld.yaml"
-    )
+    cfg3 = markmeld.load_config_file("demo_book/book_var2/_markmeld.yaml")
     mm3 = markmeld.MarkdownMelder(cfg3)
     res3 = mm3.build_target("default", print_only=True)
     # print("/////" + res.melded_output + "/////")
