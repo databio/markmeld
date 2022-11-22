@@ -87,7 +87,7 @@ def test_factory():
 
 
 def test_v2_basic_function():
-    cfg = markmeld.load_config_file("tests/test_data/_markmeld_v1.yaml")
+    cfg = markmeld.load_config_file("tests/test_data/_markmeld_inherit.yaml")
     mm = markmeld.MarkdownMelder(cfg)
     # print(x.cfg)
     res = mm.build_target("test_process_md", print_only=True)
@@ -112,7 +112,7 @@ def test_v2_basic_function():
 
 
 def test_root_data_propogates_to_target():
-    cfg = markmeld.load_config_file("tests/test_data/_markmeld_v1.yaml")
+    cfg = markmeld.load_config_file("tests/test_data/_markmeld_inherit.yaml")
     mm = markmeld.MarkdownMelder(cfg)
 
     res = mm.build_target("test_root_data_propogates_to_target", print_only=True)
@@ -123,6 +123,13 @@ def test_root_data_propogates_to_target():
     print(res.melded_output)
     assert "xs8Nd0D98" in str(res.melded_output)  # From root data definition
     assert "k9XFJOId0" in str(res.melded_output)  # From local target data definition
+
+    res = mm.build_target("test_recursive_inheritance", print_only=True)
+    print(res.melded_output)
+    assert "xs8Nd0D98" in str(res.melded_output)  # From deep inheritance
+    assert "k9XFJOId0" in str(res.melded_output)  # From immediate inheritance
+    assert "c9nmw827" in str(res.melded_output)  # Make sure order is correct
+
 
 
 def test_import():

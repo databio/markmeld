@@ -236,7 +236,6 @@ class Target(object):
     in both places. But really, I don't see a downside to just combining them.
     Therefore, I should merge these into one concept.
     """
-
     def __init__(self, root_cfg={}, target_name=None, vardata=None):
         self.root_cfg = root_cfg
         self.target_name = target_name
@@ -248,7 +247,7 @@ class Target(object):
         meta["today"] = meta["_today"]  # TODO: Remove this
         meta["now"] = meta["_now"]  # TODO: Remove this
 
-        # Since a target has available to it all the variables in the _markemeld.yaml
+        # Since a target has available to it all the variables in the _markmeld.yaml
         # config file, we start from there, then make a few changes:
         # 1. Elevate the variables in the given target up one level.
         # 2. To simplify debugging and reduce memory, remove the 'targets' key
@@ -258,19 +257,14 @@ class Target(object):
 
         if target_name:
             if "targets" not in root_cfg:
-                _LOGGER.error(f"No targets specified in config.")
-                raise TargetError(f"No targets specified in config.")
+                error_msg = f"No targets specified in config."
+                _LOGGER.error(error_msg)
+                raise TargetError(error_msg)
             if target_name not in list(root_cfg["targets"].keys()):
-                _LOGGER.error(f"target {target_name} not found")
-                raise TargetError(f"Target {target_name} not found")
-            if "inherit_from" in root_cfg["targets"][target_name]:
-                inherit_from = root_cfg["targets"][target_name]["inherit_from"]
-                if type(inherit_from) is not list:
-                    inherit_from = [inherit_from]
-                for base_target in inherit_from:
-                    _LOGGER.info(f"Loading from base target: {base_target}")
-                    meta = deep_update(meta, root_cfg["targets"][base_target])
-            meta = deep_update(meta, root_cfg["targets"][target_name])
+                error_msg = f"Target {target_name} not found"
+                _LOGGER.error(error_msg)
+                raise TargetError(error_msg)
+            meta = deep_update(meta, self.resolve_target_inheritance(target_name))
             _LOGGER.debug(f'Config for this target: {root_cfg["targets"][target_name]}')
 
         # del meta["targets"]
@@ -300,6 +294,37 @@ class Target(object):
         _LOGGER.debug(f"MM | Config file path: {self.meta['_cfg_file_path']}")
         if "output_file" in self.meta:
             _LOGGER.info(f"MM | Output file: {self.meta['output_file']}")
+
+
+    def resolve_target_inheritance(self, target_name):
+        root_cfg = self.root_cfg
+        if "targets" not in root_cfg:
+            error_msg = f"No targets specified in config."
+            _LOGGER.debug(error_msg)
+            return {}
+        if target_name not in list(root_cfg["targets"].keys()):
+            error_msg = f"Target {target_name} not found"
+            _LOGGER.debug(error_msg)
+            return {}
+        print(root_cfg["targets"])
+
+        accumulated = root_cfg["targets"][target_name]
+        if "inherit_from" not in root_cfg["targets"][target_name]:
+            ## base case
+            return accumulated
+        else:
+            ## recurse
+            inherit_from = root_cfg["targets"][target_name]["inherit_from"]
+            del accumulated["inherit_from"]
+            if type(inherit_from) is not list:
+                inherit_from = [inherit_from]
+            for base_target in inherit_from:
+                _LOGGER.info(f"Loading from base target: {base_target}")
+                base_target_data = self.resolve_target_inheritance(base_target)
+                base_target_data = deep_update(base_target_data, accumulated)
+                #accumulated = deep_update(accumulated, base_target_data)
+            return base_target_data
+
 
 
 def build_side_targets(tgt, side_list_key="prebuild"):
