@@ -286,7 +286,7 @@ class Target(object):
             # we can just route through pandoc as a default command.
             options_array = []
             if "latex_template" in meta:
-                options_array.append("--template {latex_template}")
+                options_array.append('--template "{latex_template}"')
             if "output_file" in meta:
                 options_array.append('--output "{output_file}"')
             options = " ".join(options_array)

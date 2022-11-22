@@ -19,8 +19,8 @@ nav:
       - Output-less targets: outputless_targets.md
       - Mail merges: mail_merge.md
       - Advanced variable templates: variable_variables.md
+      - Recursive rendering: recursive_rendering.md
   - Reference:
-      - API: autodoc_build/markmeld.md
       - Changelog: changelog.md
 
 theme: databio

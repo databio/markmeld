@@ -1,12 +1,14 @@
 # Advanced templates: variable variables
 
-## The jinja md array
+## Motivation
+
+In a typical markmeld application, you'll encode the structure of your document within the jinja file. That's great. But to make the template reusable, sometimes it's convenient to do things like specify a *list* of items that show up somewhere in the document. For example, you may want a template to display a list of files in the output. If you encoded this directly, you'd have to change the template if the number of files changed. Here, we'll walk through a better alternative that uses markmeld `data_variables` with a jinja loop through the `md` array.
+
+## The markmeld `_md` array
 
 ### How to access variable-named elements
 
-In a typical markmeld application, you'll encode the structure of your document within the jinja file. That's great. But to make the template reusable, sometimes it's convenient to do things like specify a *list* of items that show up somewhere in the document. You can also do this by combining markmeld `data_variables` with a jinja loop through the `md` array.
-
-Here's an example. I'm writing a book on finances. I have 3 chapters: *intro*, *credit*, and *savings*, each written in its own `.md` file. To start, I write a simple `_markmeld.yaml` config file that loads each chapter into an object:
+Here's an example. Say I'm writing a book on finances. I have 3 chapters: *intro*, *credit*, and *savings*, each written in its own `.md` file. To start, I write a simple `_markmeld.yaml` config file that loads each chapter into an object:
 
 ```
 targets:
@@ -20,7 +22,7 @@ targets:
 
 ```
 
-Then, I could write a `jinja` template like this, that would simply put the chapters in order:
+My `book.jinja` template could simply be like this, which puts the chapters in order:
 
 ```
 {{ intro.content }}
@@ -28,51 +30,32 @@ Then, I could write a `jinja` template like this, that would simply put the chap
 {{ savings.content }}
 ```
 
-Great. That works. But the problem is that this jinja template is specific now to this particular set of chapters. Could I make that generic so that it will work with *any* book, regardless of what I name the chapter files and variables? Yes! You can do this using the magic of `data_variables`.
-
-Instead of using those chapters directly, let's define an array of variable names, and then use a jinja loop to just loop through that array and use those values to index into the markmeld `md` object.
+Great. That works. But the problem is that this jinja template is specific now to this particular set of chapters, and adding new chapters means changing the template, which is a pain. Could I make `book.jinja` adaptable and generic, so it will work with *any* chapters I add, and even extend to work with any book I may write in the future, regardless of what I name the chapter files and variables? Yes! You can do this using the magic of `data.variables`. Instead of specifying chapters directly in `book.jinja`, we'll take advantage of 2 markmeld features: 1. The `_md` variable contains an array of all the `.md` files in our target's `data`, indexed by key we specify; and 2. we can specify custom data to the jinja tempalte using `data.variables`. We'll define an array of variable names, and then use a jinja loop to loop through that array and use those values to index into the `_md` object.
 
 ### The `md` array
 
-Basically, markmeld makes available to jinja an array under the name `md` which has access to all of the markdown elements keyed by their names. So, while you can access the *intro* chapter directly with `{{ intro.content }}`, you can also access it through the `md` array using `{{ md["intro"].content }}`. Take it one step further, and this means if you have "intro" in a variable, say `myvar`, you could access the exact same content with `{{ my[myvar].content }}`.
+Markmeld makes available to jinja an array under the name `md` which has access to all of the markdown elements keyed by their names. So, while you can access the *intro* chapter directly with `{{ intro }}`, you can also access it through the `md` array using `{{ _md["intro"] }}`. Take it one step further, and this means if you have "intro" in a variable, say `myvar`, you could access the exact same content with `{{ _md[myvar] }}`.
 
 So, let's set up an array with values as the chapter names by adding this to `_markmeld.yaml`:
 
 ```
-    data_variables:
-      chapters:
-        - intro
-        - credit
-        - savings
+  target:
+    data:
+      variables:
+        chapters:
+          - intro
+          - credit
+          - savings
 ```
 
 This will give us access in the jinja template to a `chapters` array with those 3 values in it. So, we can switch the markmeld template to use this array like so...
 
 ```
-{% for ch in chapters %}
-
-{{ md[ch].content }}
-
+{% for chapter in chapters %}
+{{ _md[chapter] }}
 {% endfor %}
 ```
 
 And voila! We have the same output, but now we've encoded the chapter order logic in the markmeld config file, and this jinja template can be reused. It's beautiful.
 
-
-
-## Recursive rendering
-
-If you want a jinja variable to hold a variable, then you'll have to render the template recursively. Really, we'll just render it twice, since that's all I've needed so far.
-
-But sometimes, you *don't* want to render it recursively, like if you want to actually show jinja variables in an output. So, we need it to be possible to choose for a given target. You do that with `recursive_render`, which can be True (default) or False.
-
-So, generally you don't need to worry about this, and you can automatically go 2 layers deep, which means your variables can contain jinja variables. But if you want to turn it off, do it with:
-
-```
-targets:
-  my_non_recursive_target:
-    recursive_render: false
-    data:
-      ...
-```
 

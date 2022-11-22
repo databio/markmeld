@@ -1,6 +1,8 @@
 
 # Markmeld config file
 
+A markmeld project is configured using a yaml configuration file, by default named `_markmeld.yaml`. This document explains the basics of what should go into this configuration file. In short, you specify the things you want markmeld to build, which are called *targets*. Each target will include the data/content, the relevant templates, and anything else you want to include. Let's start with some quick definitions:
+
 ## Definition of terms
 
 - **target** - A specific recipe to run that usually produces an output to build.
@@ -10,14 +12,16 @@
 
 ## A simple example
 
-You write `_markmeld.yaml` to configure your project. Here's a simple example, `demo/_markmeld.yaml`:
+You create `_markmeld.yaml` to configure your project. Here's a simple example, `demo/_markmeld.yaml`:
 
 ```yaml
 targets:
   target1:
-    latex_template: pandoc_default.tex
     output_file: "{today}_demo_output.pdf"  
+    latex_template: pandoc_default.tex
     jinja_template: jinja_template.jinja
+    command: |
+        pandoc --template "{latex_template} --output "{output_file}"
     data:
       yaml_files:
         - some_data.yaml
@@ -25,17 +29,10 @@ targets:
         some_text_data: some_text.md
 ```
 
-## Root config file variables
 
-The configuration file must define a `targets` block. This block contains a series of named targets, in the example, `target1` is the only target defined in this configuration file.
+The configuration file must define a `targets` block. This block contains a series of named targets, in the example, `target1` is the only target defined in this configuration file. Under the target, you can define variables, which are then available for your command. In this example, the command uses `{latex_template}` and `{output_file}`, which are defined as variables under the target. The command listed here turns out to be markmeld's default command, so in this case it could be omitted. The `jinja_template` is a special variable that specifies the path to the jinja template that markmeld will use to render the output.
 
-The configurable attributes are:
-
-- `version`: Should be "1" for the version 1 of the markmeld configuration specification.
-- `targets`: a list of targets (outputs) to build. Each target can contain the other configurable attributes.
-- `target_factories`: a list of target factories
-- `imports`: A list of markmeld configuration files imported by the current file.
-- `imports_relative`: Exactly like `imports`, but the imported targets will be built relative to the importing file.
+Finally, there's the `data` block, which is where the input content is specified.
 
 ## The targets section
 
@@ -73,4 +70,16 @@ targets:
 
 If a target has an `inherit_from` attribute, then one or more targets will first be pre-loaded and processed. The targets are loaded in the order listed, with the specified target the last one, so attributes with the same name will have the highest priority.
 
+
+
+
+## Root config file variables
+
+The configurable attributes are:
+
+- `version`: Should be "1" for the version 1 of the markmeld configuration specification.
+- `targets`: a list of targets (outputs) to build. Each target can contain the other configurable attributes.
+- `target_factories`: a list of target factories
+- `imports`: A list of markmeld configuration files imported by the current file.
+- `imports_relative`: Exactly like `imports`, but the imported targets will be built relative to the importing file.
 

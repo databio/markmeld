@@ -6,6 +6,7 @@ Typical targets produce only a single output. But sometimes, it's useful to spec
 
 This is useful for something like a mail merge, where you'd write a single letter, but want to produce it with slight differences such as the name of the recipient. Another use case is that you want to load in a large piece of data one time (like a list of publications), and then produce several different versions or subsets of it without reloading the input.
 
+The use case for multi-output targets is really intended for outputs that are almost identical. If you want one target to produce two or more targets that are very different, then your best bet is to define each target separately and then use a meta-target to build them simultaneously.
 
 ## Quick start
 
