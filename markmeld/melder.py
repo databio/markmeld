@@ -178,7 +178,7 @@ def process_data(data_block, filepath):
     # and excludes markdown content... Is that useful?
     data["_global_vars"] = vars_temp
 
-    # Integrated, global frontmatter from 3 sources, in order: 
+    # Integrated, global frontmatter from 3 sources, in order:
     # .md frontmatter, yaml data named frontmatter_*, variables named frontmatter_*
     data["_global_frontmatter"] = get_frontmatter_formats(frontmatter_temp)
 
@@ -348,7 +348,7 @@ class MarkdownMelder(object):
         # First, run any pre-builds
         if not build_side_targets(tgt, "prebuild"):
             return False
-            
+
         # Next, meld the inputs. This can be time-consuming, it reads data to populate variables
         tgt.melded_input = self.meld_inputs(tgt)
         _LOGGER.debug(f"Melded input: {tgt.melded_input}")
