@@ -63,7 +63,7 @@ targets:
   base_target:
     ...
   target2:
-    inherits_from: base_target
+    inherit_from: base_target
     data:
       ...
 ```
