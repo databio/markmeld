@@ -54,6 +54,7 @@ def datetimeformat(environment, value, to_format="%Y-%m-%d", from_format="%Y-%m-
 @pass_environment
 def extract_refs(environment, value):
     m = re.findall("@([a-zA-Z0-9_]+)", value)
+    _LOGGER.debug(f"Extracted refs: {m}")
     return m
 
 
@@ -197,32 +198,33 @@ def load_template(cfg):
     if "jinja_template" not in cfg or not cfg["jinja_template"]:
         return None
 
-    md_tpl = None
+    jinja_tpl = None
     root = cfg["mm_templates"] if "mm_templates" in cfg else None
-    md_tpl = make_abspath(cfg["jinja_template"], cfg["_cfg_file_path"], root)
-    _LOGGER.info(f"MM | jinja template: {md_tpl}")
+    jinja_tpl = make_abspath(cfg["jinja_template"], cfg["_cfg_file_path"], root)
+    _LOGGER.info(f"MM | jinja template: {jinja_tpl}")
     # # if os.path.isfile(cfg["md_template"]):
-    # #     md_tpl = cfg["md_template"]
+    # #     jinja_tpl = cfg["md_template"]
     # if "mm_templates" in cfg:
-    #     md_tpl = os.path.join(cfg["mm_templates"], cfg["md_template"])
+    #     jinja_tpl = os.path.join(cfg["mm_templates"], cfg["md_template"])
     # else:
-    #     md_tpl = os.path.join(, cfg["md_template"])
-    if not os.path.isfile(md_tpl):
-        _LOGGER.debug(cfg)
-        raise Exception(f"jinja_template file not found: {md_tpl}")
+    #     jinja_tpl = os.path.join(, cfg["md_template"])
 
     try:
-        if is_url(md_tpl):
+        if is_url(jinja_tpl):
             import requests
 
-            response = requests.get(md_tpl)
-            md_tpl_contents = response.text
+            response = requests.get(jinja_tpl)
+            jinja_tpl_contents = response.text
         else:
-            with open(md_tpl, "r") as f:
-                md_tpl_contents = f.read()
-        t = Template(md_tpl_contents)
+    if not os.path.isfile(jinja_tpl):
+        _LOGGER.debug(cfg)
+        raise Exception(f"jinja_template file not found: {jinja_tpl}")
+        
+            with open(jinja_tpl, "r") as f:
+                jinja_tpl_contents = f.read()
+        t = Template(jinja_tpl_contents)
     except TypeError:
-        _LOGGER.error(f"Unable to open jinja_template. Path:{md_tpl}")
+        _LOGGER.error(f"Unable to open jinja_template. Path:{jinja_tpl}")
     return t
 
 
