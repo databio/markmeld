@@ -216,9 +216,9 @@ def load_template(cfg):
             response = requests.get(jinja_tpl)
             jinja_tpl_contents = response.text
         else:
-    if not os.path.isfile(jinja_tpl):
-        _LOGGER.debug(cfg)
-        raise Exception(f"jinja_template file not found: {jinja_tpl}")
+            if not os.path.isfile(jinja_tpl):
+                _LOGGER.debug(cfg)
+                raise Exception(f"jinja_template file not found: {jinja_tpl}")
         
             with open(jinja_tpl, "r") as f:
                 jinja_tpl_contents = f.read()

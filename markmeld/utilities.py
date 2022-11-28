@@ -54,10 +54,10 @@ def format_command(tgt):
     """
     cmd = tgt.meta["command"]
     if "output_file" in tgt.meta and tgt.meta["output_file"]:
-        tgt.meta["output_file"] = tgt.meta["output_file"].format(**tgt.meta)
+        tgt.meta["output_file"] = expandpath(tgt.meta["output_file"]).format(**tgt.meta)
     else:
         tgt.meta["output_file"] = None
-    cmd_fmt = cmd.format(**tgt.meta)
+    cmd_fmt = expandpath(cmd).format(**tgt.meta)
     return cmd_fmt
 
 
