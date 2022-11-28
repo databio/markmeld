@@ -174,3 +174,13 @@ def test_variable_variables():
 
     assert res.melded_output == res2.melded_output
     assert res.melded_output == res3.melded_output
+
+
+def test_meta_target():
+    cfg = markmeld.load_config_file("tests/test_data/prebuild_test/_markmeld.yaml")
+    mm = markmeld.MarkdownMelder(cfg)
+    res = mm.build_target("my_meta_target", print_only=True)
+    test_path = "tests/test_data/prebuild_test/prebuild_test_file"
+    assert os.path.isfile(test_path)
+    os.remove(test_path)
+

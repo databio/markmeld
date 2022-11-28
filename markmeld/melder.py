@@ -219,7 +219,7 @@ def load_template(cfg):
             if not os.path.isfile(jinja_tpl):
                 _LOGGER.debug(cfg)
                 raise Exception(f"jinja_template file not found: {jinja_tpl}")
-        
+
             with open(jinja_tpl, "r") as f:
                 jinja_tpl_contents = f.read()
         t = Template(jinja_tpl_contents)
@@ -329,29 +329,6 @@ class Target(object):
 
 
 
-def build_side_targets(tgt, side_list_key="prebuild"):
-    """
-    Builds side targets for a target, which are prebuilds or postbuilds.
-
-    Side targets accompany a target, are built either before (prebuild)
-    or after (postbuild) a main target.
-
-    @param tgt Target The main target to build
-    @param side_list_key Iterable[str] The key of the target that contains a list of side targets. e.g. "prebuild" or "postbuild"
-    """
-    if side_list_key in tgt.meta:
-        _LOGGER.info(f"MM | Run {side_list_key} for target: {tgt.target_name}")
-        for side_tgt in tgt.meta[side_list_key]:
-            _LOGGER.info(f"MM | {side_list_key} target: {side_tgt}")
-            if side_tgt in self.cfg["targets"]:
-                self.build_target(side_tgt)
-            else:
-                _LOGGER.warning(
-                    f"MM | No target called {side_tgt}, requested prebuild by target {tgt}."
-                )
-                return False
-    return True
-
 
 class MarkdownMelder(object):
     def __init__(self, cfg):
@@ -376,7 +353,7 @@ class MarkdownMelder(object):
         _LOGGER.info(f"MM | Building target: {tgt.target_name}")
 
         # First, run any pre-builds
-        if not build_side_targets(tgt, "prebuild"):
+        if not self.build_side_targets(tgt, "prebuild"):
             return False
 
         # Next, meld the inputs. This can be time-consuming, it reads data to populate variables
@@ -389,10 +366,33 @@ class MarkdownMelder(object):
         result = self.run_command_for_target(tgt, print_only, vardump)
 
         # Finally, run any postbuilds
-        if not build_side_targets(tgt, "postbuild"):
+        if not self.build_side_targets(tgt, "postbuild"):
             return False
 
         return result
+
+    def build_side_targets(self, tgt, side_list_key="prebuild"):
+        """
+        Builds side targets for a target, which are prebuilds or postbuilds.
+
+        Side targets accompany a target, are built either before (prebuild)
+        or after (postbuild) a main target.
+
+        @param tgt Target The main target to build
+        @param side_list_key Iterable[str] The key of the target that contains a list of side targets. e.g. "prebuild" or "postbuild"
+        """
+        if side_list_key in tgt.meta:
+            _LOGGER.info(f"MM | Run {side_list_key} for target: {tgt.target_name}")
+            for side_tgt in tgt.meta[side_list_key]:
+                _LOGGER.info(f"MM | {side_list_key} target: {side_tgt}")
+                if side_tgt in self.cfg["targets"]:
+                    self.build_target(side_tgt)
+                else:
+                    _LOGGER.warning(
+                        f"MM | No target called {side_tgt}, requested prebuild by target {tgt}."
+                    )
+                    return False
+        return True
 
     def run_command_for_target(self, tgt, print_only, vardump=False):
 
