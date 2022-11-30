@@ -131,7 +131,6 @@ def test_root_data_propogates_to_target():
     assert "c9nmw827" in str(res.melded_output)  # Make sure order is correct
 
 
-
 def test_import():
     cfg = markmeld.load_config_file("tests/test_data/_markmeld_import.yaml")
     mm = markmeld.MarkdownMelder(cfg)
@@ -183,4 +182,3 @@ def test_meta_target():
     test_path = "tests/test_data/prebuild_test/prebuild_test_file"
     assert os.path.isfile(test_path)
     os.remove(test_path)
-

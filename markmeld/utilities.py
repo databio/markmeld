@@ -196,6 +196,7 @@ def globs_to_dict(globs, cfg_path):
             return_items[k] = file
     return return_items
 
+
 def get_file_open_cmd() -> str:
     """
     Detect the platform markmeld is running on, and
@@ -204,4 +205,4 @@ def get_file_open_cmd() -> str:
     @return str name of executable
     """
     system = platform.system()
-    return FILE_OPENER_MAP.get(system, 'xgd-open')
+    return FILE_OPENER_MAP.get(system, "xgd-open")

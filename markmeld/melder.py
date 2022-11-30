@@ -238,6 +238,7 @@ class Target(object):
     in both places. But really, I don't see a downside to just combining them.
     Therefore, I should merge these into one concept.
     """
+
     def __init__(self, root_cfg={}, target_name=None, vardata=None):
         self.root_cfg = root_cfg
         self.target_name = target_name
@@ -297,7 +298,6 @@ class Target(object):
         if "output_file" in self.meta:
             _LOGGER.info(f"MM | Output file: {self.meta['output_file']}")
 
-
     def resolve_target_inheritance(self, target_name):
         root_cfg = self.root_cfg
         if "targets" not in root_cfg:
@@ -324,10 +324,8 @@ class Target(object):
                 _LOGGER.info(f"Loading from base target: {base_target}")
                 base_target_data = self.resolve_target_inheritance(base_target)
                 base_target_data = deep_update(base_target_data, accumulated)
-                #accumulated = deep_update(accumulated, base_target_data)
+                # accumulated = deep_update(accumulated, base_target_data)
             return base_target_data
-
-
 
 
 class MarkdownMelder(object):
