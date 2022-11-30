@@ -8,7 +8,7 @@ from ubiquerg import VersionInHelpParser
 
 from .exceptions import *
 from .melder import MarkdownMelder
-from .utilities import load_config_file
+from .utilities import load_config_file, get_file_open_cmd
 from ._version import __version__
 
 
@@ -149,7 +149,8 @@ def main(test_args=None):
             and not args.print
             and not args.dump
         ):
-            cmd_open = ["xdg-open", output_file]
+            file_open_cmd = get_file_open_cmd()
+            cmd_open = [file_open_cmd, output_file]
             _LOGGER.info(" ".join(cmd_open))
             subprocess.call(cmd_open)
         else:
