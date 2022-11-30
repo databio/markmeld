@@ -1,0 +1,9 @@
+version: 1
+targets:
+  my_meta_target:
+    type: meta
+    prebuild:
+      - prebuilt_target
+  prebuilt_target:
+    type: raw
+    command: touch prebuild_test_file

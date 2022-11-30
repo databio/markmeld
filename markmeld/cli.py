@@ -111,7 +111,7 @@ def main(test_args=None):
         if "targets" not in cfg:
             raise TargetError(f"No targets specified in config.")
         tarlist = [x for x, k in cfg["targets"].items()]
-        tarlist_txt = ", ".join(tarlist)
+        tarlist_txt = ", ".join(sorted(tarlist))
         _LOGGER.error(f"Targets: {tarlist_txt}.")
         sys.exit(0)
     if args.list:
@@ -119,7 +119,7 @@ def main(test_args=None):
             raise TargetError(f"No targets specified in config.")
         tarlist = {
             x: k["description"] if "description" in k else "No description"
-            for x, k in cfg["targets"].items()
+            for x, k in sorted(cfg["targets"].items())
         }
         _LOGGER.error(f"Targets:")
         for k, v in tarlist.items():
