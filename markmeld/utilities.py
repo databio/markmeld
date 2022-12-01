@@ -205,4 +205,4 @@ def get_file_open_cmd() -> str:
     @return str name of executable
     """
     system = platform.system()
-    return FILE_OPENER_MAP.get(system, "xgd-open")
+    return FILE_OPENER_MAP.get(system, "xdg-open")
