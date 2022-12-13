@@ -320,11 +320,12 @@ class Target(object):
             del accumulated["inherit_from"]
             if type(inherit_from) is not list:
                 inherit_from = [inherit_from]
+            
             for base_target in inherit_from:
                 _LOGGER.info(f"Loading from base target: {base_target}")
                 base_target_data = self.resolve_target_inheritance(base_target)
                 base_target_data = deep_update(base_target_data, accumulated)
-                #accumulated = deep_update(accumulated, base_target_data)
+                accumulated = deep_update(accumulated, base_target_data)
             return base_target_data
 
 
