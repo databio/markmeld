@@ -71,13 +71,13 @@ targets:
       yaml_files:
         root_in_config: yaml_files_2/file1.yaml
         base_target_var: yaml_files_2/file3.yaml
-  test_root_data_propogates_to_target:
+  test_inherited_data_propogates_to_target:
     jinja_template: templates/test_root_data.jinja
     inherit_from: base_target
     data:
       md_files:
         some_text_data: some_text.md
-  test_root_data_merges_into_target:
+  test_inherited_data_merges_into_target:
     jinja_template: templates/test_root_data.jinja
     inherit_from: base_target
     data:
@@ -94,5 +94,20 @@ targets:
   test_recursive_inheritance:
     jinja_template: templates/test_root_data.jinja
     inherit_from: base_target_2
-
-
+  base_target_3:
+    data:
+      yaml_files:
+        base_target_var: yaml_files_2/file3.yaml
+  test_multiple_inheritance:
+    jinja_template: templates/test_multiple_inherit.jinja
+    inherit_from:
+      - base_target_2
+      - base_target_3
+  test_multiple_inheritance_plus_local:
+    jinja_template: templates/test_multiple_inherit.jinja
+    inherit_from:
+      - base_target_2
+      - base_target_3
+    data:
+      yaml_files:
+        base_target_var: yaml_files_2/file5.yaml
