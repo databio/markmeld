@@ -11,7 +11,7 @@ from .melder import MarkdownMelder
 from .utilities import load_config_file
 from ._version import __version__
 
-tpl = """import: null
+tpl = """imports: null
 version: 1
 targets:
   target_name:
@@ -115,7 +115,6 @@ def main(test_args=None):
     global _LOGGER
     _LOGGER = logmuse.logger_via_cli(args, make_root=True)
 
-    print(args)
     if args.init:
         _LOGGER.info(f"Initializing config file at: {args.init}")
         if os.path.exists(args.init):
