@@ -11,6 +11,20 @@ from .melder import MarkdownMelder
 from .utilities import load_config_file
 from ._version import __version__
 
+tpl = """import: null
+version: 1
+targets:
+  target_name:
+    jinja_template: null
+    output_file: "{today}.pdf"
+    data:
+      md_files: null
+      md_globs: null
+      yaml_files: null
+      yaml_globs: null
+      variables: null
+"""
+
 
 def build_argparser():
     """
@@ -28,6 +42,17 @@ def build_argparser():
         description=banner,
         epilog=additional_description,
     )
+
+    parser.add_argument(
+        "-i",
+        "--init",
+        dest="init",
+        metavar="I",
+        nargs='?',
+        const="_markmeld.yaml",
+        help="Initilize config file",
+    )
+
 
     parser.add_argument(
         "-c",
@@ -89,6 +114,17 @@ def main(test_args=None):
         args.__dict__.update(test_args)
     global _LOGGER
     _LOGGER = logmuse.logger_via_cli(args, make_root=True)
+
+    print(args)
+    if args.init:
+        _LOGGER.info(f"Initializing config file at: {args.init}")
+        if os.path.exists(args.init):
+            msg = "File already exists! Won't initialize."
+            raise ConfigError(msg)
+        with open(args.init, "w") as f:
+            f.write(tpl)
+        _LOGGER.info(f"File initialized to:\n{tpl}")
+        sys.exit(0)
 
     if not args.config:
         if os.path.exists("_markmeld.yaml"):
