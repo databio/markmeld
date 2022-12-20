@@ -116,7 +116,7 @@ def load_config_data(cfg_data, filepath=None, target_filepath=None, autocomplete
                 lower_cfg, load_config_file(import_file_abspath, expandpath(filepath))
             )
 
-    if "imports_relative" in higher_cfg and higher_cfg["imports"]:
+    if "imports_relative" in higher_cfg and higher_cfg["imports_relative"]:
         _LOGGER.debug("Found relative imports")
         for import_file in higher_cfg["imports_relative"]:
             import_file_abspath = os.path.relpath(
