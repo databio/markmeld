@@ -1,11 +1,6 @@
 version: 1
 targets:
-  basetgt:
-    data:
-      md_files:
-        some_text_data: some_text.md
   default:
-    inherit_from: basetgt
     command: cat > "{output_file}"
     output_file: "{_today}_demo_output_{recipient}.txt"
     loop:
@@ -14,10 +9,11 @@ targets:
     jinja_template: md_template.jinja
     recursive_render: false
     data:
+      md_files:
+        some_text_data: some_text.md
       yaml_globs_unkeyed:
         - some_data.yaml
   complex_loop:
-    inherit_from: basetgt
     command: cat > "{output_file}"
     output_file: "{today}_demo_output_complex_{recipient[name]}.txt"
     jinja_template: md_template_complex.jinja
@@ -26,6 +22,8 @@ targets:
       loop_data: recipients
       assign_to: recipient
     data:
+      md_files:
+        some_text_data: some_text.md
       yaml_globs_unkeyed:
         - complex_loop.yaml
 
