@@ -2,12 +2,13 @@ import glob
 import os
 import subprocess
 import yaml
+import platform
 
 from logging import getLogger
 from collections.abc import Mapping
 from ubiquerg import expandpath
 
-from .const import PKG_NAME
+from .const import PKG_NAME, FILE_OPENER_MAP
 
 _LOGGER = getLogger(PKG_NAME)
 
@@ -194,3 +195,14 @@ def globs_to_dict(globs, cfg_path):
             _LOGGER.info(f"MM | [key:value] {k}:{file}")
             return_items[k] = file
     return return_items
+
+
+def get_file_open_cmd() -> str:
+    """
+    Detect the platform markmeld is running on, and
+    return the correct executable to call.
+
+    @return str name of executable
+    """
+    system = platform.system()
+    return FILE_OPENER_MAP.get(system, "xdg-open")

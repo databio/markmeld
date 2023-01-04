@@ -238,6 +238,7 @@ class Target(object):
     in both places. But really, I don't see a downside to just combining them.
     Therefore, I should merge these into one concept.
     """
+
     def __init__(self, root_cfg={}, target_name=None, vardata=None):
         self.root_cfg = root_cfg
         self.target_name = target_name
@@ -297,7 +298,6 @@ class Target(object):
         if "output_file" in self.meta:
             _LOGGER.info(f"MM | Output file: {self.meta['output_file']}")
 
-
     def resolve_target_inheritance(self, target_name):
         root_cfg = self.root_cfg
         if "targets" not in root_cfg:
@@ -328,7 +328,6 @@ class Target(object):
 
             accumulated = deep_update(accumulated, root_cfg["targets"][target_name])
             return accumulated
-
 
 
 
