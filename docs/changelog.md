@@ -2,10 +2,15 @@
 
 ## [0.2.0] -- Unreleased
 
-### Added
-
-- `-e` flag to explain a target
-
+- Added `-e` flag to explain a target
+- Add `-i` flag to initialize an empty `_markmeld.yaml` file
+- Fixed bugs with importing
+- Fixed bug with prebuilds
+- Allow opening files on MacOS
+- Enabled using environment variables in variables
+- Sort targets
+- Enable multiple inheritance
+- Enable recursive imports
 
 ## [0.1.0] -- 2022-11-21
 
