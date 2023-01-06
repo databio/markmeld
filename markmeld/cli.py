@@ -48,11 +48,10 @@ def build_argparser():
         "--init",
         dest="init",
         metavar="I",
-        nargs='?',
+        nargs="?",
         const="_markmeld.yaml",
         help="Initilize config file",
     )
-
 
     parser.add_argument(
         "-c",
@@ -168,7 +167,6 @@ def main(test_args=None):
         for k, v in tarlist.items():
             _LOGGER.error(f"  {k}: {v}")
         sys.exit(0)
-
 
     _LOGGER.debug("Melding...")  # Meld it!
     mm = MarkdownMelder(cfg)

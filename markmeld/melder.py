@@ -335,7 +335,6 @@ class Target(object):
             return accumulated
 
 
-
 class MarkdownMelder(object):
     def __init__(self, cfg):
         """
