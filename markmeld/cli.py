@@ -94,6 +94,14 @@ def build_argparser():
     )
 
     parser.add_argument(
+        "-e",
+        "--explain",
+        action="store_true",
+        default=False,
+        help="Explain parameters of a target instead of building it.",
+    )
+
+    parser.add_argument(
         "-v",
         "--vars",
         nargs="+",
@@ -161,8 +169,14 @@ def main(test_args=None):
             _LOGGER.error(f"  {k}: {v}")
         sys.exit(0)
 
+
     _LOGGER.debug("Melding...")  # Meld it!
     mm = MarkdownMelder(cfg)
+
+    if args.explain:
+        explained_target = mm.describe_target(args.target)
+        sys.exit(0)
+
     built_target = mm.build_target(
         args.target, print_only=args.print, vardump=args.dump
     )

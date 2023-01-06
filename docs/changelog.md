@@ -2,6 +2,11 @@
 
 ## [0.2.0] -- Unreleased
 
+### Added
+
+- `-e` flag to explain a target
+
+
 ## [0.1.0] -- 2022-11-21
 
 ### Changed
