@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.2.0] -- Unreleased
+## [0.2.0] -- 2023-01-07
 
 - Added `-e` flag to explain a target
 - Add `-i` flag to initialize an empty `_markmeld.yaml` file
