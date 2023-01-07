@@ -2,12 +2,13 @@ import glob
 import os
 import subprocess
 import yaml
+import platform
 
 from logging import getLogger
 from collections.abc import Mapping
 from ubiquerg import expandpath
 
-from .const import PKG_NAME
+from .const import PKG_NAME, FILE_OPENER_MAP
 
 _LOGGER = getLogger(PKG_NAME)
 
@@ -54,10 +55,10 @@ def format_command(tgt):
     """
     cmd = tgt.meta["command"]
     if "output_file" in tgt.meta and tgt.meta["output_file"]:
-        tgt.meta["output_file"] = tgt.meta["output_file"].format(**tgt.meta)
+        tgt.meta["output_file"] = expandpath(tgt.meta["output_file"]).format(**tgt.meta)
     else:
         tgt.meta["output_file"] = None
-    cmd_fmt = cmd.format(**tgt.meta)
+    cmd_fmt = expandpath(cmd).format(**tgt.meta)
     return cmd_fmt
 
 
@@ -104,7 +105,7 @@ def load_config_data(cfg_data, filepath=None, target_filepath=None, autocomplete
                 higher_cfg["targets"][tgt]["_filepath"] = filepath
 
     # Imports
-    if "imports" in higher_cfg:
+    if "imports" in higher_cfg and higher_cfg["imports"]:
         _LOGGER.debug("Found imports")
         for import_file in higher_cfg["imports"]:
             import_file_abspath = os.path.relpath(
@@ -116,7 +117,7 @@ def load_config_data(cfg_data, filepath=None, target_filepath=None, autocomplete
                 lower_cfg, load_config_file(import_file_abspath, expandpath(filepath))
             )
 
-    if "imports_relative" in higher_cfg:
+    if "imports_relative" in higher_cfg and higher_cfg["imports_relative"]:
         _LOGGER.debug("Found relative imports")
         for import_file in higher_cfg["imports_relative"]:
             import_file_abspath = os.path.relpath(
@@ -194,3 +195,14 @@ def globs_to_dict(globs, cfg_path):
             _LOGGER.info(f"MM | [key:value] {k}:{file}")
             return_items[k] = file
     return return_items
+
+
+def get_file_open_cmd() -> str:
+    """
+    Detect the platform markmeld is running on, and
+    return the correct executable to call.
+
+    @return str name of executable
+    """
+    system = platform.system()
+    return FILE_OPENER_MAP.get(system, "xdg-open")

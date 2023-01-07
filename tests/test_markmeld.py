@@ -87,7 +87,7 @@ def test_factory():
 
 
 def test_v2_basic_function():
-    cfg = markmeld.load_config_file("tests/test_data/_markmeld_v1.yaml")
+    cfg = markmeld.load_config_file("tests/test_data/_markmeld_inherit.yaml")
     mm = markmeld.MarkdownMelder(cfg)
     # print(x.cfg)
     res = mm.build_target("test_process_md", print_only=True)
@@ -111,18 +111,32 @@ def test_v2_basic_function():
     assert "22" in str(res.melded_output)
 
 
-def test_root_data_propogates_to_target():
-    cfg = markmeld.load_config_file("tests/test_data/_markmeld_v1.yaml")
+def test_inherited_data_propogates_to_target():
+    cfg = markmeld.load_config_file("tests/test_data/_markmeld_inherit.yaml")
     mm = markmeld.MarkdownMelder(cfg)
 
-    res = mm.build_target("test_root_data_propogates_to_target", print_only=True)
+    res = mm.build_target("test_inherited_data_propogates_to_target", print_only=True)
     print(res.melded_output)
     assert "xs8Nd0D98" in str(res.melded_output)
 
-    res = mm.build_target("test_root_data_merges_into_target", print_only=True)
+    res = mm.build_target("test_inherited_data_merges_into_target", print_only=True)
     print(res.melded_output)
     assert "xs8Nd0D98" in str(res.melded_output)  # From root data definition
     assert "k9XFJOId0" in str(res.melded_output)  # From local target data definition
+
+    res = mm.build_target("test_recursive_inheritance", print_only=True)
+    print(res.melded_output)
+    assert "xs8Nd0D98" in str(res.melded_output)  # From deep inheritance
+    assert "k9XFJOId0" in str(res.melded_output)  # From immediate inheritance
+    assert "c9nmw827" in str(res.melded_output)  # Make sure order is correct
+
+    res = mm.build_target("test_multiple_inheritance", print_only=True)
+    print(res.melded_output)
+    assert "8x8x9c" in str(res.melded_output)
+
+    res = mm.build_target("test_multiple_inheritance_plus_local", print_only=True)
+    print(res.melded_output)
+    assert "0sjk8wj82" in str(res.melded_output)
 
 
 def test_import():
@@ -167,3 +181,12 @@ def test_variable_variables():
 
     assert res.melded_output == res2.melded_output
     assert res.melded_output == res3.melded_output
+
+
+def test_meta_target():
+    cfg = markmeld.load_config_file("tests/test_data/prebuild_test/_markmeld.yaml")
+    mm = markmeld.MarkdownMelder(cfg)
+    res = mm.build_target("my_meta_target", print_only=True)
+    test_path = "tests/test_data/prebuild_test/prebuild_test_file"
+    assert os.path.isfile(test_path)
+    os.remove(test_path)

@@ -30,4 +30,4 @@ targets:
     - post_target2
 ```
 
-The `prebuild` and `postbuild` side targets must be available targets to build. You could define them either in the same configuration file or they could also be defined in an imported configuration file. I'm using prebuild targets to build figures to make sure they are updated before a manuscript build, or to splitting a PDF into different pages after building. For these use cases, it makes sense for your pre-build targets to be of `type: raw`, since they won't actually produce markmeld outputs directly.
+The `prebuild` and `postbuild` side targets must be defined somewhere, but you could define them either in the same configuration file or in an imported configuration file. I'm using prebuild targets to build figures to make sure they are updated before a manuscript build, or to splitting a PDF into different pages after building. For these use cases, it makes sense for your pre-build targets to be of `type: raw`, since they won't actually produce markmeld outputs directly.

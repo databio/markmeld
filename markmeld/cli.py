@@ -8,8 +8,22 @@ from ubiquerg import VersionInHelpParser
 
 from .exceptions import *
 from .melder import MarkdownMelder
-from .utilities import load_config_file
+from .utilities import load_config_file, get_file_open_cmd
 from ._version import __version__
+
+tpl = """imports: null
+version: 1
+targets:
+  target_name:
+    jinja_template: null
+    output_file: "{today}.pdf"
+    data:
+      md_files: null
+      md_globs: null
+      yaml_files: null
+      yaml_globs: null
+      variables: null
+"""
 
 
 def build_argparser():
@@ -27,6 +41,16 @@ def build_argparser():
         version=f"{__version__}",
         description=banner,
         epilog=additional_description,
+    )
+
+    parser.add_argument(
+        "-i",
+        "--init",
+        dest="init",
+        metavar="I",
+        nargs="?",
+        const="_markmeld.yaml",
+        help="Initilize config file",
     )
 
     parser.add_argument(
@@ -69,6 +93,14 @@ def build_argparser():
     )
 
     parser.add_argument(
+        "-e",
+        "--explain",
+        action="store_true",
+        default=False,
+        help="Explain parameters of a target instead of building it.",
+    )
+
+    parser.add_argument(
         "-v",
         "--vars",
         nargs="+",
@@ -89,6 +121,16 @@ def main(test_args=None):
         args.__dict__.update(test_args)
     global _LOGGER
     _LOGGER = logmuse.logger_via_cli(args, make_root=True)
+
+    if args.init:
+        _LOGGER.info(f"Initializing config file at: {args.init}")
+        if os.path.exists(args.init):
+            msg = "File already exists! Won't initialize."
+            raise ConfigError(msg)
+        with open(args.init, "w") as f:
+            f.write(tpl)
+        _LOGGER.info(f"File initialized to:\n{tpl}")
+        sys.exit(0)
 
     if not args.config:
         if os.path.exists("_markmeld.yaml"):
@@ -111,7 +153,7 @@ def main(test_args=None):
         if "targets" not in cfg:
             raise TargetError(f"No targets specified in config.")
         tarlist = [x for x, k in cfg["targets"].items()]
-        tarlist_txt = ", ".join(tarlist)
+        tarlist_txt = ", ".join(sorted(tarlist))
         _LOGGER.error(f"Targets: {tarlist_txt}.")
         sys.exit(0)
     if args.list:
@@ -119,7 +161,7 @@ def main(test_args=None):
             raise TargetError(f"No targets specified in config.")
         tarlist = {
             x: k["description"] if "description" in k else "No description"
-            for x, k in cfg["targets"].items()
+            for x, k in sorted(cfg["targets"].items())
         }
         _LOGGER.error(f"Targets:")
         for k, v in tarlist.items():
@@ -128,6 +170,11 @@ def main(test_args=None):
 
     _LOGGER.debug("Melding...")  # Meld it!
     mm = MarkdownMelder(cfg)
+
+    if args.explain:
+        explained_target = mm.describe_target(args.target)
+        sys.exit(0)
+
     built_target = mm.build_target(
         args.target, print_only=args.print, vardump=args.dump
     )
@@ -149,7 +196,8 @@ def main(test_args=None):
             and not args.print
             and not args.dump
         ):
-            cmd_open = ["xdg-open", output_file]
+            file_open_cmd = get_file_open_cmd()
+            cmd_open = [file_open_cmd, output_file]
             _LOGGER.info(" ".join(cmd_open))
             subprocess.call(cmd_open)
         else:
