@@ -1,4 +1,4 @@
-# How to reference content in a Jinja template
+# Writing Jinja templates for markmeld
 
 The data content for a target is specified in the markmeld config through a variety of options under a target's `data` attribute, such as `md_files`, `yaml_globs`, and more. Markmeld loads this data and then runs it through a jinja template. To write a template, you'll need to be able to reference specific data elements. This document explains how to do that for each of the various ways of specifying data for a target.
 

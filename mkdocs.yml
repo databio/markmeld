@@ -8,18 +8,20 @@ nav:
   - Getting Started:
       - Introduction: README.md
       - Install: install.md
-      - Basic configuration: basic_config.md
+      - Simple example tutorial: simple_example.md
+      - Markmeld configuration: config_specification.md
   - How-to guides:
-      - Referencing content in template: jinja_template.md
-      - Imports: imports.md
-      - Remote templates: remote_templates.md
+      - Customizing commands: commands.md
+      - Writing jinja templates: jinja_template.md
+      - Importing external files: imports.md
+      - Inheriting from targets: inheriting.md
       - Prebuild and postbuild targets: side_targets.md
       - Multi-output targets: multi_output_targets.md
       - Target factories: target_factories.md
-      - Output-less targets: outputless_targets.md
-      - Mail merges: mail_merge.md
       - Advanced variable templates: variable_variables.md
       - Recursive rendering: recursive_rendering.md
+      - Remote templates: remote_templates.md
+      - Mail merges: mail_merge.md
   - Reference:
       - Changelog: changelog.md
 
