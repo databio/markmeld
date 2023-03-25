@@ -46,6 +46,13 @@ def glob_factory(vars, cfg):
                 }
             },
         }
+
+        # Carry over inherit from variables
+        variables_to_carry_over = ["inherit_from"]
+        for v in variables_to_carry_over:
+            if v in vars:
+                targets[tgt][v] = vars[v]
+
         if "glob_variables" in vars:
             targets[tgt].update(vars["glob_variables"])
     return targets
