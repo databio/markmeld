@@ -33,11 +33,13 @@ class MarkmeldWatchDog(Observer):
 
         # init the ignore files list (just the output files)
         if "output_file" in self.target.root_cfg["targets"][target]:
-            ignore_file_name = Path(self.target.root_cfg["targets"][target]["output_file"]).name
+            ignore_file_name = Path(
+                self.target.root_cfg["targets"][target]["output_file"]
+            ).name
             self.ignore_files = [ignore_file_name]
         else:
             self.ignore_files = []
-        
+
         self.event_handler = LoggingEventHandler()
         self.event_handler.on_modified = self.on_modified
         self.schedule(self.event_handler, path, recursive=True)
