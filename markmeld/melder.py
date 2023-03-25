@@ -298,6 +298,11 @@ class Target(object):
         if "output_file" in self.meta:
             _LOGGER.info(f"MM | Output file: {self.meta['output_file']}")
 
+    def __repr__(self):
+        return yaml.dump(self.__dict__["meta"], default_flow_style=False)
+        # import json
+        # return json.dumps(self.__dict__, sort_keys=True, indent=4)
+
     def resolve_target_inheritance(self, target_name):
         root_cfg = self.root_cfg
         if "targets" not in root_cfg:
@@ -330,7 +335,6 @@ class Target(object):
             return accumulated
 
 
-
 class MarkdownMelder(object):
     def __init__(self, cfg):
         """
@@ -348,8 +352,13 @@ class MarkdownMelder(object):
         else:
             return False
 
-    def build_target(self, target_name, print_only=False, vardump=False):
+    def describe_target(self, target_name):
+        tgt = Target(self.cfg, target_name)
+        _LOGGER.info(f"MM | Describing target: {tgt.target_name}")
+        _LOGGER.info(tgt)
+        return True
 
+    def build_target(self, target_name, print_only=False, vardump=False):
         tgt = Target(self.cfg, target_name)
         _LOGGER.info(f"MM | Building target: {tgt.target_name}")
 
@@ -419,9 +428,14 @@ class MarkdownMelder(object):
             cmd_fmt = format_command(tgt)
             _LOGGER.debug(cmd_fmt)
             tgt.melded_output = self.render_template(tgt.melded_input, tgt)
-            tgt.returncode = run_cmd(
-                cmd_fmt, tgt.melded_output.encode(), tgt.meta["_filepath"]
-            )
+            _LOGGER.debug(f"melded_output: '{tgt.melded_output}'")
+            if tgt.melded_output == "" or tgt.melded_output == None:
+                _LOGGER.error("No input detected. Check variable names")
+                tgt.returncode = 2
+            else:
+                tgt.returncode = run_cmd(
+                    cmd_fmt, tgt.melded_output.encode(), tgt.meta["_filepath"]
+                )
         return tgt
 
     def build_target_in_loop(self, tgt, print_only=False, vardump=False):
