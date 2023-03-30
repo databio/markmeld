@@ -3,5 +3,5 @@
 
 {% for chapter in _yaml["chapters"].content %}
 {{_md[chapter].path}}
-{{_md[chapter].metadata.metadata_variable}}
+{{_md[chapter].frontmatter.metadata_variable}}
 {% endfor %}

@@ -164,7 +164,7 @@ def process_data(data_block, filepath):
 
         data["_md"][k] = {
             "content": p.content,
-            "metadata": p.metadata,
+            "frontmatter": p.metadata,
             "path": os.path.relpath(v, os.path.dirname(filepath)),
             "ext": get_file_extension(v)
         }
