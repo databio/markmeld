@@ -129,7 +129,12 @@ def process_data(data_block, filepath):
                     data["_yaml"].update(yaml_dict)
                 else:
                     data[k] = yaml_dict
-                    data["_yaml"][k] = yaml_dict
+                    # data["_yaml"][k] = yaml_dict
+                    data["_yaml"][k] = {
+                        "content": yaml_dict,
+                        "path": os.path.relpath(v, os.path.dirname(filepath)),
+                        "ext": get_file_extension(v)
+                    }
                     vars_temp[k] = yaml_dict
                 data["_raw"][k] = yaml.dump(yaml_dict)
                 if k[:11] == "frontmatter":
@@ -155,7 +160,14 @@ def process_data(data_block, filepath):
                 data["_raw"][k] = {}
                 continue
         data[k] = p.content
-        data["_md"][k] = p.content
+        # data["_md"][k] = p.content
+
+        data["_md"][k] = {
+            "content": p.content,
+            "metadata": p.metadata,
+            "path": os.path.relpath(v, os.path.dirname(filepath)),
+            "ext": get_file_extension(v)
+        }
         frontmatter_temp.update(p.metadata)
         local_frontmatter_temp[k] = p.metadata
         data["_raw"][k] = frontmatter.dumps(p)
@@ -193,6 +205,12 @@ def process_data(data_block, filepath):
 
     return data
 
+
+def get_file_extension(path):
+    basename = os.path.basename(path)
+    splitext = os.path.splitext(basename)
+    ext = splitext[1]
+    return ext
 
 def load_template(cfg):
     if "jinja_template" not in cfg or not cfg["jinja_template"]:

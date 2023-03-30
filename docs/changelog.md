@@ -1,6 +1,8 @@
 # Changelog
 
-## [0.X.X] -- Unreleased
+## [0.3.0] -- 2023-XX-XX
+
+- Revamped the `_md` and `_array` variables to be dicts, with `ext`, `content`, `metadata`, etc.
 
 ## [0.2.0] -- 2023-01-07
 

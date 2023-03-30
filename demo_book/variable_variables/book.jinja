@@ -1,0 +1,7 @@
+{% for chapter in _yaml["chapters"].content %}{{ _md[chapter].content }}
+{% endfor %}
+
+{% for chapter in _yaml["chapters"].content %}
+{{_md[chapter].path}}
+{{_md[chapter].metadata.metadata_variable}}
+{% endfor %}

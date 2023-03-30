@@ -175,12 +175,21 @@ def test_variable_variables():
     cfg3 = markmeld.load_config_file("demo_book/book_var2/_markmeld.yaml")
     mm3 = markmeld.MarkdownMelder(cfg3)
     res3 = mm3.build_target("default", print_only=True)
+
     # print("/////" + res.melded_output + "/////")
     # print("/////" + res2.melded_output + "/////")
     # print("/////" + res3.melded_output + "/////")
 
+    cfg4 = markmeld.load_config_file("demo_book/variable_variables/_markmeld.yaml")
+    mm4 = markmeld.MarkdownMelder(cfg4)
+    res4 = mm4.build_target("default", print_only=True)
+
+
     assert res.melded_output == res2.melded_output
     assert res.melded_output == res3.melded_output
+    assert "l0xn37lks8" in str(res4.melded_output)
+
+
 
 
 def test_meta_target():
