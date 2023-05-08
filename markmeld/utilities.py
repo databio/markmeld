@@ -12,6 +12,7 @@ from .const import PKG_NAME, FILE_OPENER_MAP
 
 _LOGGER = getLogger(PKG_NAME)
 
+
 # define some useful functions
 def recursive_get(dat, indices):
     """
@@ -114,7 +115,9 @@ def load_config_data(cfg_data, filepath=None, target_filepath=None, autocomplete
             if not autocomplete:
                 _LOGGER.error(f"Specified config file to import: {import_file_abspath}")
             deep_update(
-                lower_cfg, load_config_file(import_file_abspath, expandpath(filepath))
+                lower_cfg,
+                load_config_file(import_file_abspath, expandpath(filepath)),
+                warn_override=not autocomplete,
             )
 
     if "imports_relative" in higher_cfg and higher_cfg["imports_relative"]:
@@ -124,10 +127,16 @@ def load_config_data(cfg_data, filepath=None, target_filepath=None, autocomplete
                 make_abspath(expandpath(import_file), expandpath(filepath))
             )
             if not autocomplete:
-                _LOGGER.error(f"Specified config file to import (relative): {import_file}")
-            deep_update(lower_cfg, load_config_file(expandpath(import_file_abspath)))
+                _LOGGER.error(
+                    f"Specified config file to import (relative): {import_file}"
+                )
+            deep_update(
+                lower_cfg,
+                load_config_file(expandpath(import_file_abspath)),
+                warn_override=not autocomplete,
+            )
 
-    deep_update(lower_cfg, higher_cfg)
+    deep_update(lower_cfg, higher_cfg, warn_override=not autocomplete)
 
     # Target factories
     if "target_factories" in lower_cfg:
@@ -142,7 +151,9 @@ def load_config_data(cfg_data, filepath=None, target_filepath=None, autocomplete
             factory_targets = func(fac_vals, lower_cfg)
             for k, v in factory_targets.items():
                 factory_targets[k]["_filepath"] = filepath
-            deep_update(lower_cfg, {"targets": factory_targets})
+            deep_update(
+                lower_cfg, {"targets": factory_targets}, warn_override=not autocomplete
+            )
 
     # _LOGGER.debug("Lower cfg: " + str(lower_cfg))
     return lower_cfg
@@ -155,11 +166,12 @@ def warn_overriding_target(old, new):
                 _LOGGER.error(f"Overriding target: {tgt}")
 
 
-def deep_update(old, new):
+def deep_update(old, new, warn_override=False):
     """
     Like built-in dict update, but recursive.
     """
-    warn_overriding_target(old, new)
+    if warn_override:
+        warn_overriding_target(old, new)
     for k, v in new.items():
         if isinstance(v, Mapping):
             old[k] = deep_update(old.get(k, {}), v)
