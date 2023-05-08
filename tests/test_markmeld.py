@@ -184,12 +184,9 @@ def test_variable_variables():
     mm4 = markmeld.MarkdownMelder(cfg4)
     res4 = mm4.build_target("default", print_only=True)
 
-
     assert res.melded_output == res2.melded_output
     assert res.melded_output == res3.melded_output
     assert "l0xn37lks8" in str(res4.melded_output)
-
-
 
 
 def test_meta_target():

@@ -53,6 +53,7 @@ def datetimeformat(environment, value, to_format="%Y-%m-%d", from_format="%Y-%m-
 # "contributions" sections.
 @pass_environment
 def extract_refs(environment, value):
+    print(f"value: '{value}'", value)
     m = re.findall("@([a-zA-Z0-9_]+)", value)
     _LOGGER.debug(f"Extracted refs: {m}")
     return m
@@ -133,7 +134,7 @@ def process_data(data_block, filepath):
                     data["_yaml"][k] = {
                         "content": yaml_dict,
                         "path": os.path.relpath(v, os.path.dirname(filepath)),
-                        "ext": get_file_extension(v)
+                        "ext": get_file_extension(v),
                     }
                     vars_temp[k] = yaml_dict
                 data["_raw"][k] = yaml.dump(yaml_dict)
@@ -166,7 +167,7 @@ def process_data(data_block, filepath):
             "content": p.content,
             "frontmatter": p.metadata,
             "path": os.path.relpath(v, os.path.dirname(filepath)),
-            "ext": get_file_extension(v)
+            "ext": get_file_extension(v),
         }
         frontmatter_temp.update(p.metadata)
         local_frontmatter_temp[k] = p.metadata
@@ -211,6 +212,7 @@ def get_file_extension(path):
     splitext = os.path.splitext(basename)
     ext = splitext[1]
     return ext
+
 
 def load_template(cfg):
     if "jinja_template" not in cfg or not cfg["jinja_template"]:
@@ -331,7 +333,7 @@ class Target(object):
             error_msg = f"Target {target_name} not found"
             _LOGGER.debug(error_msg)
             return {}
-        print(root_cfg["targets"])
+        # _LOGGER.debug(f"Root cft targets: {root_cfg['targets']}")
 
         if "inherit_from" not in root_cfg["targets"][target_name]:
             ## base case
@@ -382,6 +384,7 @@ class MarkdownMelder(object):
 
         # First, run any pre-builds
         if not self.build_side_targets(tgt, "prebuild"):
+            _LOGGER.debug("Failed building side targets")
             return False
 
         # Next, meld the inputs. This can be time-consuming, it reads data to populate variables
@@ -423,7 +426,6 @@ class MarkdownMelder(object):
         return True
 
     def run_command_for_target(self, tgt, print_only, vardump=False):
-
         _LOGGER.info(f"File path for this target: {tgt.meta['_filepath']}")
         if "type" in tgt.meta and tgt.meta["type"] == "raw":
             # Raw = No subprocess stdin printing. (so, it doesn't render anything)
