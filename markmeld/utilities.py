@@ -124,7 +124,7 @@ def load_config_data(cfg_data, filepath=None, target_filepath=None, autocomplete
                 make_abspath(expandpath(import_file), expandpath(filepath))
             )
             if not autocomplete:
-                _LOGGER.error(f"Specified config file to import: {import_file}")
+                _LOGGER.error(f"Specified config file to import (relative): {import_file}")
             deep_update(lower_cfg, load_config_file(expandpath(import_file_abspath)))
 
     deep_update(lower_cfg, higher_cfg)
@@ -144,14 +144,22 @@ def load_config_data(cfg_data, filepath=None, target_filepath=None, autocomplete
                 factory_targets[k]["_filepath"] = filepath
             deep_update(lower_cfg, {"targets": factory_targets})
 
-    _LOGGER.debug("Lower cfg: " + str(lower_cfg))
+    # _LOGGER.debug("Lower cfg: " + str(lower_cfg))
     return lower_cfg
+
+
+def warn_overriding_target(old, new):
+    if "targets" in old and "targets" in new:
+        for tgt in new["targets"]:
+            if tgt in old["targets"]:
+                _LOGGER.error(f"Overriding target: {tgt}")
 
 
 def deep_update(old, new):
     """
     Like built-in dict update, but recursive.
     """
+    warn_overriding_target(old, new)
     for k, v in new.items():
         if isinstance(v, Mapping):
             old[k] = deep_update(old.get(k, {}), v)
