@@ -53,6 +53,7 @@ def datetimeformat(environment, value, to_format="%Y-%m-%d", from_format="%Y-%m-
 # "contributions" sections.
 @pass_environment
 def extract_refs(environment, value):
+    print(f"value: '{value}'", value)
     m = re.findall("@([a-zA-Z0-9_]+)", value)
     _LOGGER.debug(f"Extracted refs: {m}")
     return m
@@ -129,7 +130,12 @@ def process_data(data_block, filepath):
                     data["_yaml"].update(yaml_dict)
                 else:
                     data[k] = yaml_dict
-                    data["_yaml"][k] = yaml_dict
+                    # data["_yaml"][k] = yaml_dict
+                    data["_yaml"][k] = {
+                        "content": yaml_dict,
+                        "path": os.path.relpath(v, os.path.dirname(filepath)),
+                        "ext": get_file_extension(v),
+                    }
                     vars_temp[k] = yaml_dict
                 data["_raw"][k] = yaml.dump(yaml_dict)
                 if k[:11] == "frontmatter":
@@ -155,7 +161,14 @@ def process_data(data_block, filepath):
                 data["_raw"][k] = {}
                 continue
         data[k] = p.content
-        data["_md"][k] = p.content
+        # data["_md"][k] = p.content
+
+        data["_md"][k] = {
+            "content": p.content,
+            "frontmatter": p.metadata,
+            "path": os.path.relpath(v, os.path.dirname(filepath)),
+            "ext": get_file_extension(v),
+        }
         frontmatter_temp.update(p.metadata)
         local_frontmatter_temp[k] = p.metadata
         data["_raw"][k] = frontmatter.dumps(p)
@@ -192,6 +205,13 @@ def process_data(data_block, filepath):
         data["_local_frontmatter"][k] = get_frontmatter_formats(v)
 
     return data
+
+
+def get_file_extension(path):
+    basename = os.path.basename(path)
+    splitext = os.path.splitext(basename)
+    ext = splitext[1]
+    return ext
 
 
 def load_template(cfg):
@@ -313,6 +333,7 @@ class Target(object):
             error_msg = f"Target {target_name} not found"
             _LOGGER.debug(error_msg)
             return {}
+        # _LOGGER.debug(f"Root cft targets: {root_cfg['targets']}")
 
         if "inherit_from" not in root_cfg["targets"][target_name]:
             ## base case
@@ -363,6 +384,7 @@ class MarkdownMelder(object):
 
         # First, run any pre-builds
         if not self.build_side_targets(tgt, "prebuild"):
+            _LOGGER.debug("Failed building side targets")
             return False
 
         # Next, meld the inputs. This can be time-consuming, it reads data to populate variables
@@ -404,7 +426,6 @@ class MarkdownMelder(object):
         return True
 
     def run_command_for_target(self, tgt, print_only, vardump=False):
-
         _LOGGER.info(f"File path for this target: {tgt.meta['_filepath']}")
         if "type" in tgt.meta and tgt.meta["type"] == "raw":
             # Raw = No subprocess stdin printing. (so, it doesn't render anything)

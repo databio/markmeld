@@ -184,6 +184,7 @@ def main(test_args=None):
 
     def report_result(built_target):
         # Open the file
+        _LOGGER.debug(f"Built target: {built_target}")
         if "output_file" in built_target.meta and built_target.meta["output_file"]:
             output_file = built_target.meta["output_file"]
         else:

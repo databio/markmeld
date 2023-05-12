@@ -52,3 +52,6 @@ imports:
 imports_relative:
   - these/targets/are/relative/to/there/_markmeld.yaml
 ```
+
+One thing that can be tricky: if you import a file in `relative_imports`, and that file imports another, with `imports`... Then the targets in the second fill will be considered relative to the first file. That's because they are *relative to the importing file*, which in this case, is the first imported file. So, this can be a bit confusing if you are nesting relative imports. My advice is to just not import anything in a file that's imported with `imports_relative`.
+

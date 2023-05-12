@@ -34,7 +34,7 @@ Great. That works. But the problem is that this jinja template is specific now t
 
 ### The `md` array
 
-Markmeld makes available to jinja an array under the name `md` which has access to all of the markdown elements keyed by their names. So, while you can access the *intro* chapter directly with `{{ intro }}`, you can also access it through the `md` array using `{{ _md["intro"] }}`. Take it one step further, and this means if you have "intro" in a variable, say `myvar`, you could access the exact same content with `{{ _md[myvar] }}`.
+Markmeld makes available to jinja an array under the name `md` which has access to all of the markdown elements keyed by their names. So, while you can access the *intro* chapter directly with `{{ intro }}`, you can also access it through the `md` array using `{{ _md["intro"].content }}`. Take it one step further, and this means if you have "intro" in a variable, say `myvar`, you could access the exact same content with `{{ _md[myvar].content }}`.
 
 So, let's set up an array with values as the chapter names by adding this to `_markmeld.yaml`:
 
@@ -52,10 +52,25 @@ This will give us access in the jinja template to a `chapters` array with those 
 
 ```
 {% for chapter in chapters %}
-{{ _md[chapter] }}
+{{ _md[chapter].content }}
 {% endfor %}
 ```
 
 And voila! We have the same output, but now we've encoded the chapter order logic in the markmeld config file, and this jinja template can be reused. It's beautiful.
 
+### `_md` array properties
 
+In addition to the `.content` property, for each `md` file, you can also access other stuff:
+
+- `_md[id].content` - content of the file
+- `_md[id].path` - path to the file (relative to `_markmeld.yaml`)
+- `_md[id].frontmatter` - frontmatter in the md file
+- `_md[id].ext` - file extension
+
+### `_yaml` array
+
+The `_yaml` array operates in much the same way, though it doesn't provide a `.frontmatter` since there's no frontmatter to a yaml array. So it just provides:
+
+- `_md[id].content` - content of the file
+- `_md[id].path` - path to the file (relative to `_markmeld.yaml`)
+- `_md[id].ext` - file extension
