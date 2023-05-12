@@ -313,7 +313,6 @@ class Target(object):
             error_msg = f"Target {target_name} not found"
             _LOGGER.debug(error_msg)
             return {}
-        print(root_cfg["targets"])
 
         if "inherit_from" not in root_cfg["targets"][target_name]:
             ## base case
