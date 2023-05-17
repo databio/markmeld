@@ -180,7 +180,12 @@ def main(test_args=None):
     )
 
     if args.print | args.dump:
-        print(built_target.melded_output)
+        import json
+        print(
+            json.dumps(
+                built_target.melded_output,
+                    sort_keys=True, indent=2, default=str)
+        )
 
     def report_result(built_target):
         # Open the file
