@@ -179,13 +179,17 @@ def main(test_args=None):
         args.target, print_only=args.print, vardump=args.dump
     )
 
-    if args.print | args.dump:
+    if args.dump:
         import json
+        _LOGGER.info("Dumping JSON output passed to jinja template...")
         print(
             json.dumps(
                 built_target.melded_output,
                     sort_keys=True, indent=2, default=str)
         )
+    
+    if args.print:
+        print(built_target.melded_output)
 
     def report_result(built_target):
         # Open the file
