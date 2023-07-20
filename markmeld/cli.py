@@ -77,14 +77,6 @@ def build_argparser():
     )
 
     parser.add_argument(
-        "-p",
-        "--print",
-        action="store_true",
-        default=False,
-        help="Print template output instead of going to pandoc.",
-    )
-
-    parser.add_argument(
         "-d",
         "--dump",
         action="store_true",
@@ -98,6 +90,22 @@ def build_argparser():
         action="store_true",
         default=False,
         help="Explain parameters of a target instead of building it.",
+    )
+
+    parser.add_argument(
+        "-p",
+        "--print",
+        action="store_true",
+        default=False,
+        help="Print output of jinja template instead of piping it to command (pandoc).",
+    )
+
+    parser.add_argument(
+        "-t",
+        "--template",
+        action="store_true",
+        default=False,
+        help="Show the template that will be used for this recipe.",
     )
 
     parser.add_argument(
@@ -175,25 +183,49 @@ def main(test_args=None):
         explained_target = mm.describe_target(args.target)
         sys.exit(0)
 
+    if args.template:
+        from .melder import Target, load_template
+        tgt = Target(mm.cfg, args.target)
+        tpl = load_template(tgt.meta)
+        _LOGGER.info("Template content:")
+        _LOGGER.info(tpl.source)
+        sys.exit(0)
+
     built_target = mm.build_target(
         args.target, print_only=args.print, vardump=args.dump
     )
 
     if args.dump:
         import json
+
         _LOGGER.info("Dumping JSON output passed to jinja template...")
         print(
             json.dumps(
-                built_target.melded_output,
-                    sort_keys=True, indent=2, default=str)
+                built_target.melded_output, sort_keys=True, indent=2, default=str
+            )
         )
-    
+
     if args.print:
         print(built_target.melded_output)
 
     def report_result(built_target):
-        # Open the file
+        """
+        Tell the CLI user what happened, depending the logic of the type of target built.
+        """
+
         _LOGGER.debug(f"Built target: {built_target}")
+        for item in built_target.messages:
+            if item["status"] == "fail":
+                color_code = "\033[0;31m"  # red
+            else:
+                color_code = " \032[0;31m"  # green
+            _LOGGER.info(f"{color_code}{item['status']}: {item['message']}\033[0m")
+
+        if built_target.returncode != 0:
+            _LOGGER.error("Building target failed")
+            return
+
+        # Open the file
         if "output_file" in built_target.meta and built_target.meta["output_file"]:
             output_file = built_target.meta["output_file"]
         else:

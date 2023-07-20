@@ -1,5 +1,6 @@
 import re
 
+
 def extract_refs(value: str) -> list:
     """
     This is a custom jinja filter that will find and return pandoc-citeproc-style refs, like

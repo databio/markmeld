@@ -243,6 +243,7 @@ def load_template(cfg):
             with open(jinja_tpl, "r") as f:
                 jinja_tpl_contents = f.read()
         t = Template(jinja_tpl_contents)
+        t.source = jinja_tpl_contents
     except TypeError:
         _LOGGER.error(f"Unable to open jinja_template. Path:{jinja_tpl}")
     return t
@@ -262,6 +263,11 @@ class Target(object):
     def __init__(self, root_cfg={}, target_name=None, vardata=None):
         self.root_cfg = root_cfg
         self.target_name = target_name
+
+        # Initialize some local variables
+        self.messages = []  # A list of messages
+        self.returncode = None
+
         meta = {}
         # Old way would update based on root config:
         # meta.update(self.root_cfg)
@@ -323,6 +329,11 @@ class Target(object):
         # import json
         # return json.dumps(self.__dict__, sort_keys=True, indent=4)
 
+    def add_message(self, message, status="success"):
+        if status == "fail":
+            _LOGGER.warning(message)
+        self.messages.append({"status": status, "message": message})
+
     def resolve_target_inheritance(self, target_name):
         root_cfg = self.root_cfg
         if "targets" not in root_cfg:
@@ -356,6 +367,10 @@ class Target(object):
 
 
 class MarkdownMelder(object):
+    """
+    Workhorse class, capable of building targets
+    """
+
     def __init__(self, cfg):
         """
         Instantiate a MarkdownMelder object
@@ -379,13 +394,16 @@ class MarkdownMelder(object):
         return True
 
     def build_target(self, target_name, print_only=False, vardump=False):
+        """
+        @return [False|tgt] if the
+        """
         tgt = Target(self.cfg, target_name)
         _LOGGER.info(f"MM | Building target: {tgt.target_name}")
 
         # First, run any pre-builds
         if not self.build_side_targets(tgt, "prebuild"):
-            _LOGGER.debug("Failed building side targets")
-            return False
+            _LOGGER.debug("Failed building prebuild side targets")
+            return tgt
 
         # Next, meld the inputs. This can be time-consuming, it reads data to populate variables
         tgt.melded_input = self.meld_inputs(tgt)
@@ -398,7 +416,7 @@ class MarkdownMelder(object):
 
         # Finally, run any postbuilds
         if not self.build_side_targets(tgt, "postbuild"):
-            return False
+            return tgt
 
         return result
 
@@ -419,8 +437,9 @@ class MarkdownMelder(object):
                 if side_tgt in self.cfg["targets"]:
                     self.build_target(side_tgt)
                 else:
-                    _LOGGER.warning(
-                        f"MM | No target called {side_tgt}, requested prebuild by target {tgt}."
+                    tgt.add_message(
+                        f"MM | No target called '{side_tgt}', requested prebuild by target '{tgt.target_name}' from file '{tgt.meta['_cfg_file_path']}'",
+                        "fail",
                     )
                     return False
         return True
@@ -533,6 +552,7 @@ class MarkdownMelder(object):
         else:
             # cmd_data["jinja_template"] = None
             tpl = Template(tpl_generic)
+            tpl.source = tpl_generic
             _LOGGER.error(
                 "No jinja_template provided. Using generic markmeld jinja_template."
             )
