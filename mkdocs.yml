@@ -22,6 +22,7 @@ nav:
       - Recursive rendering: recursive_rendering.md
       - Remote templates: remote_templates.md
       - Mail merges: mail_merge.md
+      - Prevent auto-open: prevent_opening.md
   - Reference:
       - Changelog: changelog.md
 
