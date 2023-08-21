@@ -53,8 +53,15 @@ def datetimeformat(environment, value, to_format="%Y-%m-%d", from_format="%Y-%m-
 # "contributions" sections.
 @pass_environment
 def extract_refs(environment, value):
-    print(f"value: '{value}'", value)
-    m = re.findall("@([a-zA-Z0-9_]+)", value)
+    try:
+        m = re.findall("@([a-zA-Z0-9_]+)", value)
+    except TypeError as TE:
+        valtype = type(value)
+        msg = f"Error: Can't extract references from a '{valtype}'."
+        msg += "Your template may refer to a variable incorrectly. "
+        msg += f"value: '{value}'"
+        raise Exception(msg)
+
     _LOGGER.debug(f"Extracted refs: {m}")
     return m
 
