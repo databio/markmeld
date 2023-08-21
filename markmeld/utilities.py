@@ -63,11 +63,12 @@ def format_command(tgt):
     return cmd_fmt
 
 
-def load_config_file(filepath, target_filepath=None, autocomplete=True):
+def load_config_file(filepath, workpath=None, autocomplete=True):
     """
     Loads a configuration file.
 
     @param str filepath Path to configuration file to load
+    @param str workpath ???
     @return dict Loaded yaml data object.
     """
 
@@ -75,7 +76,7 @@ def load_config_file(filepath, target_filepath=None, autocomplete=True):
         with open(filepath, "r") as f:
             cfg_data = f.read()
         return load_config_data(
-            cfg_data, os.path.abspath(filepath), target_filepath, autocomplete
+            cfg_data, os.path.abspath(filepath), workpath, autocomplete
         )
     except Exception as e:
         _LOGGER.error(f"Couldn't load config file: {filepath} because: {repr(e)}")
@@ -88,7 +89,12 @@ def make_abspath(relpath, filepath, root=None):
     return os.path.join(os.path.dirname(filepath), relpath)
 
 
-def load_config_data(cfg_data, filepath=None, target_filepath=None, autocomplete=True):
+# There are two paths associated with each target:
+    # 1. the location of its definition (defpath)
+    # 2. the location of where it should be executed (workpath)
+# These are not the same thing.
+
+def load_config_data(cfg_data, filepath=None, workpath=None, autocomplete=True):
     """
     Recursive loader that parses a yaml string, handles imports, and runs target factories.
     """
@@ -96,14 +102,17 @@ def load_config_data(cfg_data, filepath=None, target_filepath=None, autocomplete
     higher_cfg["_cfg_file_path"] = filepath
     lower_cfg = {}
 
+    _LOGGER.info(f"Loading config data filepath: {filepath}; workpath: {workpath}")
+
     # Add filepath to targets defined in the current cfg file
     if "targets" in higher_cfg:
         for tgt in higher_cfg["targets"]:
+            higher_cfg["targets"][tgt]["_defpath"] = filepath
             _LOGGER.debug(tgt, higher_cfg["targets"][tgt])
-            if target_filepath:
-                higher_cfg["targets"][tgt]["_filepath"] = target_filepath
+            if workpath:
+                higher_cfg["targets"][tgt]["_workpath"] = workpath
             else:
-                higher_cfg["targets"][tgt]["_filepath"] = filepath
+                higher_cfg["targets"][tgt]["_workpath"] = filepath
 
     # Imports
     if "imports" in higher_cfg and higher_cfg["imports"]:
@@ -113,7 +122,7 @@ def load_config_data(cfg_data, filepath=None, target_filepath=None, autocomplete
                 make_abspath(expandpath(import_file), expandpath(filepath))
             )
             if not autocomplete:
-                _LOGGER.error(f"Specified config file to import: {import_file_abspath}")
+                _LOGGER.info(f"Specified config file to import: {import_file_abspath}")
             deep_update(
                 lower_cfg,
                 load_config_file(import_file_abspath, expandpath(filepath)),
@@ -127,8 +136,8 @@ def load_config_data(cfg_data, filepath=None, target_filepath=None, autocomplete
                 make_abspath(expandpath(import_file), expandpath(filepath))
             )
             if not autocomplete:
-                _LOGGER.error(
-                    f"Specified config file to import (relative): {import_file}"
+                _LOGGER.info(
+                    f"Specified relative config file to import (relative): {import_file}"
                 )
             deep_update(
                 lower_cfg,
@@ -150,7 +159,8 @@ def load_config_data(cfg_data, filepath=None, target_filepath=None, autocomplete
             func = plugins[fac_name]
             factory_targets = func(fac_vals, lower_cfg)
             for k, v in factory_targets.items():
-                factory_targets[k]["_filepath"] = filepath
+                factory_targets[k]["_workpath"] = filepath
+                factory_targets[k]["_defpath"] = filepath
             deep_update(
                 lower_cfg, {"targets": factory_targets}, warn_override=not autocomplete
             )
@@ -164,6 +174,8 @@ def warn_overriding_target(old, new):
         for tgt in new["targets"]:
             if tgt in old["targets"]:
                 _LOGGER.error(f"Overriding target: {tgt}")
+                _LOGGER.error("Originally defined in: ".rjust(27, " ") + f"{old['targets'][tgt]['_defpath']}")
+                _LOGGER.error("Redefined in: ".rjust(27, " ") + f"{new['targets'][tgt]['_defpath']}")
 
 
 def deep_update(old, new, warn_override=False):

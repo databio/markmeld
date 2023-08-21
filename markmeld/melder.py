@@ -452,12 +452,13 @@ class MarkdownMelder(object):
         return True
 
     def run_command_for_target(self, tgt, print_only, vardump=False):
-        _LOGGER.info(f"File path for this target: {tgt.meta['_filepath']}")
+        _LOGGER.info(f"Defined path for this target: {tgt.meta['_defpath']}")
+        _LOGGER.info(f"Working path for this target: {tgt.meta['_workpath']}")
         if "type" in tgt.meta and tgt.meta["type"] == "raw":
             # Raw = No subprocess stdin printing. (so, it doesn't render anything)
             cmd_fmt = format_command(tgt)
             tgt.melded_output = None
-            tgt.returncode = run_cmd(cmd_fmt, None, tgt.meta["_filepath"])
+            tgt.returncode = run_cmd(cmd_fmt, None, tgt.meta["_workpath"])
         elif "type" in tgt.meta and tgt.meta["type"] == "meta":
             # Meta = No command, it's a meta-target used for prebuilds or something else
             tgt.melded_output = None
@@ -480,7 +481,7 @@ class MarkdownMelder(object):
                 tgt.returncode = 2
             else:
                 tgt.returncode = run_cmd(
-                    cmd_fmt, tgt.melded_output.encode(), tgt.meta["_filepath"]
+                    cmd_fmt, tgt.melded_output.encode(), tgt.meta["_workpath"]
                 )
         return tgt
 
@@ -526,9 +527,9 @@ class MarkdownMelder(object):
 
         _LOGGER.info("MM | Processing config version 1...")
         if "data" in tgt.meta:
-            processed_data_block = process_data(tgt.meta["data"], tgt.meta["_filepath"])
+            processed_data_block = process_data(tgt.meta["data"], tgt.meta["_workpath"])
         else:
-            processed_data_block = process_data({}, tgt.meta["_filepath"])
+            processed_data_block = process_data({}, tgt.meta["_workpath"])
         _LOGGER.debug("processed_data_block:", processed_data_block)
         data_copy.update(processed_data_block)
 
