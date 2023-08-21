@@ -62,13 +62,17 @@ def format_command(tgt):
     cmd_fmt = expandpath(cmd).format(**tgt.meta)
     return cmd_fmt
 
+# There are two paths associated with each target:
+    # 1. the location of its definition (defpath or filepath)
+    # 2. the location of where it should be executed (workpath)
+# These are not the same thing.
 
 def load_config_file(filepath, workpath=None, autocomplete=True):
     """
     Loads a configuration file.
 
     @param str filepath Path to configuration file to load
-    @param str workpath ???
+    @param str workpath The working path that the target's relative paths are relative to
     @return dict Loaded yaml data object.
     """
 
@@ -88,11 +92,6 @@ def make_abspath(relpath, filepath, root=None):
         return os.path.join(root, relpath)
     return os.path.join(os.path.dirname(filepath), relpath)
 
-
-# There are two paths associated with each target:
-    # 1. the location of its definition (defpath)
-    # 2. the location of where it should be executed (workpath)
-# These are not the same thing.
 
 def load_config_data(cfg_data, filepath=None, workpath=None, autocomplete=True):
     """

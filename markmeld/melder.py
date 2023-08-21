@@ -550,10 +550,7 @@ class MarkdownMelder(object):
         if "data" not in melded_input:
             melded_input["data"] = {}
         if "md_template" in target.meta:
-            _LOGGER.error(
-                "Please update your config! 'md_template' was renamed to 'jinja_template'."
-            )
-            target.meta["jinja_template"] = target.meta["md_template"]
+            raise Exception("Please update your config! 'md_template' was renamed to 'jinja_template'.")
 
         if "jinja_template" in target.meta and target.meta["jinja_template"]:
             tpl = load_template(target.meta)
