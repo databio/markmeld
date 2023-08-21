@@ -405,7 +405,7 @@ class MarkdownMelder(object):
         @return [False|tgt] if the
         """
         tgt = Target(self.cfg, target_name)
-        _LOGGER.info(f"MM | Building target: {tgt.target_name}")
+        _LOGGER.info(f"MM | Building target: {tgt.target_name} from file {tgt.meta['_cfg_file_path']}")
 
         # First, run any pre-builds
         if not self.build_side_targets(tgt, "prebuild"):
