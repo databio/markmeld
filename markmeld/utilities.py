@@ -101,7 +101,7 @@ def load_config_data(cfg_data, filepath=None, workpath=None, autocomplete=True):
     higher_cfg["_cfg_file_path"] = filepath
     lower_cfg = {}
 
-    _LOGGER.info(f"Loading config data filepath: {filepath}; workpath: {workpath}")
+    _LOGGER.debug(f"Loading config data filepath: {filepath}; workpath: {workpath}")
 
     # Add filepath to targets defined in the current cfg file
     if "targets" in higher_cfg:
