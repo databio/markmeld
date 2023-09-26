@@ -216,10 +216,10 @@ def main(test_args=None):
         _LOGGER.debug(f"Built target: {built_target}")
         for item in built_target.messages:
             if item["status"] == "fail":
-                color_code = "\033[0;31m"  # red
+                color_code = "\x1b[31;20m"  # red
             else:
-                color_code = " \032[0;31m"  # green
-            _LOGGER.info(f"{color_code}{item['status']}: {item['message']}\033[0m")
+                color_code = "\x1b[32;20m"  # green
+            _LOGGER.info(f"{color_code}{item['status']}: {item['message']}\x1b[0m")
 
         if built_target.returncode != 0:
             _LOGGER.error("Building target failed")

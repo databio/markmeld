@@ -408,7 +408,8 @@ class MarkdownMelder(object):
         _LOGGER.info(f"MM | Building target: {tgt.target_name} from file {tgt.meta['_cfg_file_path']}")
 
         # First, run any pre-builds
-        if not self.build_side_targets(tgt, "prebuild"):
+        prebuild_results = self.build_side_targets(tgt, "prebuild")
+        if not prebuild_results:
             _LOGGER.debug("Failed building prebuild side targets")
             return tgt
 
@@ -422,7 +423,9 @@ class MarkdownMelder(object):
         result = self.run_command_for_target(tgt, print_only, vardump)
 
         # Finally, run any postbuilds
-        if not self.build_side_targets(tgt, "postbuild"):
+        postbuild_results = self.build_side_targets(tgt, "postbuild")
+        if not postbuild_results:
+            _LOGGER.debug("Failed building postbuild side targets")
             return tgt
 
         return result
@@ -443,6 +446,10 @@ class MarkdownMelder(object):
                 _LOGGER.info(f"MM | {side_list_key} target: {side_tgt}")
                 if side_tgt in self.cfg["targets"]:
                     self.build_target(side_tgt)
+                    tgt.add_message(
+                        f"MM | Built {side_list_key} target '{side_tgt}' requested by target '{tgt.target_name}' from file '{tgt.meta['_cfg_file_path']}'",
+                        "success",
+                    )
                 else:
                     tgt.add_message(
                         f"MM | No target called '{side_tgt}', requested prebuild by target '{tgt.target_name}' from file '{tgt.meta['_cfg_file_path']}'",
