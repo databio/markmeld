@@ -1,5 +1,6 @@
 import glob
 import os
+import string
 import subprocess
 import yaml
 import platform
@@ -59,8 +60,15 @@ def format_command(tgt):
         tgt.meta["output_file"] = expandpath(tgt.meta["output_file"]).format(**tgt.meta)
     else:
         tgt.meta["output_file"] = None
-    cmd_fmt = expandpath(cmd).format(**tgt.meta)
-    return cmd_fmt
+    vars_to_exp = [v[1] for v in string.Formatter().parse(cmd) if v[1] is not None]
+    _LOGGER.debug(f"Vars to expand: {vars_to_exp}")
+    cmd = expandpath(cmd).format(**tgt.meta)
+    while len(vars_to_exp) > 0:
+        # format again in case the command has variables in it
+        # this allows for variables to contain variables
+        cmd = expandpath(cmd).format(**tgt.meta)
+        vars_to_exp = [v[1] for v in string.Formatter().parse(cmd) if v[1] is not None]
+    return cmd
 
 # There are two paths associated with each target:
     # 1. the location of its definition (defpath or filepath)
