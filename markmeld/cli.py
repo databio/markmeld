@@ -213,16 +213,19 @@ def main(test_args=None):
         Tell the CLI user what happened, depending the logic of the type of target built.
         """
 
+        color_red = "\x1b[31;20m"
+        color_reset = "\x1b[0m"
+        color_green = "\x1b[32;20m"
         _LOGGER.debug(f"Built target: {built_target}")
         for item in built_target.messages:
             if item["status"] == "fail":
-                color_code = "\x1b[31;20m"  # red
+                color_code = color_red
             else:
-                color_code = "\x1b[32;20m"  # green
-            _LOGGER.info(f"{color_code}{item['status']}: {item['message']}\x1b[0m")
+                color_code = color_green
+            _LOGGER.info(f"{color_code}{item['status']}: {item['message']}{color_reset}")
 
         if built_target.returncode != 0:
-            _LOGGER.error("Building target failed")
+            _LOGGER.error(f"{color_red}Building target failed.{color_reset}")
             return
 
         # Open the file
