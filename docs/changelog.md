@@ -1,8 +1,11 @@
 # Changelog
 
-## [0.3.0] -- 2023-XX-XX
+## [0.3.0] -- 2023-11-06
 
 - Revamped the `_md` and `_array` variables to be dicts, with `ext`, `content`, `frontmatter`, and `path` properties.
+- Added in ability to specify abstract targets, which don't show up in buildable lists, [issue 19](https://github.com/databio/markmeld/issues/19)
+- mm now raises an error if you try to inherit from an non-existing target, [issue 20](https://github.com/databio/markmeld/issues/20)
+- overriding targets is no longer allowed, [issue 22](https://github.com/databio/markmeld/issues/22)
 
 ## [0.2.0] -- 2023-01-07
 
