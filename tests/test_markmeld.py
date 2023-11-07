@@ -140,14 +140,14 @@ def test_inherited_data_propogates_to_target():
 
 
 def test_import():
-    cfg = markmeld.load_config_file("tests/test_data/_markmeld_import.yaml")
+    cfg = markmeld.load_config_wrapper("tests/test_data/_markmeld_import.yaml")
     mm = markmeld.MarkdownMelder(cfg)
 
     res = mm.build_target("imported_target", print_only=True)
     print(res.melded_output)
     assert "rVEeqUQ1t5" in str(res.melded_output)
 
-    cfg2 = markmeld.load_config_file("tests/test_data/_markmeld_import_relative.yaml")
+    cfg2 = markmeld.load_config_wrapper("tests/test_data/_markmeld_import_relative.yaml")
     mm2 = markmeld.MarkdownMelder(cfg2)
 
     res = mm2.build_target("imported_target", print_only=True)
@@ -156,7 +156,7 @@ def test_import():
 
 
 def test_null_jinja_template():
-    cfg = markmeld.load_config_file(
+    cfg = markmeld.load_config_wrapper(
         "tests/test_data/_markmeld_null_jinja_template.yaml"
     )
     mm = markmeld.MarkdownMelder(cfg)
@@ -164,15 +164,15 @@ def test_null_jinja_template():
 
 
 def test_variable_variables():
-    cfg = markmeld.load_config_file("demo_book/book_basic/_markmeld.yaml")
+    cfg = markmeld.load_config_wrapper("demo_book/book_basic/_markmeld.yaml")
     mm = markmeld.MarkdownMelder(cfg)
     res = mm.build_target("default", print_only=True)
 
-    cfg2 = markmeld.load_config_file("demo_book/book_var1/_markmeld.yaml")
+    cfg2 = markmeld.load_config_wrapper("demo_book/book_var1/_markmeld.yaml")
     mm2 = markmeld.MarkdownMelder(cfg2)
     res2 = mm2.build_target("default", print_only=True)
 
-    cfg3 = markmeld.load_config_file("demo_book/book_var2/_markmeld.yaml")
+    cfg3 = markmeld.load_config_wrapper("demo_book/book_var2/_markmeld.yaml")
     mm3 = markmeld.MarkdownMelder(cfg3)
     res3 = mm3.build_target("default", print_only=True)
 
@@ -180,7 +180,7 @@ def test_variable_variables():
     # print("/////" + res2.melded_output + "/////")
     # print("/////" + res3.melded_output + "/////")
 
-    cfg4 = markmeld.load_config_file("demo_book/variable_variables/_markmeld.yaml")
+    cfg4 = markmeld.load_config_wrapper("demo_book/variable_variables/_markmeld.yaml")
     mm4 = markmeld.MarkdownMelder(cfg4)
     res4 = mm4.build_target("default", print_only=True)
 
@@ -190,7 +190,7 @@ def test_variable_variables():
 
 
 def test_meta_target():
-    cfg = markmeld.load_config_file("tests/test_data/prebuild_test/_markmeld.yaml")
+    cfg = markmeld.load_config_wrapper("tests/test_data/prebuild_test/_markmeld.yaml")
     mm = markmeld.MarkdownMelder(cfg)
     res = mm.build_target("my_meta_target", print_only=True)
     test_path = "tests/test_data/prebuild_test/prebuild_test_file"

@@ -8,7 +8,7 @@ from ubiquerg import VersionInHelpParser
 
 from .exceptions import *
 from .melder import MarkdownMelder
-from .utilities import load_config_file, get_file_open_cmd
+from .utilities import load_config_wrapper, get_file_open_cmd
 from ._version import __version__
 
 tpl = """imports: null
@@ -148,7 +148,7 @@ def main(test_args=None):
             _LOGGER.error(msg)
             raise ConfigError(msg)
 
-    cfg = load_config_file(args.config, None, args.autocomplete)
+    cfg = load_config_wrapper(args.config, None, args.autocomplete)
 
     if args.autocomplete:
         if "targets" not in cfg:
