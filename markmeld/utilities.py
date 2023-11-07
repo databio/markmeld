@@ -1,5 +1,6 @@
 import glob
 import os
+import string
 import subprocess
 import yaml
 import platform
@@ -11,6 +12,7 @@ from ubiquerg import expandpath
 from .const import PKG_NAME, FILE_OPENER_MAP
 
 _LOGGER = getLogger(PKG_NAME)
+
 
 # define some useful functions
 def recursive_get(dat, indices):
@@ -58,76 +60,119 @@ def format_command(tgt):
         tgt.meta["output_file"] = expandpath(tgt.meta["output_file"]).format(**tgt.meta)
     else:
         tgt.meta["output_file"] = None
-    cmd_fmt = expandpath(cmd).format(**tgt.meta)
-    return cmd_fmt
+    vars_to_exp = [v[1] for v in string.Formatter().parse(cmd) if v[1] is not None]
+    _LOGGER.debug(f"Vars to expand: {vars_to_exp}")
+    cmd = expandpath(cmd).format(**tgt.meta)
+    while len(vars_to_exp) > 0:
+        # format again in case the command has variables in it
+        # this allows for variables to contain variables
+        cmd = expandpath(cmd).format(**tgt.meta)
+        vars_to_exp = [v[1] for v in string.Formatter().parse(cmd) if v[1] is not None]
+    return cmd
 
 
-def load_config_file(filepath, target_filepath=None, autocomplete=True):
+# There are two paths associated with each target:
+# 1. the location of its definition (defpath or filepath)
+# 2. the location of where it should be executed (workpath)
+# These are not the same thing.
+
+
+def load_config_wrapper(cfg_path, workpath=None, autocomplete=True):
+    """
+    Wrapper function that maintains a list of imported files, to prevent duplicate imports.
+    """
+    imported_list = {}
+    return load_config_file(cfg_path, workpath, autocomplete, imported_list)
+
+
+def load_config_file(filepath, workpath=None, autocomplete=True, imported_list={}):
     """
     Loads a configuration file.
 
     @param str filepath Path to configuration file to load
+    @param str workpath The working path that the target's relative paths are relative to
     @return dict Loaded yaml data object.
     """
-
+    _LOGGER.debug(f"Loading config file: {filepath}")
+    _LOGGER.debug(f"Imported list: {imported_list}")
+    if imported_list.get(filepath):
+        _LOGGER.debug(f"Already imported: {filepath}")
+        return {}
     try:
         with open(filepath, "r") as f:
             cfg_data = f.read()
         return load_config_data(
-            cfg_data, os.path.abspath(filepath), target_filepath, autocomplete
+            cfg_data, os.path.abspath(filepath), workpath, autocomplete, imported_list
         )
+    except FileNotFoundError as e:
+        _LOGGER.error(f"Couldn't load config file: {filepath} because: {repr(e)}")
+        return {}  # Allow continuing if file not found
     except Exception as e:
         _LOGGER.error(f"Couldn't load config file: {filepath} because: {repr(e)}")
-        return {}
+        raise e  # Fail on other errors
 
 
 def make_abspath(relpath, filepath, root=None):
     if root:
         return os.path.join(root, relpath)
-    return os.path.join(os.path.dirname(filepath), relpath)
+    return os.path.abspath(os.path.join(os.path.dirname(filepath), relpath))
 
 
-def load_config_data(cfg_data, filepath=None, target_filepath=None, autocomplete=True):
+def load_config_data(
+    cfg_data, filepath=None, workpath=None, autocomplete=True, imported_list={}
+):
     """
-    Recursive loader that parses a yaml string, handles imports, and runs target factories.
+    Recursive loader that parses a yaml string, handles imports, and runs target factories to create targets.
     """
     higher_cfg = yaml.load(cfg_data, Loader=yaml.SafeLoader)
     higher_cfg["_cfg_file_path"] = filepath
     lower_cfg = {}
 
+    _LOGGER.debug(f"Loading config data filepath: {filepath}; workpath: {workpath}")
+
     # Add filepath to targets defined in the current cfg file
     if "targets" in higher_cfg:
         for tgt in higher_cfg["targets"]:
-            _LOGGER.debug(tgt, higher_cfg["targets"][tgt])
-            if target_filepath:
-                higher_cfg["targets"][tgt]["_filepath"] = target_filepath
+            higher_cfg["targets"][tgt]["_defpath"] = filepath
+            if workpath:
+                higher_cfg["targets"][tgt]["_workpath"] = workpath
             else:
-                higher_cfg["targets"][tgt]["_filepath"] = filepath
+                higher_cfg["targets"][tgt]["_workpath"] = filepath
 
     # Imports
     if "imports" in higher_cfg and higher_cfg["imports"]:
         _LOGGER.debug("Found imports")
         for import_file in higher_cfg["imports"]:
-            import_file_abspath = os.path.relpath(
-                make_abspath(expandpath(import_file), expandpath(filepath))
+            import_file_abspath = make_abspath(
+                expandpath(import_file), expandpath(filepath)
             )
             if not autocomplete:
-                _LOGGER.error(f"Specified config file to import: {import_file_abspath}")
+                _LOGGER.info(f"Specified config file to import: {import_file_abspath}")
             deep_update(
-                lower_cfg, load_config_file(import_file_abspath, expandpath(filepath))
+                lower_cfg,
+                load_config_file(import_file_abspath, expandpath(filepath)),
+                warn_override=not autocomplete,
             )
+            imported_list[import_file_abspath] = True
 
     if "imports_relative" in higher_cfg and higher_cfg["imports_relative"]:
         _LOGGER.debug("Found relative imports")
         for import_file in higher_cfg["imports_relative"]:
-            import_file_abspath = os.path.relpath(
-                make_abspath(expandpath(import_file), expandpath(filepath))
+            import_file_abspath = make_abspath(
+                expandpath(import_file), expandpath(filepath)
             )
             if not autocomplete:
-                _LOGGER.error(f"Specified config file to import: {import_file}")
-            deep_update(lower_cfg, load_config_file(expandpath(import_file_abspath)))
+                _LOGGER.info(
+                    f"Specified relative config file to import (relative): {import_file}"
+                )
+            deep_update(
+                lower_cfg,
+                load_config_file(expandpath(import_file_abspath)),
+                warn_override=not autocomplete,
+            )
+            imported_list[import_file_abspath] = True
 
-    deep_update(lower_cfg, higher_cfg)
+    deep_update(lower_cfg, higher_cfg, warn_override=not autocomplete)
 
     # Target factories
     if "target_factories" in lower_cfg:
@@ -141,17 +186,40 @@ def load_config_data(cfg_data, filepath=None, target_filepath=None, autocomplete
             func = plugins[fac_name]
             factory_targets = func(fac_vals, lower_cfg)
             for k, v in factory_targets.items():
-                factory_targets[k]["_filepath"] = filepath
-            deep_update(lower_cfg, {"targets": factory_targets})
+                factory_targets[k]["_workpath"] = filepath
+                factory_targets[k]["_defpath"] = filepath
+            deep_update(
+                lower_cfg, {"targets": factory_targets}, warn_override=not autocomplete
+            )
 
-    _LOGGER.debug("Lower cfg: " + str(lower_cfg))
+    # _LOGGER.debug("Lower cfg: " + str(lower_cfg))
     return lower_cfg
 
 
-def deep_update(old, new):
+def warn_overriding_target(old, new):
+    if "targets" in old and "targets" in new:
+        for tgt in new["targets"]:
+            if tgt in old["targets"]:
+                _LOGGER.error(f"Overriding target: {tgt}")
+                _LOGGER.error(
+                    "Originally defined in: ".rjust(27, " ")
+                    + f"{old['targets'][tgt]['_defpath']}"
+                )
+                _LOGGER.error(
+                    "Redefined in: ".rjust(27, " ")
+                    + f"{new['targets'][tgt]['_defpath']}"
+                )
+                raise Exception(
+                    "Same target name is defined in imported file. Overriding targets is not allowed."
+                )
+
+
+def deep_update(old, new, warn_override=True):
     """
     Like built-in dict update, but recursive.
     """
+    if warn_override:
+        warn_overriding_target(old, new)
     for k, v in new.items():
         if isinstance(v, Mapping):
             old[k] = deep_update(old.get(k, {}), v)

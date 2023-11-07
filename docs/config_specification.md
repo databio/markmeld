@@ -32,7 +32,7 @@ Under `target1`, we specify all the attributes of this target.
 This is the main section that points to the content. This block includes several sub-attributes:
     - `md_files`: a named list of markdown files, which will be made available to the templates
     - `md_globs`: Globs, where each file will be read, and available at the key of the filename.
-    - `yaml_files`: a list of yaml files to make available to the templates
+    - `yaml_files`: a keyed list of yaml files to make available to the templates, under specified keys (to specify unkeyed files, use `yaml_globs_unkeyed`)
     - `yaml_globs`: a list of globs (regexes) to yaml files, which will be keyed by filename
     - `yaml_globs_unkeyed`: a list of globs (regexes) to yaml files, which will be directly available
     - `variables`: direct yaml data made available to the templates.

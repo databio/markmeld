@@ -1,2 +1,2 @@
-{% for chapter in _yaml["chapters"] %}{{ _md[chapter] }}
+{% for chapter in _yaml["chapters"].content %}{{ _md[chapter].content }}
 {% endfor %}

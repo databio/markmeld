@@ -8,7 +8,7 @@ from ubiquerg import VersionInHelpParser
 
 from .exceptions import *
 from .melder import MarkdownMelder
-from .utilities import load_config_file, get_file_open_cmd
+from .utilities import load_config_wrapper, get_file_open_cmd
 from ._version import __version__
 
 tpl = """imports: null
@@ -77,14 +77,6 @@ def build_argparser():
     )
 
     parser.add_argument(
-        "-p",
-        "--print",
-        action="store_true",
-        default=False,
-        help="Print template output instead of going to pandoc.",
-    )
-
-    parser.add_argument(
         "-d",
         "--dump",
         action="store_true",
@@ -98,6 +90,22 @@ def build_argparser():
         action="store_true",
         default=False,
         help="Explain parameters of a target instead of building it.",
+    )
+
+    parser.add_argument(
+        "-p",
+        "--print",
+        action="store_true",
+        default=False,
+        help="Print output of jinja template instead of piping it to command (pandoc).",
+    )
+
+    parser.add_argument(
+        "-t",
+        "--template",
+        action="store_true",
+        default=False,
+        help="Show the template that will be used for this recipe.",
     )
 
     parser.add_argument(
@@ -140,12 +148,14 @@ def main(test_args=None):
             _LOGGER.error(msg)
             raise ConfigError(msg)
 
-    cfg = load_config_file(args.config, None, args.autocomplete)
+    cfg = load_config_wrapper(args.config, None, args.autocomplete)
 
     if args.autocomplete:
         if "targets" not in cfg:
             raise TargetError(f"No targets specified in config.")
         for t, k in cfg["targets"].items():
+            if "abstract" in cfg["targets"][t]:
+                continue
             sys.stdout.write(t + " ")
         sys.exit(0)
 
@@ -159,10 +169,12 @@ def main(test_args=None):
     if args.list:
         if "targets" not in cfg:
             raise TargetError(f"No targets specified in config.")
-        tarlist = {
-            x: k["description"] if "description" in k else "No description"
-            for x, k in sorted(cfg["targets"].items())
-        }
+
+        tarlist = {}
+        for t, k in cfg["targets"].items():
+            if "abstract" in cfg["targets"][t]:
+                continue
+            tarlist[t] = k["description"] if "description" in k else "---"
         _LOGGER.error(f"Targets:")
         for k, v in tarlist.items():
             _LOGGER.error(f"  {k}: {v}")
@@ -175,14 +187,54 @@ def main(test_args=None):
         explained_target = mm.describe_target(args.target)
         sys.exit(0)
 
+    if args.template:
+        from .melder import Target, load_template
+
+        tgt = Target(mm.cfg, args.target)
+        tpl = load_template(tgt.meta)
+        _LOGGER.info("Template content:")
+        _LOGGER.info(tpl.source)
+        sys.exit(0)
+
     built_target = mm.build_target(
         args.target, print_only=args.print, vardump=args.dump
     )
 
-    if args.print | args.dump:
+    if args.dump:
+        import json
+
+        _LOGGER.info("Dumping JSON output passed to jinja template...")
+        print(
+            json.dumps(
+                built_target.melded_output, sort_keys=True, indent=2, default=str
+            )
+        )
+
+    if args.print:
         print(built_target.melded_output)
 
     def report_result(built_target):
+        """
+        Tell the CLI user what happened, depending the logic of the type of target built.
+        """
+
+        color_red = "\x1b[31;20m"
+        color_reset = "\x1b[0m"
+        color_green = "\x1b[32;20m"
+        _LOGGER.debug(f"Built target: {built_target}")
+        for item in built_target.messages:
+            if item["status"] == "fail":
+                color_code = color_red
+            else:
+                color_code = color_green
+            _LOGGER.info(
+                f"{color_code}{item['status']}: {item['message']}{color_reset}"
+            )
+
+        if built_target.returncode != 0:
+            _LOGGER.error(f"{color_red}Building target failed.{color_reset}")
+            return
+
         # Open the file
         if "output_file" in built_target.meta and built_target.meta["output_file"]:
             output_file = built_target.meta["output_file"]

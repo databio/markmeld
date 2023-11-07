@@ -1,0 +1,10 @@
+targets:
+  default:
+    jinja_template: book.jinja
+    output_file: "demo_output.txt"
+    command: cat > {output_file}
+    data:
+      md_globs:
+        - ../md/*.md
+      yaml_files:
+        chapters: chapters.yaml

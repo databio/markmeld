@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.3.0] -- 2023-11-06
+
+- Revamped the `_md` and `_array` variables to be dicts, with `ext`, `content`, `frontmatter`, and `path` properties.
+- Added in ability to specify abstract targets, which don't show up in buildable lists, [issue 19](https://github.com/databio/markmeld/issues/19)
+- mm now raises an error if you try to inherit from an non-existing target, [issue 20](https://github.com/databio/markmeld/issues/20)
+- Overriding targets is no longer allowed, [issue 22](https://github.com/databio/markmeld/issues/22)
+- Major revamps on data structures available to jinja template
+- Add `-t` flag to view template for a target
+- Allow glob factory to use `inherit_from`.
+- Improve user messages to guide when there are problems
+
 ## [0.2.0] -- 2023-01-07
 
 - Added `-e` flag to explain a target

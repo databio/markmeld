@@ -53,7 +53,15 @@ def datetimeformat(environment, value, to_format="%Y-%m-%d", from_format="%Y-%m-
 # "contributions" sections.
 @pass_environment
 def extract_refs(environment, value):
-    m = re.findall("@([a-zA-Z0-9_]+)", value)
+    try:
+        m = re.findall("@([a-zA-Z0-9_]+)", value)
+    except TypeError as TE:
+        valtype = type(value)
+        msg = f"Error: Can't extract references from a '{valtype}'."
+        msg += "Your template may refer to a variable incorrectly. "
+        msg += f"value: '{value}'"
+        raise Exception(msg)
+
     _LOGGER.debug(f"Extracted refs: {m}")
     return m
 
@@ -129,7 +137,12 @@ def process_data(data_block, filepath):
                     data["_yaml"].update(yaml_dict)
                 else:
                     data[k] = yaml_dict
-                    data["_yaml"][k] = yaml_dict
+                    # data["_yaml"][k] = yaml_dict
+                    data["_yaml"][k] = {
+                        "content": yaml_dict,
+                        "path": os.path.relpath(v, os.path.dirname(filepath)),
+                        "ext": get_file_extension(v),
+                    }
                     vars_temp[k] = yaml_dict
                 data["_raw"][k] = yaml.dump(yaml_dict)
                 if k[:11] == "frontmatter":
@@ -155,7 +168,14 @@ def process_data(data_block, filepath):
                 data["_raw"][k] = {}
                 continue
         data[k] = p.content
-        data["_md"][k] = p.content
+        # data["_md"][k] = p.content
+
+        data["_md"][k] = {
+            "content": p.content,
+            "frontmatter": p.metadata,
+            "path": os.path.relpath(v, os.path.dirname(filepath)),
+            "ext": get_file_extension(v),
+        }
         frontmatter_temp.update(p.metadata)
         local_frontmatter_temp[k] = p.metadata
         data["_raw"][k] = frontmatter.dumps(p)
@@ -194,6 +214,13 @@ def process_data(data_block, filepath):
     return data
 
 
+def get_file_extension(path):
+    basename = os.path.basename(path)
+    splitext = os.path.splitext(basename)
+    ext = splitext[1]
+    return ext
+
+
 def load_template(cfg):
     if "jinja_template" not in cfg or not cfg["jinja_template"]:
         return None
@@ -223,6 +250,7 @@ def load_template(cfg):
             with open(jinja_tpl, "r") as f:
                 jinja_tpl_contents = f.read()
         t = Template(jinja_tpl_contents)
+        t.source = jinja_tpl_contents
     except TypeError:
         _LOGGER.error(f"Unable to open jinja_template. Path:{jinja_tpl}")
     return t
@@ -242,6 +270,11 @@ class Target(object):
     def __init__(self, root_cfg={}, target_name=None, vardata=None):
         self.root_cfg = root_cfg
         self.target_name = target_name
+
+        # Initialize some local variables
+        self.messages = []  # A list of messages
+        self.returncode = None
+
         meta = {}
         # Old way would update based on root config:
         # meta.update(self.root_cfg)
@@ -303,6 +336,11 @@ class Target(object):
         # import json
         # return json.dumps(self.__dict__, sort_keys=True, indent=4)
 
+    def add_message(self, message, status="success"):
+        if status == "fail":
+            _LOGGER.warning(message)
+        self.messages.append({"status": status, "message": message})
+
     def resolve_target_inheritance(self, target_name):
         root_cfg = self.root_cfg
         if "targets" not in root_cfg:
@@ -310,10 +348,11 @@ class Target(object):
             _LOGGER.debug(error_msg)
             return {}
         if target_name not in list(root_cfg["targets"].keys()):
-            error_msg = f"Target {target_name} not found"
-            _LOGGER.debug(error_msg)
-            return {}
-        print(root_cfg["targets"])
+            error_msg = f"Target inherits from target '{target_name}', which was not found. Did you forget an import?"
+            _LOGGER.error(error_msg)
+            raise TargetError(error_msg)
+            # return {}
+        # _LOGGER.debug(f"Root cft targets: {root_cfg['targets']}")
 
         if "inherit_from" not in root_cfg["targets"][target_name]:
             ## base case
@@ -336,6 +375,10 @@ class Target(object):
 
 
 class MarkdownMelder(object):
+    """
+    Workhorse class, capable of building targets
+    """
+
     def __init__(self, cfg):
         """
         Instantiate a MarkdownMelder object
@@ -359,12 +402,19 @@ class MarkdownMelder(object):
         return True
 
     def build_target(self, target_name, print_only=False, vardump=False):
+        """
+        @return [False|tgt] if the
+        """
         tgt = Target(self.cfg, target_name)
-        _LOGGER.info(f"MM | Building target: {tgt.target_name}")
+        _LOGGER.info(
+            f"MM | Building target: {tgt.target_name} from file {tgt.meta['_cfg_file_path']}"
+        )
 
         # First, run any pre-builds
-        if not self.build_side_targets(tgt, "prebuild"):
-            return False
+        prebuild_results = self.build_side_targets(tgt, "prebuild")
+        if not prebuild_results:
+            _LOGGER.debug("Failed building prebuild side targets")
+            return tgt
 
         # Next, meld the inputs. This can be time-consuming, it reads data to populate variables
         tgt.melded_input = self.meld_inputs(tgt)
@@ -376,8 +426,10 @@ class MarkdownMelder(object):
         result = self.run_command_for_target(tgt, print_only, vardump)
 
         # Finally, run any postbuilds
-        if not self.build_side_targets(tgt, "postbuild"):
-            return False
+        postbuild_results = self.build_side_targets(tgt, "postbuild")
+        if not postbuild_results:
+            _LOGGER.debug("Failed building postbuild side targets")
+            return tgt
 
         return result
 
@@ -397,21 +449,26 @@ class MarkdownMelder(object):
                 _LOGGER.info(f"MM | {side_list_key} target: {side_tgt}")
                 if side_tgt in self.cfg["targets"]:
                     self.build_target(side_tgt)
+                    tgt.add_message(
+                        f"MM | Built {side_list_key} target '{side_tgt}' requested by target '{tgt.target_name}' from file '{tgt.meta['_cfg_file_path']}'",
+                        "success",
+                    )
                 else:
-                    _LOGGER.warning(
-                        f"MM | No target called {side_tgt}, requested prebuild by target {tgt}."
+                    tgt.add_message(
+                        f"MM | No target called '{side_tgt}', requested prebuild by target '{tgt.target_name}' from file '{tgt.meta['_cfg_file_path']}'",
+                        "fail",
                     )
                     return False
         return True
 
     def run_command_for_target(self, tgt, print_only, vardump=False):
-
-        _LOGGER.info(f"File path for this target: {tgt.meta['_filepath']}")
+        _LOGGER.info(f"Defined path for this target: {tgt.meta['_defpath']}")
+        _LOGGER.info(f"Working path for this target: {tgt.meta['_workpath']}")
         if "type" in tgt.meta and tgt.meta["type"] == "raw":
             # Raw = No subprocess stdin printing. (so, it doesn't render anything)
             cmd_fmt = format_command(tgt)
             tgt.melded_output = None
-            tgt.returncode = run_cmd(cmd_fmt, None, tgt.meta["_filepath"])
+            tgt.returncode = run_cmd(cmd_fmt, None, tgt.meta["_workpath"])
         elif "type" in tgt.meta and tgt.meta["type"] == "meta":
             # Meta = No command, it's a meta-target used for prebuilds or something else
             tgt.melded_output = None
@@ -434,7 +491,7 @@ class MarkdownMelder(object):
                 tgt.returncode = 2
             else:
                 tgt.returncode = run_cmd(
-                    cmd_fmt, tgt.melded_output.encode(), tgt.meta["_filepath"]
+                    cmd_fmt, tgt.melded_output.encode(), tgt.meta["_workpath"]
                 )
         return tgt
 
@@ -480,9 +537,9 @@ class MarkdownMelder(object):
 
         _LOGGER.info("MM | Processing config version 1...")
         if "data" in tgt.meta:
-            processed_data_block = process_data(tgt.meta["data"], tgt.meta["_filepath"])
+            processed_data_block = process_data(tgt.meta["data"], tgt.meta["_workpath"])
         else:
-            processed_data_block = process_data({}, tgt.meta["_filepath"])
+            processed_data_block = process_data({}, tgt.meta["_workpath"])
         _LOGGER.debug("processed_data_block:", processed_data_block)
         data_copy.update(processed_data_block)
 
@@ -503,16 +560,16 @@ class MarkdownMelder(object):
         if "data" not in melded_input:
             melded_input["data"] = {}
         if "md_template" in target.meta:
-            _LOGGER.error(
+            raise Exception(
                 "Please update your config! 'md_template' was renamed to 'jinja_template'."
             )
-            target.meta["jinja_template"] = target.meta["md_template"]
 
         if "jinja_template" in target.meta and target.meta["jinja_template"]:
             tpl = load_template(target.meta)
         else:
             # cmd_data["jinja_template"] = None
             tpl = Template(tpl_generic)
+            tpl.source = tpl_generic
             _LOGGER.error(
                 "No jinja_template provided. Using generic markmeld jinja_template."
             )
