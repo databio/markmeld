@@ -348,9 +348,10 @@ class Target(object):
             _LOGGER.debug(error_msg)
             return {}
         if target_name not in list(root_cfg["targets"].keys()):
-            error_msg = f"Target {target_name} not found"
-            _LOGGER.debug(error_msg)
-            return {}
+            error_msg = f"Target inherits from target '{target_name}', which was not found. Did you forget an import?"
+            _LOGGER.error(error_msg)
+            raise TargetError(error_msg)
+            # return {}
         # _LOGGER.debug(f"Root cft targets: {root_cfg['targets']}")
 
         if "inherit_from" not in root_cfg["targets"][target_name]:
