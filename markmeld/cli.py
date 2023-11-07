@@ -8,6 +8,7 @@ from ubiquerg import VersionInHelpParser
 
 from .exceptions import *
 from .melder import MarkdownMelder
+from .watcher import MarkmeldWatchDog
 from .utilities import load_config_file, get_file_open_cmd
 from ._version import __version__
 
@@ -63,6 +64,14 @@ def build_argparser():
 
     # position 1
     parser.add_argument(dest="target", metavar="T", help="Target", nargs="?")
+
+    parser.add_argument(
+        "-w",
+        "--watch",
+        dest="watch",
+        help="Watch file for changes and autocompile",
+        action="store_true",
+    )
 
     parser.add_argument(
         "-l",
@@ -175,6 +184,22 @@ def main(test_args=None):
         for k, v in tarlist.items():
             _LOGGER.error(f"  {k}: {v}")
         sys.exit(0)
+
+    # meld it and watch
+    if args.watch:
+        watcher = MarkmeldWatchDog(
+            ".", cfg, args.target, print_only=args.print, vardump=args.dump
+        )
+        watcher.start()
+        try:
+            while watcher.is_alive():
+                watcher.join(1)
+        except KeyboardInterrupt:
+            _LOGGER.info("Stopping...")
+        finally:
+            watcher.stop()
+            watcher.join()
+            return
 
     _LOGGER.debug("Melding...")  # Meld it!
     mm = MarkdownMelder(cfg)

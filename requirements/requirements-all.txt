@@ -4,3 +4,4 @@ logmuse
 pyyaml
 requests
 ubiquerg
+watchdog
