@@ -406,7 +406,9 @@ class MarkdownMelder(object):
         @return [False|tgt] if the
         """
         tgt = Target(self.cfg, target_name)
-        _LOGGER.info(f"MM | Building target: {tgt.target_name} from file {tgt.meta['_cfg_file_path']}")
+        _LOGGER.info(
+            f"MM | Building target: {tgt.target_name} from file {tgt.meta['_cfg_file_path']}"
+        )
 
         # First, run any pre-builds
         prebuild_results = self.build_side_targets(tgt, "prebuild")
@@ -558,7 +560,9 @@ class MarkdownMelder(object):
         if "data" not in melded_input:
             melded_input["data"] = {}
         if "md_template" in target.meta:
-            raise Exception("Please update your config! 'md_template' was renamed to 'jinja_template'.")
+            raise Exception(
+                "Please update your config! 'md_template' was renamed to 'jinja_template'."
+            )
 
         if "jinja_template" in target.meta and target.meta["jinja_template"]:
             tpl = load_template(target.meta)

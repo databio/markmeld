@@ -6,6 +6,7 @@
 - Added in ability to specify abstract targets, which don't show up in buildable lists, [issue 19](https://github.com/databio/markmeld/issues/19)
 - mm now raises an error if you try to inherit from an non-existing target, [issue 20](https://github.com/databio/markmeld/issues/20)
 - overriding targets is no longer allowed, [issue 22](https://github.com/databio/markmeld/issues/22)
+- Major revamps on data structures availalbe to jinja template
 
 ## [0.2.0] -- 2023-01-07
 

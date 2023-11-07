@@ -147,7 +147,9 @@ def test_import():
     print(res.melded_output)
     assert "rVEeqUQ1t5" in str(res.melded_output)
 
-    cfg2 = markmeld.load_config_wrapper("tests/test_data/_markmeld_import_relative.yaml")
+    cfg2 = markmeld.load_config_wrapper(
+        "tests/test_data/_markmeld_import_relative.yaml"
+    )
     mm2 = markmeld.MarkdownMelder(cfg2)
 
     res = mm2.build_target("imported_target", print_only=True)

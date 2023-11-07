@@ -13,6 +13,7 @@ from .const import PKG_NAME, FILE_OPENER_MAP
 
 _LOGGER = getLogger(PKG_NAME)
 
+
 # define some useful functions
 def recursive_get(dat, indices):
     """
@@ -69,10 +70,12 @@ def format_command(tgt):
         vars_to_exp = [v[1] for v in string.Formatter().parse(cmd) if v[1] is not None]
     return cmd
 
+
 # There are two paths associated with each target:
-    # 1. the location of its definition (defpath or filepath)
-    # 2. the location of where it should be executed (workpath)
+# 1. the location of its definition (defpath or filepath)
+# 2. the location of where it should be executed (workpath)
 # These are not the same thing.
+
 
 def load_config_wrapper(cfg_path, workpath=None, autocomplete=True):
     """
@@ -101,7 +104,7 @@ def load_config_file(filepath, workpath=None, autocomplete=True, imported_list={
         return load_config_data(
             cfg_data, os.path.abspath(filepath), workpath, autocomplete, imported_list
         )
-    except FileNotFoundError as e:  
+    except FileNotFoundError as e:
         _LOGGER.error(f"Couldn't load config file: {filepath} because: {repr(e)}")
         return {}  # Allow continuing if file not found
     except Exception as e:
@@ -115,7 +118,9 @@ def make_abspath(relpath, filepath, root=None):
     return os.path.abspath(os.path.join(os.path.dirname(filepath), relpath))
 
 
-def load_config_data(cfg_data, filepath=None, workpath=None, autocomplete=True, imported_list={}):
+def load_config_data(
+    cfg_data, filepath=None, workpath=None, autocomplete=True, imported_list={}
+):
     """
     Recursive loader that parses a yaml string, handles imports, and runs target factories to create targets.
     """
@@ -138,7 +143,9 @@ def load_config_data(cfg_data, filepath=None, workpath=None, autocomplete=True, 
     if "imports" in higher_cfg and higher_cfg["imports"]:
         _LOGGER.debug("Found imports")
         for import_file in higher_cfg["imports"]:
-            import_file_abspath = make_abspath(expandpath(import_file), expandpath(filepath))
+            import_file_abspath = make_abspath(
+                expandpath(import_file), expandpath(filepath)
+            )
             if not autocomplete:
                 _LOGGER.info(f"Specified config file to import: {import_file_abspath}")
             deep_update(
@@ -151,7 +158,9 @@ def load_config_data(cfg_data, filepath=None, workpath=None, autocomplete=True, 
     if "imports_relative" in higher_cfg and higher_cfg["imports_relative"]:
         _LOGGER.debug("Found relative imports")
         for import_file in higher_cfg["imports_relative"]:
-            import_file_abspath = make_abspath(expandpath(import_file), expandpath(filepath))
+            import_file_abspath = make_abspath(
+                expandpath(import_file), expandpath(filepath)
+            )
             if not autocomplete:
                 _LOGGER.info(
                     f"Specified relative config file to import (relative): {import_file}"
@@ -192,9 +201,17 @@ def warn_overriding_target(old, new):
         for tgt in new["targets"]:
             if tgt in old["targets"]:
                 _LOGGER.error(f"Overriding target: {tgt}")
-                _LOGGER.error("Originally defined in: ".rjust(27, " ") + f"{old['targets'][tgt]['_defpath']}")
-                _LOGGER.error("Redefined in: ".rjust(27, " ") + f"{new['targets'][tgt]['_defpath']}")
-                raise Exception("Same target name is defined in imported file. Overriding targets is not allowed.")
+                _LOGGER.error(
+                    "Originally defined in: ".rjust(27, " ")
+                    + f"{old['targets'][tgt]['_defpath']}"
+                )
+                _LOGGER.error(
+                    "Redefined in: ".rjust(27, " ")
+                    + f"{new['targets'][tgt]['_defpath']}"
+                )
+                raise Exception(
+                    "Same target name is defined in imported file. Overriding targets is not allowed."
+                )
 
 
 def deep_update(old, new, warn_override=True):

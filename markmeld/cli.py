@@ -169,7 +169,7 @@ def main(test_args=None):
     if args.list:
         if "targets" not in cfg:
             raise TargetError(f"No targets specified in config.")
-        
+
         tarlist = {}
         for t, k in cfg["targets"].items():
             if "abstract" in cfg["targets"][t]:
@@ -189,6 +189,7 @@ def main(test_args=None):
 
     if args.template:
         from .melder import Target, load_template
+
         tgt = Target(mm.cfg, args.target)
         tpl = load_template(tgt.meta)
         _LOGGER.info("Template content:")
@@ -226,7 +227,9 @@ def main(test_args=None):
                 color_code = color_red
             else:
                 color_code = color_green
-            _LOGGER.info(f"{color_code}{item['status']}: {item['message']}{color_reset}")
+            _LOGGER.info(
+                f"{color_code}{item['status']}: {item['message']}{color_reset}"
+            )
 
         if built_target.returncode != 0:
             _LOGGER.error(f"{color_red}Building target failed.{color_reset}")
