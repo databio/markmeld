@@ -48,3 +48,15 @@ targets:
       - target3
 ```
 
+### Abstract targets
+
+Another type of target is an *abstract target*, which is a target that can be imported, but not built. Abstract targets can also be `meta` or `raw` targets, so we don't specify them with `type`, but with `abstract: true`.
+
+For example, `base_target` below is an abstract target that can be used as a template for other concrete targets. You can use abstract targets to set up re-usable parameter sets or other configurations that you can then inheret in other targets.
+
+```yaml
+targets:
+  targbase_target:
+    abstract: true
+    bibfolder: /path/to/bib/
+```
