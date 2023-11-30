@@ -202,16 +202,29 @@ def main(test_args=None):
 
     if args.dump:
         import json
-
         _LOGGER.info("Dumping JSON output passed to jinja template...")
-        print(
-            json.dumps(
-                built_target.melded_output, sort_keys=True, indent=2, default=str
+        if type(built_target) == dict:  # Multi-output target
+            for i, tgt in built_target.items():
+                _LOGGER.info(f"\n\nOutput {i}:")
+                _LOGGER.info(
+                    json.dumps(
+                        tgt.melded_output, sort_keys=True, indent=2, default=str
+                    )
+                )
+        else:
+            print(
+                json.dumps(
+                    built_target.melded_output, sort_keys=True, indent=2, default=str
+                )
             )
-        )
 
     if args.print:
-        print(built_target.melded_output)
+        if type(built_target) == dict:  # Multi-output target
+            for i, tgt in built_target.items():
+                _LOGGER.info(f"\n\nOutput {i}:")
+                _LOGGER.info(tgt.melded_output)
+        else:
+            print(built_target.melded_output)
 
     def report_result(built_target):
         """
