@@ -241,7 +241,10 @@ def load_template(cfg):
             import requests
 
             response = requests.get(jinja_tpl)
+            if response.status_code != 200:
+                raise Exception(f"Error retrieving jinja template '{jinja_tpl}': {response.status_code}")
             jinja_tpl_contents = response.text
+
         else:
             if not os.path.isfile(jinja_tpl):
                 _LOGGER.debug(cfg)
@@ -483,7 +486,7 @@ class MarkdownMelder(object):
             tgt.returncode = 0
         elif tgt.meta["command"]:
             cmd_fmt = format_command(tgt)
-            _LOGGER.debug(cmd_fmt)
+            _LOGGER.debug(f"Running regular command: '{cmd_fmt}'")
             tgt.melded_output = self.render_template(tgt.melded_input, tgt)
             _LOGGER.debug(f"melded_output: '{tgt.melded_output}'")
             if tgt.melded_output == "" or tgt.melded_output == None:

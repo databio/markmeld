@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.4.0] -- Unreleased
+
+- Add more informative error message when remote jinja template is not found
+- Allow commands with braces that are not variables without crashing.
+
 ## [0.3.0] -- 2023-11-06
 
 - Revamped the `_md` and `_array` variables to be dicts, with `ext`, `content`, `frontmatter`, and `path` properties.
@@ -33,6 +38,6 @@
 
 ## [0.0.2] -- 2022-11-18
 
-This is a transitional release that can handle both original beta and version 1 config formats.
+- Transitional release that can handle both original beta and version 1 config formats.
 
 

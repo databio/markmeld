@@ -50,6 +50,15 @@ def run_cmd(cmd, stdin=None, workdir=None):
     # p.communicate(input=tpl.render(data).encode())
 
 
+
+from string import Template as StringTemplate
+
+class MyTemplate(StringTemplate):
+    delimiter = ""
+    idpattern = None
+    braceidpattern = r"[_a-z][_a-z0-9]*"
+
+
 def format_command(tgt):
     """
     Given a command from a user config file, populate variables
@@ -60,14 +69,36 @@ def format_command(tgt):
         tgt.meta["output_file"] = expandpath(tgt.meta["output_file"]).format(**tgt.meta)
     else:
         tgt.meta["output_file"] = None
-    vars_to_exp = [v[1] for v in string.Formatter().parse(cmd) if v[1] is not None]
-    _LOGGER.debug(f"Vars to expand: {vars_to_exp}")
-    cmd = expandpath(cmd).format(**tgt.meta)
-    while len(vars_to_exp) > 0:
-        # format again in case the command has variables in it
-        # this allows for variables to contain variables
-        cmd = expandpath(cmd).format(**tgt.meta)
-        vars_to_exp = [v[1] for v in string.Formatter().parse(cmd) if v[1] is not None]
+    
+    # The problem with this old way is that if you try to include braces in a variable,
+    # it will try to replace it, and if .format() doesn't find a variable, it raises an error.
+    # The new code uses a custom string.Template class that only replaces variables that are
+    # surrounded by braces, and only if a replacement is provided, so no errors are raised
+    # if you use braces in your command string.
+    # vars_to_exp = [v[1] for v in string.Formatter().parse(cmd) if v[1] is not None]
+    # _LOGGER.debug(f"Vars to expand: {vars_to_exp}")
+    
+    # cmd = expandpath(cmd).format(**tgt.meta)
+    # while len(vars_to_exp) > 0:
+    #     _LOGGER.debug(cmd)
+    #     # format again in case the command has variables in it
+    #     # this allows for variables to contain variables
+    #     # cmd = expandpath(cmd).format(**tgt.meta)
+    #     cmd = MyTemplate(expandpath(cmd)).safe_substitute(**tgt.meta)
+    #     vars_to_exp = [v[1] for v in string.Formatter().parse(cmd) if v[1] is not None]
+
+    cont = True
+    cmd = MyTemplate(expandpath(cmd)).safe_substitute(**tgt.meta)
+    _LOGGER.debug(f"Expanded command: {cmd}")
+    count =1 
+    while True and count < 5:
+        cmd_new = MyTemplate(expandpath(cmd)).safe_substitute(**tgt.meta)
+        _LOGGER.debug(f"Expanded command: {cmd_new}")
+        if cmd == cmd_new:
+            _LOGGER.debug("No more variables to expand")
+            break
+        cmd = cmd_new
+        count += 1   
     return cmd
 
 
