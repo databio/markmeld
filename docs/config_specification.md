@@ -25,9 +25,9 @@ The configuration file must define a `targets` block. In this example, `targets`
 Under `target1`, we specify all the attributes of this target.
 
 - **custom variables**: You can define variables, which are then available for your command. In this example, the command uses `{output_file}` and `{latex_template}`, which are defined as variables under the target. This attributes are made available to the build system, but not to the jinja templates.
-- `jinja_template`: The `jinja_template` is a special variable that specifies the path to the jinja template that markmeld will use to render the output. The path is relative to the config file where it is defined (see [writing jinja templates](/jinja_template))
-- `command`: The `command` attribute here is a special variable. It's the shell command to execute to build the target. The output of markmeld will be piped to this command on `stdin`. listed here turns out to be markmeld's default command, so in this case it could be omitted (see [commands](/commands))
-- `type`: Specifies the type of target (see [commands](/commands))
+- `jinja_template`: The `jinja_template` is a special variable that specifies the path to the jinja template that markmeld will use to render the output. The path is relative to the config file where it is defined (see [writing jinja templates](jinja_template.md)).
+- `command`: The `command` attribute here is a special variable. It's the shell command to execute to build the target. The output of markmeld will be piped to this command on `stdin`. listed here turns out to be markmeld's default command, so in this case it could be omitted (see [commands](commands.md)).
+- `type`: Specifies the type of target (see [commands](commands.md)).
 - `data`: Finally, there's the `data` block, which is where the input content is specified.
 This is the main section that points to the content. This block includes several sub-attributes:
     - `md_files`: a named list of markdown files, which will be made available to the templates
@@ -36,8 +36,8 @@ This is the main section that points to the content. This block includes several
     - `yaml_globs`: a list of globs (regexes) to yaml files, which will be keyed by filename
     - `yaml_globs_unkeyed`: a list of globs (regexes) to yaml files, which will be directly available
     - `variables`: direct yaml data made available to the templates.
-- `inherit_from`: Defines a base target; any base attributes will be available to the current target, with the local target taking priority in case of conflict (see [inheriting](/inheriting))
-- `loop`: used to specify a `multi-output` target (see [multi_output_targets](/multi_output_targets))
-- `prebuild`: A list of other targets to build before the current target is built. See [side targets](/side_targets).
-- `recursive_render`: Defaults to true, but you can turn off if you want to NOT recursively render. See [recursive rendering](/recursive_rendering).
+- `inherit_from`: Defines a base target; any base attributes will be available to the current target, with the local target taking priority in case of conflict (see [inheriting](inheriting.md))
+- `loop`: used to specify a `multi-output` target (see [Multi-output targets](multi_output_targets.md))
+- `prebuild`: A list of other targets to build before the current target is built (see [side targets](side_targets.md)).
+- `recursive_render`: Defaults to true, but you can turn off if you want to NOT recursively render (see [recursive rendering](recursive_rendering.md)).
 
