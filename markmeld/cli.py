@@ -131,6 +131,7 @@ def main(test_args=None):
     _LOGGER = logmuse.logger_via_cli(args, make_root=True)
 
     if args.init:
+        global tpl
         _LOGGER.info(f"Initializing config file at: {args.init}")
         if os.path.exists(args.init):
             msg = "File already exists! Won't initialize."
