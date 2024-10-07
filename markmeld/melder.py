@@ -493,6 +493,12 @@ class MarkdownMelder(object):
                 _LOGGER.error("No input detected. Check variable names")
                 tgt.returncode = 2
             else:
+                # Create output folder if it doesn't exist:
+                if tgt.meta["output_file"] and not os.path.exists(
+                    os.path.dirname(tgt.meta["output_file"])
+                ):
+                _LOGGER.warning(f"Missing output folder. Creating output folder: {os.path.dirname(tgt.meta['output_file'])}")
+                    os.makedirs(os.path.dirname(tgt.meta["output_file"]))
                 tgt.returncode = run_cmd(
                     cmd_fmt, tgt.melded_output.encode(), tgt.meta["_workpath"]
                 )
