@@ -497,7 +497,7 @@ class MarkdownMelder(object):
                 if tgt.meta["output_file"] and not os.path.exists(
                     os.path.dirname(tgt.meta["output_file"])
                 ):
-                _LOGGER.warning(f"Missing output folder. Creating output folder: {os.path.dirname(tgt.meta['output_file'])}")
+                    _LOGGER.warning(f"Missing output folder. Creating output folder: {os.path.dirname(tgt.meta['output_file'])}")
                     os.makedirs(os.path.dirname(tgt.meta["output_file"]))
                 tgt.returncode = run_cmd(
                     cmd_fmt, tgt.melded_output.encode(), tgt.meta["_workpath"]
@@ -512,6 +512,9 @@ class MarkdownMelder(object):
         loop_dat = recursive_get(melded_input, loop_data_var)
         _LOGGER.debug(f"Loop dat: {loop_dat}")
         _LOGGER.debug(f"Target melded_input: {tgt.melded_input}")
+        if not loop_dat:
+            _LOGGER.error(f"Loop data not found: {loop_data_var}")
+            raise Exception(f"Loop data not found: {loop_data_var}")
         n = len(loop_dat)
         _LOGGER.info(f"Loop found: {n} elements.")
         _LOGGER.debug(loop_dat)
