@@ -242,7 +242,9 @@ def load_template(cfg):
 
             response = requests.get(jinja_tpl)
             if response.status_code != 200:
-                raise Exception(f"Error retrieving jinja template '{jinja_tpl}': {response.status_code}")
+                raise Exception(
+                    f"Error retrieving jinja template '{jinja_tpl}': {response.status_code}"
+                )
             jinja_tpl_contents = response.text
 
         else:
@@ -497,7 +499,9 @@ class MarkdownMelder(object):
                 if tgt.meta["output_file"] and not os.path.exists(
                     os.path.dirname(tgt.meta["output_file"])
                 ):
-                    _LOGGER.warning(f"Missing output folder. Creating output folder: {os.path.dirname(tgt.meta['output_file'])}")
+                    _LOGGER.warning(
+                        f"Missing output folder. Creating output folder: {os.path.dirname(tgt.meta['output_file'])}"
+                    )
                     os.makedirs(os.path.dirname(tgt.meta["output_file"]))
                 tgt.returncode = run_cmd(
                     cmd_fmt, tgt.melded_output.encode(), tgt.meta["_workpath"]

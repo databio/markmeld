@@ -203,14 +203,13 @@ def main(test_args=None):
 
     if args.dump:
         import json
+
         _LOGGER.info("Dumping JSON output passed to jinja template...")
         if type(built_target) == dict:  # Multi-output target
             for i, tgt in built_target.items():
                 _LOGGER.info(f"\n\nOutput {i}:")
                 _LOGGER.info(
-                    json.dumps(
-                        tgt.melded_output, sort_keys=True, indent=2, default=str
-                    )
+                    json.dumps(tgt.melded_output, sort_keys=True, indent=2, default=str)
                 )
         else:
             print(

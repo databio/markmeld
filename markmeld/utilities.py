@@ -50,8 +50,8 @@ def run_cmd(cmd, stdin=None, workdir=None):
     # p.communicate(input=tpl.render(data).encode())
 
 
-
 from string import Template as StringTemplate
+
 
 class MyTemplate(StringTemplate):
     delimiter = ""
@@ -69,7 +69,7 @@ def format_command(tgt):
         tgt.meta["output_file"] = expandpath(tgt.meta["output_file"]).format(**tgt.meta)
     else:
         tgt.meta["output_file"] = None
-    
+
     # The problem with this old way is that if you try to include braces in a variable,
     # it will try to replace it, and if .format() doesn't find a variable, it raises an error.
     # The new code uses a custom string.Template class that only replaces variables that are
@@ -77,7 +77,7 @@ def format_command(tgt):
     # if you use braces in your command string.
     # vars_to_exp = [v[1] for v in string.Formatter().parse(cmd) if v[1] is not None]
     # _LOGGER.debug(f"Vars to expand: {vars_to_exp}")
-    
+
     # cmd = expandpath(cmd).format(**tgt.meta)
     # while len(vars_to_exp) > 0:
     #     _LOGGER.debug(cmd)
@@ -90,7 +90,7 @@ def format_command(tgt):
     cont = True
     cmd = MyTemplate(expandpath(cmd)).safe_substitute(**tgt.meta)
     _LOGGER.debug(f"Expanded command: {cmd}")
-    count =1 
+    count = 1
     while True and count < 5:
         cmd_new = MyTemplate(expandpath(cmd)).safe_substitute(**tgt.meta)
         _LOGGER.debug(f"Expanded command: {cmd_new}")
@@ -98,7 +98,7 @@ def format_command(tgt):
             _LOGGER.debug("No more variables to expand")
             break
         cmd = cmd_new
-        count += 1   
+        count += 1
     return cmd
 
 
