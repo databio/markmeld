@@ -53,6 +53,15 @@ def datetimeformat(environment, value, to_format="%Y-%m-%d", from_format="%Y-%m-
 # "contributions" sections.
 @pass_environment
 def extract_refs(environment, value):
+    """
+    Extracts references from a given string.
+
+    References are denoted by an [@BibTexKey] format.
+
+    Args:
+        environment (jinja2.environment.Environment): The Jinja2 environment.
+        value (str): The string from which to extract references.
+    """
     try:
         m = re.findall("@([a-zA-Z0-9_]+)", value)
     except TypeError as TE:
@@ -96,6 +105,21 @@ def get_frontmatter_formats(frontmatter):
 
 
 def process_data(data_block, filepath):
+    """
+    Processes a given data block and extracts metadata.
+
+    The data_block is a section in the _markmeld coonfig for a target.
+    Each target has a 'data' section, which specifies the sources.
+    To process this data block, those sources are read in, and then processed
+    to extract any metadata blocks, so that those values can be made available to the template. 
+    
+    Args:
+        data_block (str): The block of data to be processed.
+        filepath (str): The path to the file from which the data block is extracted.
+
+    Returns:
+        dict: A dictionary containing the processed data, including raw data, metadata, and YAML content.
+    """
     _LOGGER.info(f"MM | Processing data block...")
     data = {"_raw": {}, "_md": {}, "_yaml": {}}  # Initialize return value
     frontmatter_temp = {}
@@ -215,13 +239,22 @@ def process_data(data_block, filepath):
 
 
 def get_file_extension(path):
+    """
+    Helper function to get the file extension from a path
+    """
     basename = os.path.basename(path)
     splitext = os.path.splitext(basename)
     ext = splitext[1]
     return ext
 
 
-def load_template(cfg):
+def load_template(cfg: str) -> Template:
+    """
+    Load a jinja template from a file or URL
+
+    Returns a jinja2 Template object
+    """
+
     if "jinja_template" not in cfg or not cfg["jinja_template"]:
         return None
 
@@ -496,11 +529,12 @@ class MarkdownMelder(object):
                 tgt.returncode = 2
             else:
                 # Create output folder if it doesn't exist:
-                if tgt.meta["output_file"] and not os.path.exists(
+                if tgt.meta["output_file"] and not os.path.dirname(tgt.meta["output_file"]) == "" and not os.path.exists(
                     os.path.dirname(tgt.meta["output_file"])
                 ):
+                    
                     _LOGGER.warning(
-                        f"Missing output folder. Creating output folder: {os.path.dirname(tgt.meta['output_file'])}"
+                        f"Missing output folder. Creating output folder: '{os.path.dirname(tgt.meta['output_file'])}' for file '{tgt.meta['output_file']}'"
                     )
                     os.makedirs(os.path.dirname(tgt.meta["output_file"]))
                 tgt.returncode = run_cmd(
