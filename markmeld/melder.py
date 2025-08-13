@@ -20,18 +20,22 @@ from ubiquerg import is_url
 from .const import PKG_NAME
 from .exceptions import *
 from .utilities import *
+from .api_handler import APIHandler
 
 MD_FILES_KEY = "md_files"
 MD_GLOBS_KEY = "md_globs"
 YAML_FILES_KEY = "yaml_files"
 YAML_GLOBS_KEY = "yaml_globs"
 YAML_GLOBS_UNKEYED_KEY = "yaml_globs_unkeyed"
+REMOTE_NOTES_KEY = "remote_notes"
 
 _LOGGER = getLogger(PKG_NAME)
 
 tpl_generic = """
 {{ _global_frontmatter.fenced}}{{ content }}
 """
+
+
 
 
 @pass_environment
@@ -129,6 +133,7 @@ def process_data(data_block, filepath):
     md_files = {}
     yaml_files = {}
     unkeyed_yaml_files = []
+    remote_notes = {}
 
     if MD_GLOBS_KEY in data_block and data_block[MD_GLOBS_KEY]:
         _LOGGER.info(f"MM | Populating md data globs...")
@@ -145,6 +150,9 @@ def process_data(data_block, filepath):
         md_files.update(data_block[MD_FILES_KEY])
     if YAML_FILES_KEY in data_block and data_block[YAML_FILES_KEY]:
         yaml_files.update(data_block[YAML_FILES_KEY])
+    if REMOTE_NOTES_KEY in data_block and data_block[REMOTE_NOTES_KEY]:
+        remote_notes.update(data_block[REMOTE_NOTES_KEY])
+        apih = APIHandler()
 
     for k, v in yaml_files.items():
         _LOGGER.info(f"MM | Processing yaml file {k}: {v}")
@@ -210,6 +218,21 @@ def process_data(data_block, filepath):
             # data[k]["metadata_yaml"] = yaml.dump(p.metadata)
             vars_temp.update(p.metadata)
             frontmatter_temp.update(p.metadata)
+
+    for k, v in remote_notes.items():
+        _LOGGER.info(f"MM | Processing remote note {k}:{v}")
+        if not v:
+            data[k] = v
+            continue
+        note_content = apih.fetch_note_content(v)
+        p = frontmatter.loads(note_content)
+        data[k] = p.content
+        data["_md"][k] = {
+            "content": p.content,
+            "frontmatter": p.metadata,
+            "path": v,
+            "ext": "md",
+        }
 
     if "variables" in data_block and data_block["variables"]:
         data.update(data_block["variables"])
@@ -414,10 +437,11 @@ class Target(object):
 
 class MarkdownMelder(object):
     """
-    Workhorse class, capable of building targets
+    Maiin class for the markmeld package. It is responsible for 
+    building targets, which are specified in the markmeld config file.
     """
 
-    def __init__(self, cfg):
+    def __init__(self, cfg: dict):
         """
         Instantiate a MarkdownMelder object
         """
