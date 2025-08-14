@@ -23,6 +23,7 @@ nav:
       - Remote templates: remote_templates.md
       - Mail merges: mail_merge.md
       - Prevent auto-open: prevent_opening.md
+      - Using as a Python library: use_as_library.md
   - Reference:
       - Changelog: changelog.md
 

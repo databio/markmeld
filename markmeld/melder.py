@@ -28,6 +28,8 @@ YAML_FILES_KEY = "yaml_files"
 YAML_GLOBS_KEY = "yaml_globs"
 YAML_GLOBS_UNKEYED_KEY = "yaml_globs_unkeyed"
 REMOTE_NOTES_KEY = "remote_notes"
+MD_CONTENT_KEY = "md_content"
+YAML_CONTENT_KEY = "yaml_content"
 
 _LOGGER = getLogger(PKG_NAME)
 
@@ -134,6 +136,8 @@ def process_data(data_block, filepath):
     yaml_files = {}
     unkeyed_yaml_files = []
     remote_notes = {}
+    md_content = {}
+    yaml_content = {}
 
     if MD_GLOBS_KEY in data_block and data_block[MD_GLOBS_KEY]:
         _LOGGER.info(f"MM | Populating md data globs...")
@@ -153,6 +157,10 @@ def process_data(data_block, filepath):
     if REMOTE_NOTES_KEY in data_block and data_block[REMOTE_NOTES_KEY]:
         remote_notes.update(data_block[REMOTE_NOTES_KEY])
         apih = APIHandler()
+    if MD_CONTENT_KEY in data_block and data_block[MD_CONTENT_KEY]:
+        md_content.update(data_block[MD_CONTENT_KEY])
+    if YAML_CONTENT_KEY in data_block and data_block[YAML_CONTENT_KEY]:
+        yaml_content.update(data_block[YAML_CONTENT_KEY])
 
     for k, v in yaml_files.items():
         _LOGGER.info(f"MM | Processing yaml file {k}: {v}")
@@ -179,6 +187,27 @@ def process_data(data_block, filepath):
                 data["_raw"][k] = yaml.dump(yaml_dict)
                 if k[:11] == "frontmatter":
                     frontmatter_temp.update(yaml_dict)
+
+    for k, v in yaml_content.items():
+        _LOGGER.info(f"MM | Processing yaml content {k}")
+        if isinstance(v, dict):
+            yaml_dict = v
+        elif isinstance(v, str):
+            yaml_dict = yaml.load(v, Loader=yaml.SafeLoader)
+        else:
+            _LOGGER.warning(f"Unsupported yaml content type for {k}: {type(v)}")
+            continue
+        
+        data[k] = yaml_dict
+        data["_yaml"][k] = {
+            "content": yaml_dict,
+            "path": None,
+            "ext": "yaml",
+        }
+        vars_temp[k] = yaml_dict
+        data["_raw"][k] = yaml.dump(yaml_dict)
+        if k[:11] == "frontmatter":
+            frontmatter_temp.update(yaml_dict)
 
     for k, v in md_files.items():
         _LOGGER.info(f"MM | Processing md file {k}:{v}")
@@ -233,6 +262,41 @@ def process_data(data_block, filepath):
             "path": v,
             "ext": "md",
         }
+
+    for k, v in md_content.items():
+        _LOGGER.info(f"MM | Processing md content {k}")
+        if not v:
+            data[k] = v
+            continue
+        
+        if isinstance(v, str):
+            p = frontmatter.loads(v)
+        elif isinstance(v, dict):
+            content_str = v.get('content', '')
+            p = frontmatter.loads(content_str)
+            if 'frontmatter' in v and isinstance(v['frontmatter'], dict):
+                p.metadata.update(v['frontmatter'])
+        elif hasattr(v, 'content') and hasattr(v, 'metadata'):
+            p = v
+        else:
+            _LOGGER.warning(f"Unsupported content type for {k}: {type(v)}")
+            data[k] = ""
+            data["_raw"][k] = {}
+            continue
+        
+        data[k] = p.content
+        data["_md"][k] = {
+            "content": p.content,
+            "frontmatter": p.metadata,
+            "path": None,
+            "ext": "md",
+        }
+        frontmatter_temp.update(p.metadata)
+        local_frontmatter_temp[k] = p.metadata
+        data["_raw"][k] = frontmatter.dumps(p)
+        if len(p.metadata) > 0:
+            vars_temp.update(p.metadata)
+            frontmatter_temp.update(p.metadata)
 
     if "variables" in data_block and data_block["variables"]:
         data.update(data_block["variables"])
@@ -443,7 +507,10 @@ class MarkdownMelder(object):
 
     def __init__(self, cfg: dict):
         """
-        Instantiate a MarkdownMelder object
+        Instantiate a MarkdownMelder object.
+
+        Args:
+            cfg (dict): The configuration dictionary, which is the _markmeld.yaml file.
         """
         _LOGGER.info("Initializing MarkdownMelder...")
         self.cfg = cfg

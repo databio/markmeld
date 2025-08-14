@@ -29,15 +29,29 @@ def recursive_get(dat, indices):
 def run_cmd(cmd, stdin=None, workdir=None):
     """Runs a command from a given workdir"""
     _LOGGER.info(f"MM | Command: {cmd}; CWD: {workdir}")
+    
+    # Determine the actual working directory
+    if workdir:
+        if os.path.isdir(workdir):
+            # If workdir is already a directory, use it directly
+            cwd = workdir
+        else:
+            # If workdir is a file path, get its directory
+            cwd = os.path.dirname(workdir)
+    else:
+        cwd = None
+    
+    _LOGGER.debug(f"MM | Actual CWD: {cwd}")
+    
     if stdin:
         # Call command (default: pandoc), passing the rendered template to stdin
         p = subprocess.Popen(
-            cmd, shell=True, stdin=subprocess.PIPE, cwd=os.path.dirname(workdir)
+            cmd, shell=True, stdin=subprocess.PIPE, cwd=cwd
         )
         p.communicate(input=stdin)
         return p.returncode
     else:
-        p = subprocess.Popen(cmd, shell=True, cwd=os.path.dirname(workdir))
+        p = subprocess.Popen(cmd, shell=True, cwd=cwd)
         p.communicate()
         return p.returncode
 
