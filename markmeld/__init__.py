@@ -4,6 +4,14 @@ from .utilities import load_config_file, load_config_wrapper
 
 __all__ = ["MarkdownMelder", "load_config_file", "load_config_wrapper"]
 
+# Optional Google Drive functionality
+try:
+    from .google_drive import GoogleDriveProcessor
+    __all__.append("GoogleDriveProcessor")
+except ImportError:
+    # Google dependencies not installed
+    pass
+
 if __name__ == "__main__":
     try:
         sys.exit(main())

@@ -198,7 +198,7 @@ def main(test_args=None):
         sys.exit(0)
 
     built_target = mm.build_target(
-        args.target, print_only=args.print, vardump=args.dump
+        args.target, print_only=args.print, vardump=args.dump, report=False
     )
 
     if args.dump:
@@ -226,55 +226,26 @@ def main(test_args=None):
         else:
             print(built_target.melded_output)
 
-    def report_result(built_target):
-        """
-        Tell the CLI user what happened, depending the logic of the type of target built.
-        """
-
-        color_red = "\x1b[31;20m"
-        color_reset = "\x1b[0m"
-        color_green = "\x1b[32;20m"
-        _LOGGER.debug(f"Built target: {built_target}")
-        for item in built_target.messages:
-            if item["status"] == "fail":
-                color_code = color_red
-            else:
-                color_code = color_green
-            _LOGGER.info(
-                f"{color_code}{item['status']}: {item['message']}{color_reset}"
-            )
-
-        if built_target.returncode != 0:
-            _LOGGER.error(f"{color_red}Building target failed.{color_reset}")
-            return
-
-        # Open the file
-        if "output_file" in built_target.meta and built_target.meta["output_file"]:
-            output_file = built_target.meta["output_file"]
-        else:
-            output_file = None
-
+    # Report results using the Target's report method
+    if type(built_target) == dict:
+        # Multi-output target
+        for i, tgt in built_target.items():
+            tgt.report(print_output=args.print, dump_output=args.dump)
+    else:
+        built_target.report(print_output=args.print, dump_output=args.dump)
+        
+        # Handle file opening (keep this in CLI only)
         if (
             built_target.returncode == 0
-            and output_file
+            and "output_file" in built_target.meta 
+            and built_target.meta["output_file"]
             and not "stopopen" in built_target.meta
             and not args.print
             and not args.dump
         ):
             file_open_cmd = get_file_open_cmd()
-            cmd_open = [file_open_cmd, output_file]
+            cmd_open = [file_open_cmd, built_target.meta["output_file"]]
             _LOGGER.info(" ".join(cmd_open))
             subprocess.call(cmd_open)
-        else:
-            _LOGGER.info(f"Return code: {built_target.returncode}")
-
-    if type(built_target) == dict:
-        # Mult-output target
-        for i, tgt in built_target.items():
-            _LOGGER.info(
-                f"Output {i}: Return code: {tgt.returncode}. Output: {tgt.meta['output_file']}"
-            )
-    else:
-        report_result(built_target)
 
     return

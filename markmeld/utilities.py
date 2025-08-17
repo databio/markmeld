@@ -277,12 +277,25 @@ from .glob_factory import glob_factory
 
 
 def load_plugins():
-    from pkg_resources import iter_entry_points
+    try:
+        # Python 3.10+ has importlib.metadata in stdlib
+        from importlib.metadata import entry_points
+    except ImportError:
+        # Fallback for Python 3.8-3.9
+        from importlib_metadata import entry_points
 
     built_in_plugins = {"glob": glob_factory}
 
+    # Get entry points for markmeld.factories
+    try:
+        # Python 3.10+ returns SelectableGroups
+        eps = entry_points(group="markmeld.factories")
+    except TypeError:
+        # Python 3.8-3.9 compatibility
+        eps = entry_points().get("markmeld.factories", [])
+    
     installed_plugins = {
-        ep.name: ep.load() for ep in iter_entry_points("markmeld.factories")
+        ep.name: ep.load() for ep in eps
     }
     built_in_plugins.update(installed_plugins)
     return built_in_plugins

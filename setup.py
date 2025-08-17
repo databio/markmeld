@@ -14,7 +14,17 @@ with open("requirements/requirements-all.txt", "r") as reqs_file:
         DEPENDENCIES.append(line)
 
 # Additional keyword arguments for setup()
-extra = {"install_requires": DEPENDENCIES}
+extra = {
+    "install_requires": DEPENDENCIES,
+    "extras_require": {
+        "google": [
+            "google-auth",
+            "google-api-python-client",
+            "google-auth-oauthlib",
+            "google-auth-httplib2",
+        ]
+    }
+}
 
 with open(PACKAGE_NAME + "/_version.py", "r") as versionfile:
     version = versionfile.readline().split()[-1].strip("\"'\n")

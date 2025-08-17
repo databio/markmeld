@@ -466,6 +466,38 @@ class Target(object):
             _LOGGER.warning(message)
         self.messages.append({"status": status, "message": message})
 
+    def report(self, print_output=False, dump_output=False):
+        """
+        Report the results of building this target.
+        Moved from CLI to make it accessible for API usage.
+        """
+        color_red = "\x1b[31;20m"
+        color_reset = "\x1b[0m"
+        color_green = "\x1b[32;20m"
+        
+        # Report any messages collected during build
+        for item in self.messages:
+            if item["status"] == "fail":
+                color_code = color_red
+            else:
+                color_code = color_green
+            _LOGGER.info(
+                f"{color_code}{item['status']}: {item['message']}{color_reset}"
+            )
+        
+        # Report success/failure
+        if self.returncode != 0:
+            _LOGGER.error(f"{color_red}Building target '{self.target_name}' failed.{color_reset}")
+            return
+        
+        # Report output location
+        if "output_file" in self.meta and self.meta["output_file"]:
+            _LOGGER.info(f"Target '{self.target_name}' built successfully -> {self.meta['output_file']}")
+        else:
+            _LOGGER.info(f"Target '{self.target_name}' built successfully")
+        
+        _LOGGER.info(f"Return code: {self.returncode}")
+
     def resolve_target_inheritance(self, target_name):
         root_cfg = self.root_cfg
         if "targets" not in root_cfg:
@@ -530,7 +562,7 @@ class MarkdownMelder(object):
         _LOGGER.info(tgt)
         return True
 
-    def build_target(self, target_name, print_only=False, vardump=False):
+    def build_target(self, target_name, print_only=False, vardump=False, report=True):
         """
         @return [False|tgt] if the
         """
@@ -549,7 +581,8 @@ class MarkdownMelder(object):
         tgt.melded_input = self.meld_inputs(tgt)
         _LOGGER.debug(f"Melded input: {tgt.melded_input}")
         if "loop" in tgt.meta:
-            return self.build_target_in_loop(tgt, print_only, vardump)
+            result = self.build_target_in_loop(tgt, print_only, vardump, report)
+            return result
 
         # Run command...
         result = self.run_command_for_target(tgt, print_only, vardump)
@@ -560,6 +593,10 @@ class MarkdownMelder(object):
             _LOGGER.debug("Failed building postbuild side targets")
             return tgt
 
+        # Report the result if requested
+        if report:
+            result.report(print_output=print_only, dump_output=vardump)
+        
         return result
 
     def build_side_targets(self, tgt, side_list_key="prebuild"):
@@ -577,7 +614,7 @@ class MarkdownMelder(object):
             for side_tgt in tgt.meta[side_list_key]:
                 _LOGGER.info(f"MM | {side_list_key} target: {side_tgt}")
                 if side_tgt in self.cfg["targets"]:
-                    self.build_target(side_tgt)
+                    self.build_target(side_tgt, report=False)
                     tgt.add_message(
                         f"MM | Built {side_list_key} target '{side_tgt}' requested by target '{tgt.target_name}' from file '{tgt.meta['_cfg_file_path']}'",
                         "success",
@@ -633,7 +670,7 @@ class MarkdownMelder(object):
                 )
         return tgt
 
-    def build_target_in_loop(self, tgt, print_only=False, vardump=False):
+    def build_target_in_loop(self, tgt, print_only=False, vardump=False, report=True):
         #  Process each iteration of the loop
         melded_input = tgt.melded_input
         loop_data_var = tgt.meta["loop"]["loop_data"].split(".")
@@ -665,6 +702,13 @@ class MarkdownMelder(object):
             return_target_objects[i] = self.run_command_for_target(
                 tgt_copy, print_only, vardump
             )
+
+        # Report loop results if requested
+        if report:
+            successful_builds = sum(1 for t in return_target_objects.values() if t.returncode == 0)
+            _LOGGER.info(f"Built loop target '{tgt.target_name}': {successful_builds}/{len(return_target_objects)} successful")
+            for i, loop_tgt in return_target_objects.items():
+                _LOGGER.info(f"  Loop iteration {i}: Return code: {loop_tgt.returncode}. Output: {loop_tgt.meta.get('output_file', 'N/A')}")
 
         return return_target_objects
 
