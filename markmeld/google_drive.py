@@ -8,6 +8,7 @@ This module provides a single interface for:
 
 import frontmatter
 import io
+import json
 import logging
 import os
 import re
@@ -62,6 +63,7 @@ class GoogleDriveProcessor:
     
     def __init__(self, 
                  credentials_path: Optional[str] = None,
+                 credentials_dict: Optional[Dict[str, Any]] = None,
                  local_base_dir: str = "fig",
                  scopes: Optional[List[str]] = None,
                  save_to_disk: bool = True):
@@ -70,26 +72,87 @@ class GoogleDriveProcessor:
         
         Args:
             credentials_path: Path to the service account credentials JSON file
+            credentials_dict: Dictionary containing service account credentials
             local_base_dir: Base directory for all local output
             scopes: List of Google API scopes
             save_to_disk: Whether to save downloaded documents to disk
+            
+        Note:
+            Credentials can be provided in three ways (in order of precedence):
+            1. credentials_dict parameter
+            2. MM_GOOGLE_DRIVE_CREDENTIALS environment variable (can be JSON string or file path)
+            3. credentials_path parameter
         """
-        # Set defaults
-        if credentials_path is None:
-            credentials_path = "/home/nsheff/auth/shefflab-google-service-acct-credentials.json"
+        # Set default scopes
         if scopes is None:
             scopes = ['https://www.googleapis.com/auth/drive.readonly']
         
+        # Track credential source for logging
+        self._credentials_source = None
+        self._credentials_info = {}
+        
+        # Determine credentials source (in order of precedence)
+        if credentials_dict is not None:
+            # Use provided dictionary directly
+            self.credentials = service_account.Credentials.from_service_account_info(
+                credentials_dict, scopes=scopes
+            )
+            self.credentials_path = None  # No file path when using dict
+            self._credentials_source = "dictionary parameter"
+            self._credentials_info = self._extract_credentials_info(credentials_dict)
+            
+        elif os.environ.get('MM_GOOGLE_DRIVE_CREDENTIALS'):
+            # Check environment variable
+            env_creds = os.environ['MM_GOOGLE_DRIVE_CREDENTIALS']
+            
+            # Try to parse as JSON first
+            try:
+                creds_dict = json.loads(env_creds)
+                self.credentials = service_account.Credentials.from_service_account_info(
+                    creds_dict, scopes=scopes
+                )
+                self.credentials_path = None
+                self._credentials_source = "MM_GOOGLE_DRIVE_CREDENTIALS env var (JSON)"
+                self._credentials_info = self._extract_credentials_info(creds_dict)
+            except json.JSONDecodeError:
+                # Not JSON, treat as file path
+                self.credentials_path = env_creds
+                self.credentials = service_account.Credentials.from_service_account_file(
+                    self.credentials_path, scopes=scopes
+                )
+                self._credentials_source = f"MM_GOOGLE_DRIVE_CREDENTIALS env var (file: {env_creds})"
+                # Load file to extract info
+                with open(env_creds, 'r') as f:
+                    creds_dict = json.load(f)
+                self._credentials_info = self._extract_credentials_info(creds_dict)
+                
+        elif credentials_path is not None:
+            # Use provided file path
+            self.credentials_path = credentials_path
+            self.credentials = service_account.Credentials.from_service_account_file(
+                credentials_path, scopes=scopes
+            )
+            self._credentials_source = f"credentials_path parameter (file: {credentials_path})"
+            # Load file to extract info
+            with open(credentials_path, 'r') as f:
+                creds_dict = json.load(f)
+            self._credentials_info = self._extract_credentials_info(creds_dict)
+            
+        else:
+            # No credentials provided
+            raise ValueError(
+                "No Google Drive credentials provided. Please provide credentials via:\n"
+                "  1. credentials_dict parameter\n"
+                "  2. MM_GOOGLE_DRIVE_CREDENTIALS environment variable\n"
+                "  3. credentials_path parameter"
+            )
+        
         # Store initialization parameters
-        self.credentials_path = credentials_path
         self.scopes = scopes
         self.local_base_dir = Path(local_base_dir)
         self.save_to_disk = save_to_disk
         
-        # Initialize credentials and service
-        self.credentials = service_account.Credentials.from_service_account_file(
-            credentials_path, scopes=scopes
-        )
+        # Initialize drive service
         self.drive_service = build('drive', 'v3', credentials=self.credentials)
         
         # Get service account email
@@ -105,6 +168,41 @@ class GoogleDriveProcessor:
         self._doc_cache = {}
         self._cache_hits = 0
         self._cache_misses = 0
+        
+        # Log credentials information
+        self._log_credentials_info()
+    
+    def _extract_credentials_info(self, creds_dict: Dict[str, Any]) -> Dict[str, str]:
+        """Extract key information from credentials dictionary."""
+        return {
+            'type': creds_dict.get('type', 'unknown'),
+            'project_id': creds_dict.get('project_id', 'unknown'),
+            'client_email': creds_dict.get('client_email', 'unknown')
+        }
+    
+    def _log_credentials_info(self):
+        """Log information about the credentials being used."""
+        logger.info("=" * 60)
+        logger.info("Google Drive Processor initialized")
+        logger.info("-" * 60)
+        logger.info(f"Credentials source: {self._credentials_source}")
+        logger.info(f"Service account type: {self._credentials_info.get('type', 'unknown')}")
+        logger.info(f"Project ID: {self._credentials_info.get('project_id', 'unknown')}")
+        logger.info(f"Client email: {self._credentials_info.get('client_email', 'unknown')}")
+        logger.info("=" * 60)
+    
+    def __repr__(self) -> str:
+        """Return string representation of the GoogleDriveProcessor."""
+        return (
+            f"GoogleDriveProcessor(\n"
+            f"  credentials_source={self._credentials_source},\n"
+            f"  type={self._credentials_info.get('type', 'unknown')},\n"
+            f"  project_id={self._credentials_info.get('project_id', 'unknown')},\n"
+            f"  client_email={self._credentials_info.get('client_email', 'unknown')},\n"
+            f"  local_base_dir={self.local_base_dir},\n"
+            f"  save_to_disk={self.save_to_disk}\n"
+            f")"
+        )
     
     # ====================
     # Properties with lazy directory creation
