@@ -1,29 +1,100 @@
+"""
+Utility functions for the markmeld package.
+
+This module contains helper functions for:
+- Configuration file loading and processing
+- Command formatting and execution
+- File operations and path handling
+- Markdown content cleaning and processing
+- Plugin loading and management
+"""
+
 import glob
 import os
-import string
+import platform
+import re
 import subprocess
 import yaml
-import platform
-
-from logging import getLogger
 from collections.abc import Mapping
+from logging import getLogger
+from pathlib import Path
+from string import Template as StringTemplate
+from typing import Union
+
 from ubiquerg import expandpath
 
 from .const import PKG_NAME, FILE_OPENER_MAP
+from .glob_factory import glob_factory
 
 _LOGGER = getLogger(PKG_NAME)
 
+# ====================
+# Configuration and Command Processing
+# ====================
 
-# define some useful functions
-def recursive_get(dat, indices):
+class MyTemplate(StringTemplate):
     """
-    Indexes into a nested dict with a list of indexes.
+    Custom string template class for command variable substitution.
+    
+    This class modifies the standard string.Template to:
+    - Use an empty delimiter (no $ prefix required)
+    - Only replace variables that are surrounded by braces {variable}
+    - Only replace if a replacement value is provided (no errors on missing variables)
+    
+    This allows commands to contain braces without raising errors if the variable
+    is not found in the substitution dictionary. This is useful for commands that
+    may contain shell expressions or other brace-delimited content that should not
+    be replaced.
+    
+    Example:
+        >>> template = MyTemplate("echo {name} > {output_file}")
+        >>> template.safe_substitute(name="test", output_file="out.txt")
+        'echo test > out.txt'
+        
+        >>> template = MyTemplate("if [[ {check} ]]; then echo {undefined}; fi")
+        >>> template.safe_substitute(check="true")
+        'if [[ true ]]; then echo {undefined}; fi'  # {undefined} is preserved
     """
-    for i in indices:
-        if i not in dat:
-            return None
-        dat = dat[i]
-    return dat
+    delimiter = ""
+    idpattern = None
+    braceidpattern = r"[_a-z][_a-z0-9]*"
+
+
+def format_command(tgt):
+    """
+    Given a command from a user config file, populate variables
+    from the target metadata.
+    
+    This function performs recursive variable substitution, allowing variables
+    to contain other variables. It uses the custom MyTemplate class to safely
+    substitute variables without raising errors for undefined variables.
+    
+    Args:
+        tgt: Target object with metadata containing command and variables
+        
+    Returns:
+        str: The formatted command with all variables substituted
+    """
+    cmd = tgt.meta["command"]
+    if "output_file" in tgt.meta and tgt.meta["output_file"]:
+        tgt.meta["output_file"] = expandpath(tgt.meta["output_file"]).format(**tgt.meta)
+    else:
+        tgt.meta["output_file"] = None
+
+    # Recursively expand variables (up to 5 iterations to prevent infinite loops)
+    # This allows for variables to contain variables
+    cmd = MyTemplate(expandpath(cmd)).safe_substitute(**tgt.meta)
+    _LOGGER.debug(f"Expanded command: {cmd}")
+    count = 1
+    while True and count < 5:
+        cmd_new = MyTemplate(expandpath(cmd)).safe_substitute(**tgt.meta)
+        _LOGGER.debug(f"Expanded command: {cmd_new}")
+        if cmd == cmd_new:
+            _LOGGER.debug("No more variables to expand")
+            break
+        cmd = cmd_new
+        count += 1
+    return cmd
 
 
 def run_cmd(cmd, stdin=None, workdir=None):
@@ -55,71 +126,20 @@ def run_cmd(cmd, stdin=None, workdir=None):
         p.communicate()
         return p.returncode
 
-    # In case I need to make it NOT use the shell in the future
-    # here's how:
-    # cmd_fmt2 = cmd_fmt.replace("\n", "").replace("\\","")
-    # cmd_ary = shlex.split(cmd_fmt2)
-    # _LOGGER.debug(cmd_ary)
-    # p = subprocess.Popen(cmd_fmt, shell=True, stdin=subprocess.PIPE)
-    # p.communicate(input=tpl.render(data).encode())
 
+# ====================
+# Configuration File Loading
+# ====================
 
-from string import Template as StringTemplate
-
-
-class MyTemplate(StringTemplate):
-    delimiter = ""
-    idpattern = None
-    braceidpattern = r"[_a-z][_a-z0-9]*"
-
-
-def format_command(tgt):
+def recursive_get(dat, indices):
     """
-    Given a command from a user config file, populate variables
-    from the target metadata
+    Indexes into a nested dict with a list of indexes.
     """
-    cmd = tgt.meta["command"]
-    if "output_file" in tgt.meta and tgt.meta["output_file"]:
-        tgt.meta["output_file"] = expandpath(tgt.meta["output_file"]).format(**tgt.meta)
-    else:
-        tgt.meta["output_file"] = None
-
-    # The problem with this old way is that if you try to include braces in a variable,
-    # it will try to replace it, and if .format() doesn't find a variable, it raises an error.
-    # The new code uses a custom string.Template class that only replaces variables that are
-    # surrounded by braces, and only if a replacement is provided, so no errors are raised
-    # if you use braces in your command string.
-    # vars_to_exp = [v[1] for v in string.Formatter().parse(cmd) if v[1] is not None]
-    # _LOGGER.debug(f"Vars to expand: {vars_to_exp}")
-
-    # cmd = expandpath(cmd).format(**tgt.meta)
-    # while len(vars_to_exp) > 0:
-    #     _LOGGER.debug(cmd)
-    #     # format again in case the command has variables in it
-    #     # this allows for variables to contain variables
-    #     # cmd = expandpath(cmd).format(**tgt.meta)
-    #     cmd = MyTemplate(expandpath(cmd)).safe_substitute(**tgt.meta)
-    #     vars_to_exp = [v[1] for v in string.Formatter().parse(cmd) if v[1] is not None]
-
-    cont = True
-    cmd = MyTemplate(expandpath(cmd)).safe_substitute(**tgt.meta)
-    _LOGGER.debug(f"Expanded command: {cmd}")
-    count = 1
-    while True and count < 5:
-        cmd_new = MyTemplate(expandpath(cmd)).safe_substitute(**tgt.meta)
-        _LOGGER.debug(f"Expanded command: {cmd_new}")
-        if cmd == cmd_new:
-            _LOGGER.debug("No more variables to expand")
-            break
-        cmd = cmd_new
-        count += 1
-    return cmd
-
-
-# There are two paths associated with each target:
-# 1. the location of its definition (defpath or filepath)
-# 2. the location of where it should be executed (workpath)
-# These are not the same thing.
+    for i in indices:
+        if i not in dat:
+            return None
+        dat = dat[i]
+    return dat
 
 
 def load_config_wrapper(cfg_path, workpath=None, autocomplete=True):
@@ -273,8 +293,9 @@ def deep_update(old, new, warn_override=True):
     return old
 
 
-from .glob_factory import glob_factory
-
+# ====================
+# Plugin Loading
+# ====================
 
 def load_plugins():
     try:
@@ -300,6 +321,10 @@ def load_plugins():
     built_in_plugins.update(installed_plugins)
     return built_in_plugins
 
+
+# ====================
+# File and Path Operations
+# ====================
 
 def globs_to_dict(globs, cfg_path):
     """
@@ -332,3 +357,317 @@ def get_file_open_cmd() -> str:
     """
     system = platform.system()
     return FILE_OPENER_MAP.get(system, "xdg-open")
+
+
+def write_to_file(content: str, output_path: Union[str, Path]) -> None:
+    """Write content to a file."""
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    with open(output_path, 'w', encoding='utf-8') as f:
+        f.write(content)
+
+
+# ====================
+# Markdown Processing Functions
+# ====================
+
+def sanitize_filename(filename: str) -> str:
+    """Sanitize a filename by removing/replacing invalid characters."""
+    # Remove invalid characters for filenames
+    invalid_chars = '<>:"/\\|?*'
+    for char in invalid_chars:
+        filename = filename.replace(char, '_')
+    
+    # Remove trailing dots and spaces (Windows compatibility)
+    name_parts = filename.rsplit('.', 1)
+    if len(name_parts) == 2:
+        name, ext = name_parts
+        name = name.rstrip('. ')
+        filename = f"{name}.{ext}" if name else f"file.{ext}"
+    else:
+        filename = filename.rstrip('. ')
+    
+    # Limit length to 255 characters
+    if len(filename) > 255:
+        name_parts = filename.rsplit('.', 1)
+        if len(name_parts) == 2:
+            name, ext = name_parts
+            if len(name) > 251:
+                filename = f"{name[:251]}.{ext}"
+        else:
+            filename = filename[:251]
+    
+    return filename
+
+
+def clean_markdown(markdown_content: str,
+                  clean_escapes: bool = True,
+                  remove_images: bool = True,
+                  strip_heading_bold: bool = True,
+                  replace_svg_with_pdf: bool = False,
+                  fix_latex_chars: bool = True) -> str:
+    """Apply all cleaning operations to markdown content."""
+    if clean_escapes:
+        markdown_content = clean_escape_characters(markdown_content)
+    
+    if remove_images:
+        markdown_content = remove_embedded_images(markdown_content)
+    
+    if strip_heading_bold:
+        markdown_content = strip_bold_from_headings(markdown_content)
+    
+    if replace_svg_with_pdf:
+        markdown_content = replace_svg_extensions(markdown_content)
+    
+    if fix_latex_chars:
+        markdown_content = check_and_fix_latex_incompatible_chars(markdown_content)
+    
+    return markdown_content
+
+
+def clean_escape_characters(markdown_content: str) -> str:
+    """Remove escape characters from markdown elements. Used to clean Google Docs exports."""
+    # Handle LaTeX commands first - preserve double backslashes for LaTeX
+    content = markdown_content.replace('\\\\\\', '\\\\')
+    
+    # Remove escapes from various characters
+    content = content.replace('\\[', '[')
+    content = content.replace('\\]', ']')
+    content = content.replace('\\_', '_')
+    content = content.replace('\\!', '!')
+    content = content.replace('\\(', '(')
+    content = content.replace('\\)', ')')
+    content = content.replace('\\`', '`')
+    content = content.replace('\\-', '-')
+    content = content.replace('\\*', '*')
+    content = content.replace('\\=', '=')
+        
+    # Handle LaTeX commands: remove escape before backslash when followed by alphanumeric
+    content = re.sub(r'\\(\\[a-zA-Z0-9])', r'\1', content)
+
+    # content = content.replace('\\\\', '\\')
+
+    return content
+
+
+def remove_embedded_images(markdown_content: str) -> str:
+    """Remove embedded images and image references from markdown content. Used to clean Google Docs exports."""
+    # Remove reference-style image definitions with data URIs (both with and without angle brackets)
+    content = re.sub(r'^\[[^\]]+\]:\s*<?data:[^>\n]*>?\s*$', '', markdown_content, flags=re.MULTILINE)
+    
+    # Remove markdown image references (both ![][imageX] and ![alt][imageX])
+    content = re.sub(r'!\[[^\]]*\]\[[^\]]+\]', '', content)
+    
+    # Remove inline data URI images
+    content = re.sub(r'!\[[^\]]*\]\(data:[^)]+\)', '', content)
+    
+    # Clean up extra blank lines
+    content = re.sub(r'\n\n+', '\n\n', content)
+    
+    return content.strip()
+
+
+def strip_bold_from_headings(markdown_content: str) -> str:
+    """Remove bold formatting from markdown headings. Used to clean Google Docs exports."""
+    # Pattern matches heading lines with bold markers
+    content = re.sub(r'^(#+)\s+\*\*(.*?)\*\*\s*$', r'\1 \2', markdown_content, flags=re.MULTILINE)
+    
+    # Also handle cases where there might be bold within the heading
+    lines = content.split('\n')
+    cleaned_lines = []
+    for line in lines:
+        if line.strip().startswith('#'):
+            line = line.replace('**', '')
+        cleaned_lines.append(line)
+    
+    return '\n'.join(cleaned_lines)
+
+
+def replace_svg_extensions(markdown_content: str) -> str:
+    """Replace .svg extensions with .pdf in markdown image syntax."""
+    # Pattern to match markdown images with .svg extension
+    pattern = r'!\[([^\]]*)\]\(([^)]+?)(\.svg)\)'
+    
+    # Replace .svg with .pdf
+    content = re.sub(pattern, r'![\1](\2.pdf)', markdown_content)
+    
+    return content
+
+
+def check_and_fix_latex_incompatible_chars(markdown_content: str) -> str:
+    """
+    Check for and fix Unicode characters that are incompatible with LaTeX.
+    
+    This function detects characters that will cause "inputenc Error: Unicode character not set up 
+    for use with LaTeX" errors and either replaces them with LaTeX-compatible alternatives or 
+    warns about them.
+    
+    Args:
+        markdown_content: The markdown content to check and fix
+        
+    Returns:
+        The markdown content with problematic characters fixed
+    """
+    # Dictionary of problematic Unicode characters and their LaTeX-safe replacements
+    # Add more as we discover them
+    char_replacements = {
+        '∼': '~',           # U+223C TILDE OPERATOR → regular tilde
+        '−': '-',           # U+2212 MINUS SIGN → hyphen-minus
+        ''': "'",           # U+2019 RIGHT SINGLE QUOTATION MARK → apostrophe
+        ''': "'",           # U+2018 LEFT SINGLE QUOTATION MARK → apostrophe
+        '"': '"',           # U+201C LEFT DOUBLE QUOTATION MARK → quotation mark
+        '"': '"',           # U+201D RIGHT DOUBLE QUOTATION MARK → quotation mark
+        '…': '...',         # U+2026 HORIZONTAL ELLIPSIS → three dots
+        '–': '--',          # U+2013 EN DASH → double hyphen
+        '—': '---',         # U+2014 EM DASH → triple hyphen
+        ' ': ' ',           # U+00A0 NO-BREAK SPACE → regular space
+        '​': '',            # U+200B ZERO WIDTH SPACE → remove
+        '‐': '-',           # U+2010 HYPHEN → hyphen-minus
+        '×': 'x',           # U+00D7 MULTIPLICATION SIGN → letter x
+        '÷': '/',           # U+00F7 DIVISION SIGN → forward slash
+        '≈': '~',           # U+2248 ALMOST EQUAL TO → tilde
+        '≠': '!=',          # U+2260 NOT EQUAL TO → != 
+        '≤': '<=',          # U+2264 LESS-THAN OR EQUAL TO → <=
+        '≥': '>=',          # U+2265 GREATER-THAN OR EQUAL TO → >=
+        '±': '+/-',         # U+00B1 PLUS-MINUS SIGN → +/-
+        '°': '$^\\circ$',   # U+00B0 DEGREE SIGN → LaTeX degree symbol
+        'µ': '$\\mu$',      # U+00B5 MICRO SIGN → LaTeX mu
+        '∞': '$\\infty$',   # U+221E INFINITY → LaTeX infinity
+        '√': '$\\sqrt{}$',  # U+221A SQUARE ROOT → LaTeX square root
+        '∑': '$\\sum$',     # U+2211 N-ARY SUMMATION → LaTeX sum
+        '∏': '$\\prod$',    # U+220F N-ARY PRODUCT → LaTeX product
+        '∫': '$\\int$',     # U+222B INTEGRAL → LaTeX integral
+        'α': '$\\alpha$',   # U+03B1 GREEK SMALL LETTER ALPHA
+        'β': '$\\beta$',    # U+03B2 GREEK SMALL LETTER BETA
+        'γ': '$\\gamma$',   # U+03B3 GREEK SMALL LETTER GAMMA
+        'δ': '$\\delta$',   # U+03B4 GREEK SMALL LETTER DELTA
+        'ε': '$\\epsilon$', # U+03B5 GREEK SMALL LETTER EPSILON
+        'θ': '$\\theta$',   # U+03B8 GREEK SMALL LETTER THETA
+        'λ': '$\\lambda$',  # U+03BB GREEK SMALL LETTER LAMBDA
+        'π': '$\\pi$',      # U+03C0 GREEK SMALL LETTER PI
+        'σ': '$\\sigma$',   # U+03C3 GREEK SMALL LETTER SIGMA
+        'φ': '$\\phi$',     # U+03C6 GREEK SMALL LETTER PHI
+    }
+    
+    # Track what we find and fix
+    issues_found = []
+    content = markdown_content
+    
+    for char, replacement in char_replacements.items():
+        if char in content:
+            # Find context around each occurrence
+            import re
+            pattern = re.compile(re.escape(char))
+            matches = list(pattern.finditer(content))
+            
+            if matches:
+                # Log each occurrence with context
+                for match in matches:
+                    start = max(0, match.start() - 20)
+                    end = min(len(content), match.end() + 20)
+                    context = content[start:end]
+                    # Clean up context for display (remove newlines)
+                    context = context.replace('\n', ' ')
+                    
+                    char_code = f"U+{ord(char):04X}"
+                    issues_found.append({
+                        'char': char,
+                        'char_code': char_code,
+                        'replacement': replacement,
+                        'context': f"...{context}...",
+                        'position': match.start()
+                    })
+                
+                # Replace all occurrences
+                content = content.replace(char, replacement)
+    
+    # Log warnings if any problematic characters were found
+    if issues_found:
+        _LOGGER.warning("=" * 70)
+        _LOGGER.warning("⚠️  LATEX-INCOMPATIBLE CHARACTERS DETECTED AND FIXED")
+        _LOGGER.warning("=" * 70)
+        _LOGGER.warning("")
+        _LOGGER.warning("The following characters were found that would cause LaTeX errors:")
+        _LOGGER.warning("")
+        
+        # Group by character for cleaner output
+        char_groups = {}
+        for issue in issues_found:
+            char_key = (issue['char'], issue['char_code'], issue['replacement'])
+            if char_key not in char_groups:
+                char_groups[char_key] = []
+            char_groups[char_key].append(issue['context'])
+        
+        for (char, char_code, replacement), contexts in char_groups.items():
+            _LOGGER.warning(f"  Character: '{char}' ({char_code})")
+            _LOGGER.warning(f"  Replaced with: '{replacement}'")
+            _LOGGER.warning(f"  Found {len(contexts)} occurrence(s):")
+            # Show up to 3 context examples
+            for i, context in enumerate(contexts[:3]):
+                _LOGGER.warning(f"    - {context}")
+            if len(contexts) > 3:
+                _LOGGER.warning(f"    ... and {len(contexts) - 3} more")
+            _LOGGER.warning("")
+        
+        _LOGGER.warning("These characters have been automatically replaced with LaTeX-compatible")
+        _LOGGER.warning("alternatives. Please review the document to ensure the replacements")
+        _LOGGER.warning("are appropriate for your content.")
+        _LOGGER.warning("=" * 70)
+        _LOGGER.warning("")
+    
+    # Also check for any other non-ASCII characters that might cause issues
+    # but aren't in our replacement list
+    remaining_non_ascii = []
+    for i, char in enumerate(content):
+        if ord(char) > 127 and char not in char_replacements:
+            # Skip common accented characters that LaTeX handles well
+            if ord(char) < 256:  # Latin-1 supplement, usually OK
+                continue
+            
+            context_start = max(0, i - 20)
+            context_end = min(len(content), i + 20)
+            context = content[context_start:context_end].replace('\n', ' ')
+            
+            remaining_non_ascii.append({
+                'char': char,
+                'char_code': f"U+{ord(char):04X}",
+                'context': f"...{context}...",
+                'position': i
+            })
+    
+    # Deduplicate remaining non-ASCII warnings
+    if remaining_non_ascii:
+        seen_chars = {}
+        for item in remaining_non_ascii:
+            char_key = (item['char'], item['char_code'])
+            if char_key not in seen_chars:
+                seen_chars[char_key] = []
+            seen_chars[char_key].append(item['context'])
+        
+        if seen_chars:
+            _LOGGER.warning("")
+            _LOGGER.warning("=" * 70)
+            _LOGGER.warning("⚠️  ADDITIONAL NON-ASCII CHARACTERS DETECTED")
+            _LOGGER.warning("=" * 70)
+            _LOGGER.warning("")
+            _LOGGER.warning("The following non-ASCII characters were found that *might* cause")
+            _LOGGER.warning("LaTeX issues (not automatically replaced):")
+            _LOGGER.warning("")
+            
+            for (char, char_code), contexts in list(seen_chars.items())[:10]:  # Limit to 10
+                _LOGGER.warning(f"  Character: '{char}' ({char_code})")
+                _LOGGER.warning(f"  Example context: {contexts[0]}")
+                if len(contexts) > 1:
+                    _LOGGER.warning(f"  Found {len(contexts)} occurrence(s)")
+                _LOGGER.warning("")
+            
+            if len(seen_chars) > 10:
+                _LOGGER.warning(f"  ... and {len(seen_chars) - 10} more unique characters")
+                _LOGGER.warning("")
+            
+            _LOGGER.warning("Consider reviewing these characters if you encounter LaTeX errors.")
+            _LOGGER.warning("=" * 70)
+            _LOGGER.warning("")
+    
+    return content

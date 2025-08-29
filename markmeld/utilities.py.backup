@@ -1,0 +1,465 @@
+import glob
+import os
+import string
+import subprocess
+import yaml
+import platform
+
+from logging import getLogger
+from collections.abc import Mapping
+from ubiquerg import expandpath
+
+from .const import PKG_NAME, FILE_OPENER_MAP
+
+_LOGGER = getLogger(PKG_NAME)
+
+
+# define some useful functions
+def recursive_get(dat, indices):
+    """
+    Indexes into a nested dict with a list of indexes.
+    """
+    for i in indices:
+        if i not in dat:
+            return None
+        dat = dat[i]
+    return dat
+
+
+def run_cmd(cmd, stdin=None, workdir=None):
+    """Runs a command from a given workdir"""
+    _LOGGER.info(f"MM | Command: {cmd}; CWD: {workdir}")
+    
+    # Determine the actual working directory
+    if workdir:
+        if os.path.isdir(workdir):
+            # If workdir is already a directory, use it directly
+            cwd = workdir
+        else:
+            # If workdir is a file path, get its directory
+            cwd = os.path.dirname(workdir)
+    else:
+        cwd = None
+    
+    _LOGGER.debug(f"MM | Actual CWD: {cwd}")
+    
+    if stdin:
+        # Call command (default: pandoc), passing the rendered template to stdin
+        p = subprocess.Popen(
+            cmd, shell=True, stdin=subprocess.PIPE, cwd=cwd
+        )
+        p.communicate(input=stdin)
+        return p.returncode
+    else:
+        p = subprocess.Popen(cmd, shell=True, cwd=cwd)
+        p.communicate()
+        return p.returncode
+
+    # In case I need to make it NOT use the shell in the future
+    # here's how:
+    # cmd_fmt2 = cmd_fmt.replace("\n", "").replace("\\","")
+    # cmd_ary = shlex.split(cmd_fmt2)
+    # _LOGGER.debug(cmd_ary)
+    # p = subprocess.Popen(cmd_fmt, shell=True, stdin=subprocess.PIPE)
+    # p.communicate(input=tpl.render(data).encode())
+
+
+from string import Template as StringTemplate
+
+
+class MyTemplate(StringTemplate):
+    delimiter = ""
+    idpattern = None
+    braceidpattern = r"[_a-z][_a-z0-9]*"
+
+
+def format_command(tgt):
+    """
+    Given a command from a user config file, populate variables
+    from the target metadata
+    """
+    cmd = tgt.meta["command"]
+    if "output_file" in tgt.meta and tgt.meta["output_file"]:
+        tgt.meta["output_file"] = expandpath(tgt.meta["output_file"]).format(**tgt.meta)
+    else:
+        tgt.meta["output_file"] = None
+
+    # The problem with this old way is that if you try to include braces in a variable,
+    # it will try to replace it, and if .format() doesn't find a variable, it raises an error.
+    # The new code uses a custom string.Template class that only replaces variables that are
+    # surrounded by braces, and only if a replacement is provided, so no errors are raised
+    # if you use braces in your command string.
+    # vars_to_exp = [v[1] for v in string.Formatter().parse(cmd) if v[1] is not None]
+    # _LOGGER.debug(f"Vars to expand: {vars_to_exp}")
+
+    # cmd = expandpath(cmd).format(**tgt.meta)
+    # while len(vars_to_exp) > 0:
+    #     _LOGGER.debug(cmd)
+    #     # format again in case the command has variables in it
+    #     # this allows for variables to contain variables
+    #     # cmd = expandpath(cmd).format(**tgt.meta)
+    #     cmd = MyTemplate(expandpath(cmd)).safe_substitute(**tgt.meta)
+    #     vars_to_exp = [v[1] for v in string.Formatter().parse(cmd) if v[1] is not None]
+
+    cont = True
+    cmd = MyTemplate(expandpath(cmd)).safe_substitute(**tgt.meta)
+    _LOGGER.debug(f"Expanded command: {cmd}")
+    count = 1
+    while True and count < 5:
+        cmd_new = MyTemplate(expandpath(cmd)).safe_substitute(**tgt.meta)
+        _LOGGER.debug(f"Expanded command: {cmd_new}")
+        if cmd == cmd_new:
+            _LOGGER.debug("No more variables to expand")
+            break
+        cmd = cmd_new
+        count += 1
+    return cmd
+
+
+# There are two paths associated with each target:
+# 1. the location of its definition (defpath or filepath)
+# 2. the location of where it should be executed (workpath)
+# These are not the same thing.
+
+
+def load_config_wrapper(cfg_path, workpath=None, autocomplete=True):
+    """
+    Wrapper function that maintains a list of imported files, to prevent duplicate imports.
+    """
+    imported_list = {}
+    return load_config_file(cfg_path, workpath, autocomplete, imported_list)
+
+
+def load_config_file(filepath, workpath=None, autocomplete=True, imported_list={}):
+    """
+    Loads a configuration file.
+
+    @param str filepath Path to configuration file to load
+    @param str workpath The working path that the target's relative paths are relative to
+    @return dict Loaded yaml data object.
+    """
+    _LOGGER.debug(f"Loading config file: {filepath}")
+    _LOGGER.debug(f"Imported list: {imported_list}")
+    if imported_list.get(filepath):
+        _LOGGER.debug(f"Already imported: {filepath}")
+        return {}
+    try:
+        with open(filepath, "r") as f:
+            cfg_data = f.read()
+        return load_config_data(
+            cfg_data, os.path.abspath(filepath), workpath, autocomplete, imported_list
+        )
+    except FileNotFoundError as e:
+        _LOGGER.error(f"Couldn't load config file: {filepath} because: {repr(e)}")
+        return {}  # Allow continuing if file not found
+    except Exception as e:
+        _LOGGER.error(f"Couldn't load config file: {filepath} because: {repr(e)}")
+        raise e  # Fail on other errors
+
+
+def make_abspath(relpath, filepath, root=None):
+    if root:
+        return os.path.join(root, relpath)
+    return os.path.abspath(os.path.join(os.path.dirname(filepath), relpath))
+
+
+def load_config_data(
+    cfg_data, filepath=None, workpath=None, autocomplete=True, imported_list={}
+):
+    """
+    Recursive loader that parses a yaml string, handles imports, and runs target factories to create targets.
+    """
+    higher_cfg = yaml.load(cfg_data, Loader=yaml.SafeLoader)
+    higher_cfg["_cfg_file_path"] = filepath
+    lower_cfg = {}
+
+    _LOGGER.debug(f"Loading config data filepath: {filepath}; workpath: {workpath}")
+
+    # Add filepath to targets defined in the current cfg file
+    if "targets" in higher_cfg:
+        for tgt in higher_cfg["targets"]:
+            higher_cfg["targets"][tgt]["_defpath"] = filepath
+            if workpath:
+                higher_cfg["targets"][tgt]["_workpath"] = workpath
+            else:
+                higher_cfg["targets"][tgt]["_workpath"] = filepath
+
+    # Imports
+    if "imports" in higher_cfg and higher_cfg["imports"]:
+        _LOGGER.debug("Found imports")
+        for import_file in higher_cfg["imports"]:
+            import_file_abspath = make_abspath(
+                expandpath(import_file), expandpath(filepath)
+            )
+            if not autocomplete:
+                _LOGGER.info(f"Specified config file to import: {import_file_abspath}")
+            deep_update(
+                lower_cfg,
+                load_config_file(import_file_abspath, expandpath(filepath)),
+                warn_override=not autocomplete,
+            )
+            imported_list[import_file_abspath] = True
+
+    if "imports_relative" in higher_cfg and higher_cfg["imports_relative"]:
+        _LOGGER.debug("Found relative imports")
+        for import_file in higher_cfg["imports_relative"]:
+            import_file_abspath = make_abspath(
+                expandpath(import_file), expandpath(filepath)
+            )
+            if not autocomplete:
+                _LOGGER.info(
+                    f"Specified relative config file to import (relative): {import_file}"
+                )
+            deep_update(
+                lower_cfg,
+                load_config_file(expandpath(import_file_abspath)),
+                warn_override=not autocomplete,
+            )
+            imported_list[import_file_abspath] = True
+
+    deep_update(lower_cfg, higher_cfg, warn_override=not autocomplete)
+
+    # Target factories
+    if "target_factories" in lower_cfg:
+        plugins = load_plugins()
+        _LOGGER.debug(f"Available plugins: {plugins}")
+        for fac in lower_cfg["target_factories"]:
+            fac_name = list(fac.keys())[0]
+            fac_vals = list(fac.values())[0]
+            _LOGGER.debug(f"Processing target factory: {fac_name}")
+            # Look up function to call.
+            func = plugins[fac_name]
+            factory_targets = func(fac_vals, lower_cfg)
+            for k, v in factory_targets.items():
+                factory_targets[k]["_workpath"] = filepath
+                factory_targets[k]["_defpath"] = filepath
+            deep_update(
+                lower_cfg, {"targets": factory_targets}, warn_override=not autocomplete
+            )
+
+    # _LOGGER.debug("Lower cfg: " + str(lower_cfg))
+    return lower_cfg
+
+
+def warn_overriding_target(old, new):
+    if "targets" in old and "targets" in new:
+        for tgt in new["targets"]:
+            if tgt in old["targets"]:
+                _LOGGER.error(f"Overriding target: {tgt}")
+                _LOGGER.error(
+                    "Originally defined in: ".rjust(27, " ")
+                    + f"{old['targets'][tgt]['_defpath']}"
+                )
+                _LOGGER.error(
+                    "Redefined in: ".rjust(27, " ")
+                    + f"{new['targets'][tgt]['_defpath']}"
+                )
+                raise Exception(
+                    "Same target name is defined in imported file. Overriding targets is not allowed."
+                )
+
+
+def deep_update(old, new, warn_override=True):
+    """
+    Like built-in dict update, but recursive.
+    """
+    if warn_override:
+        warn_overriding_target(old, new)
+    for k, v in new.items():
+        if isinstance(v, Mapping):
+            old[k] = deep_update(old.get(k, {}), v)
+        else:
+            old[k] = v
+    return old
+
+
+from .glob_factory import glob_factory
+
+
+def load_plugins():
+    try:
+        # Python 3.10+ has importlib.metadata in stdlib
+        from importlib.metadata import entry_points
+    except ImportError:
+        # Fallback for Python 3.8-3.9
+        from importlib_metadata import entry_points
+
+    built_in_plugins = {"glob": glob_factory}
+
+    # Get entry points for markmeld.factories
+    try:
+        # Python 3.10+ returns SelectableGroups
+        eps = entry_points(group="markmeld.factories")
+    except TypeError:
+        # Python 3.8-3.9 compatibility
+        eps = entry_points().get("markmeld.factories", [])
+    
+    installed_plugins = {
+        ep.name: ep.load() for ep in eps
+    }
+    built_in_plugins.update(installed_plugins)
+    return built_in_plugins
+
+
+def globs_to_dict(globs, cfg_path):
+    """
+    Given some globs, resolve them to the actual files, and return them in a
+    dict that is keyed by the base file name, without extension or parent folders.
+
+    @param globs Iterable[str] List of globs to convert to files.
+    @param cfg_path str Path to configuration file
+    """
+    return_items = {}
+    if not globs:
+        return return_items
+    for item in globs:
+        path = os.path.join(os.path.dirname(cfg_path), item)
+        _LOGGER.info(f"MM | Glob path: {path}")
+        files = glob.glob(path)
+        for file in files:
+            k = os.path.splitext(os.path.basename(file))[0]
+            _LOGGER.info(f"MM | [key:value] {k}:{file}")
+            return_items[k] = file
+    return return_items
+
+
+def get_file_open_cmd() -> str:
+    """
+    Detect the platform markmeld is running on, and
+    return the correct executable to call.
+
+    @return str name of executable
+    """
+    system = platform.system()
+    return FILE_OPENER_MAP.get(system, "xdg-open")
+
+
+# ====================
+# Google Drive Utility Functions
+# ====================
+
+import re
+from pathlib import Path
+from typing import Union
+
+
+def sanitize_filename(filename: str) -> str:
+    """Sanitize a filename by removing/replacing invalid characters."""
+    # Remove invalid characters for filenames
+    invalid_chars = '<>:"/\\|?*'
+    for char in invalid_chars:
+        filename = filename.replace(char, '_')
+    
+    # Remove trailing dots and spaces (Windows compatibility)
+    name_parts = filename.rsplit('.', 1)
+    if len(name_parts) == 2:
+        name, ext = name_parts
+        name = name.rstrip('. ')
+        filename = f"{name}.{ext}" if name else f"file.{ext}"
+    else:
+        filename = filename.rstrip('. ')
+    
+    # Limit length to 255 characters
+    if len(filename) > 255:
+        name_parts = filename.rsplit('.', 1)
+        if len(name_parts) == 2:
+            name, ext = name_parts
+            if len(name) > 251:
+                filename = f"{name[:251]}.{ext}"
+        else:
+            filename = filename[:251]
+    
+    return filename
+
+
+def write_to_file(content: str, output_path: Union[str, Path]) -> None:
+    """Write content to a file."""
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    with open(output_path, 'w', encoding='utf-8') as f:
+        f.write(content)
+
+
+def clean_markdown(markdown_content: str,
+                  clean_escapes: bool = True,
+                  remove_images: bool = True,
+                  strip_heading_bold: bool = True,
+                  replace_svg_with_pdf: bool = True) -> str:
+    """Apply all cleaning operations to markdown content."""
+    if clean_escapes:
+        markdown_content = clean_escape_characters(markdown_content)
+    
+    if remove_images:
+        markdown_content = remove_embedded_images(markdown_content)
+    
+    if strip_heading_bold:
+        markdown_content = strip_bold_from_headings(markdown_content)
+    
+    if replace_svg_with_pdf:
+        markdown_content = replace_svg_extensions(markdown_content)
+    
+    return markdown_content
+
+
+def clean_escape_characters(markdown_content: str) -> str:
+    """Remove escape characters from various markdown elements."""
+    # Handle LaTeX commands first - preserve double backslashes for LaTeX
+    content = markdown_content.replace('\\\\\\', '\\\\')
+    
+    # Remove escapes from various characters
+    content = content.replace('\\[', '[')
+    content = content.replace('\\]', ']')
+    content = content.replace('\\_', '_')
+    content = content.replace('\\!', '!')
+    content = content.replace('\\(', '(')
+    content = content.replace('\\)', ')')
+    content = content.replace('\\`', '`')
+    content = content.replace('\\-', '-')
+    content = content.replace('\\*', '*')
+    
+    # Handle LaTeX commands: remove escape before backslash when followed by alphanumeric
+    content = re.sub(r'\\(\\[a-zA-Z0-9])', r'\1', content)
+    
+    return content
+
+
+def remove_embedded_images(markdown_content: str) -> str:
+    """Remove embedded images and image references from markdown content."""
+    # Remove reference-style image definitions with data URIs
+    content = re.sub(r'\[[^\]]+\]:\s*<data:[^>]*>', '', markdown_content)
+    
+    # Remove markdown image references
+    content = re.sub(r'!\[\]\[[^\]]+\]', '', content)
+    
+    # Clean up extra blank lines
+    content = re.sub(r'\n\n+', '\n\n', content)
+    
+    return content.strip()
+
+
+def strip_bold_from_headings(markdown_content: str) -> str:
+    """Remove bold formatting from markdown headings."""
+    # Pattern matches heading lines with bold markers
+    content = re.sub(r'^(#+)\s+\*\*(.*?)\*\*\s*$', r'\1 \2', markdown_content, flags=re.MULTILINE)
+    
+    # Also handle cases where there might be bold within the heading
+    lines = content.split('\n')
+    cleaned_lines = []
+    for line in lines:
+        if line.strip().startswith('#'):
+            line = line.replace('**', '')
+        cleaned_lines.append(line)
+    
+    return '\n'.join(cleaned_lines)
+
+
+def replace_svg_extensions(markdown_content: str) -> str:
+    """Replace .svg extensions with .pdf in markdown image syntax."""
+    # Pattern to match markdown images with .svg extension
+    pattern = r'!\[([^\]]*)\]\(([^)]+?)(\.svg)\)'
+    
+    # Replace .svg with .pdf
+    content = re.sub(pattern, r'![\1](\2.pdf)', markdown_content)
+    
+    return content

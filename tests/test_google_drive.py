@@ -6,6 +6,7 @@ when the google extras are installed.
 
 import pytest
 import sys
+import unittest
 from unittest.mock import Mock, patch, MagicMock
 import importlib
 
@@ -93,18 +94,11 @@ class TestGoogleDriveProcessorFunctionality:
         # Check for expected methods
         expected_methods = [
             'download_doc',
-            'download_doc_raw',
-            'download_doc_clean',
-            'download_docs_batch',
-            'clean_markdown',
             'process_svg_folder',
             'convert_svg_to_pdf',
             'get_metadata',
             'download_file',
             'list_svg_files',
-            'clean_escape_characters',
-            'remove_embedded_images',
-            'strip_bold_from_headings',
         ]
         
         for method in expected_methods:
@@ -127,29 +121,28 @@ class TestGoogleDriveProcessorFunctionality:
         assert processor.credentials_path == "/fake/path/credentials.json"
         assert str(processor.local_base_dir) == "test_output"
         assert processor.service_account_email == "test@example.com"
-        assert processor.is_ready
     
     def test_clean_markdown_functionality(self):
         """Test markdown cleaning functions work correctly."""
         try:
-            from markmeld import GoogleDriveProcessor
+            from markmeld.utilities import clean_escape_characters, strip_bold_from_headings, remove_embedded_images
         except ImportError:
             pytest.skip("Google dependencies not installed")
         
         # Test escape character cleaning
         test_markdown = "This is \\[escaped\\] and \\_underscore\\_ text"
-        cleaned = GoogleDriveProcessor.clean_escape_characters(test_markdown)
+        cleaned = clean_escape_characters(test_markdown)
         assert cleaned == "This is [escaped] and _underscore_ text"
         
         # Test bold stripping from headings
         test_markdown = "## **Bold Heading**\nNormal text with **bold**"
-        cleaned = GoogleDriveProcessor.strip_bold_from_headings(test_markdown)
+        cleaned = strip_bold_from_headings(test_markdown)
         assert "## Bold Heading" in cleaned
         assert "Normal text with **bold**" in cleaned
         
         # Test embedded image removal
         test_markdown = "Text before\n![][image1]\n[image1]: <data:image/png;base64,abc>\nText after"
-        cleaned = GoogleDriveProcessor.remove_embedded_images(test_markdown)
+        cleaned = remove_embedded_images(test_markdown)
         assert "![][image1]" not in cleaned
         assert "[image1]:" not in cleaned
         assert "Text before" in cleaned
@@ -158,20 +151,20 @@ class TestGoogleDriveProcessorFunctionality:
     def test_sanitize_filename(self):
         """Test filename sanitization."""
         try:
-            from markmeld import GoogleDriveProcessor
+            from markmeld.utilities import sanitize_filename
         except ImportError:
             pytest.skip("Google dependencies not installed")
         
         # Test removal of invalid characters
-        assert GoogleDriveProcessor.sanitize_filename('file<>name.txt') == 'file__name.txt'
-        assert GoogleDriveProcessor.sanitize_filename('path/to/file.txt') == 'path_to_file.txt'
+        assert sanitize_filename('file<>name.txt') == 'file__name.txt'
+        assert sanitize_filename('path/to/file.txt') == 'path_to_file.txt'
         
         # Test preservation of extension
-        assert GoogleDriveProcessor.sanitize_filename('document.md') == 'document.md'
+        assert sanitize_filename('document.md') == 'document.md'
         
         # Test length limiting
         long_name = "a" * 300 + ".txt"
-        sanitized = GoogleDriveProcessor.sanitize_filename(long_name)
+        sanitized = sanitize_filename(long_name)
         assert len(sanitized) <= 255
         assert sanitized.endswith(".txt")
 
@@ -253,15 +246,15 @@ class TestGoogleDriveProcessorMocked:
     def test_download_doc_clean_logic(self):
         """Test the markdown cleaning logic without mocking Google APIs."""
         try:
-            from markmeld import GoogleDriveProcessor
+            from markmeld.utilities import clean_escape_characters
         except ImportError:
             pytest.skip("Google dependencies not installed")
         
-        # Test the cleaning methods directly (static methods)
+        # Test the cleaning methods directly
         raw_content = "# Test\\nContent with \\[escapes\\] and \\*bold\\*"
         
         # Clean escape characters
-        cleaned = GoogleDriveProcessor.clean_escape_characters(raw_content)
+        cleaned = clean_escape_characters(raw_content)
         assert "\\[" not in cleaned
         assert "[escapes]" in cleaned
         assert "*bold*" in cleaned
@@ -286,14 +279,194 @@ class TestGoogleDriveProcessorMocked:
             processor = GoogleDriveProcessor(credentials_path="/fake/credentials.json")
             
             # Test properties
-            assert processor.is_ready
             assert processor.service_account_email == "test@example.com"
+
+
+class TestGoogleDriveCSVFunctionality:
+    """Test CSV file handling functionality in GoogleDriveProcessor."""
+    
+    def test_extract_csv_paths(self):
+        """Test extraction of CSV paths from markdown content."""
+        try:
+            from markmeld import GoogleDriveProcessor
+        except ImportError:
+            pytest.skip("Google dependencies not installed")
+        
+        with patch('markmeld.google_drive.service_account') as mock_sa, \
+             patch('markmeld.google_drive.build') as mock_build:
             
-            # Test info method
-            info = processor.info()
-            assert info['service_account'] == "test@example.com"
-            assert 'capabilities' in info
-            assert 'download_docs' in info['capabilities']
+            # Setup mocks
+            mock_creds = Mock()
+            mock_creds.service_account_email = "test@example.com"
+            mock_sa.Credentials.from_service_account_file.return_value = mock_creds
+            mock_build.return_value = Mock()
+            
+            processor = GoogleDriveProcessor(credentials_path="/fake/credentials.json")
+            
+            # Test content with CSV references
+            markdown_content = """
+            # Document with CSV files
+            
+            Here's a data file: {csv/data.csv}
+            Another one: {csv/subfolder/metrics.csv}
+            
+            Some text with {csv/results.csv} inline.
+            
+            Duplicate reference: {csv/data.csv}
+            """
+            
+            csv_paths = processor.extract_csv_paths(markdown_content)
+            
+            # Should find unique CSV paths
+            assert len(csv_paths) == 3
+            assert 'csv/data.csv' in csv_paths
+            assert 'csv/subfolder/metrics.csv' in csv_paths
+            assert 'csv/results.csv' in csv_paths
+    
+    def test_extract_csv_paths_no_csvs(self):
+        """Test extraction when no CSV files are referenced."""
+        try:
+            from markmeld import GoogleDriveProcessor
+        except ImportError:
+            pytest.skip("Google dependencies not installed")
+        
+        with patch('markmeld.google_drive.service_account') as mock_sa, \
+             patch('markmeld.google_drive.build') as mock_build:
+            
+            # Setup mocks
+            mock_creds = Mock()
+            mock_creds.service_account_email = "test@example.com"
+            mock_sa.Credentials.from_service_account_file.return_value = mock_creds
+            mock_build.return_value = Mock()
+            
+            processor = GoogleDriveProcessor(credentials_path="/fake/credentials.json")
+            
+            # Test content without CSV references
+            markdown_content = """
+            # Document without CSV files
+            
+            Just regular text here.
+            Maybe an image: ![alt](fig/image.png)
+            """
+            
+            csv_paths = processor.extract_csv_paths(markdown_content)
+            
+            # Should find no CSV paths
+            assert len(csv_paths) == 0
+    
+    def test_process_document_csvs_exists(self):
+        """Test that process_document_csvs method exists."""
+        try:
+            from markmeld import GoogleDriveProcessor
+        except ImportError:
+            pytest.skip("Google dependencies not installed")
+        
+        # Check for expected CSV-related methods
+        expected_methods = [
+            'extract_csv_paths',
+            'process_document_csvs',
+            'download_document_csvs',
+            '_process_csv_files'
+        ]
+        
+        for method in expected_methods:
+            assert hasattr(GoogleDriveProcessor, method), f"Missing CSV method: {method}"
+    
+    def test_csv_pattern_matching(self):
+        """Test various CSV reference patterns."""
+        try:
+            from markmeld import GoogleDriveProcessor
+        except ImportError:
+            pytest.skip("Google dependencies not installed")
+        
+        with patch('markmeld.google_drive.service_account') as mock_sa, \
+             patch('markmeld.google_drive.build') as mock_build:
+            
+            # Setup mocks
+            mock_creds = Mock()
+            mock_creds.service_account_email = "test@example.com"
+            mock_sa.Credentials.from_service_account_file.return_value = mock_creds
+            mock_build.return_value = Mock()
+            
+            processor = GoogleDriveProcessor(credentials_path="/fake/credentials.json")
+            
+            # Test various patterns
+            test_cases = [
+                ("{csv/simple.csv}", ['csv/simple.csv']),
+                ("{csv/path/to/file.csv}", ['csv/path/to/file.csv']),
+                ("{csv/file-with-dashes.csv}", ['csv/file-with-dashes.csv']),
+                ("{csv/file_with_underscores.csv}", ['csv/file_with_underscores.csv']),
+                ("{csv/2024_data.csv}", ['csv/2024_data.csv']),
+                # Should not match these
+                ("{notcsv/file.csv}", []),
+                ("{csv/file.txt}", []),
+                ("csv/file.csv", []),  # Missing braces
+                ("{csv/file.csv", []),  # Missing closing brace
+            ]
+            
+            for content, expected in test_cases:
+                result = processor.extract_csv_paths(content)
+                assert result == expected, f"Failed for pattern: {content}"
+
+
+class TestCleanedContentCaching(unittest.TestCase):
+    """Test that cleaned content is cached instead of raw content."""
+    
+    def test_cleaned_content_is_cached(self):
+        """Test that _download_raw_markdown caches cleaned content by default."""
+        try:
+            from markmeld import GoogleDriveProcessor
+        except ImportError:
+            pytest.skip("Google dependencies not installed")
+        
+        with patch('markmeld.google_drive.service_account') as mock_sa, \
+             patch('markmeld.google_drive.build') as mock_build:
+            
+            # Setup mocks
+            mock_creds = Mock()
+            mock_creds.service_account_email = "test@example.com"
+            mock_sa.Credentials.from_service_account_file.return_value = mock_creds
+            
+            mock_drive_service = Mock()
+            mock_files = Mock()
+            mock_drive_service.files.return_value = mock_files
+            mock_build.return_value = mock_drive_service
+            
+            processor = GoogleDriveProcessor(credentials_path="/fake/credentials.json")
+            
+            # Mock the document export with content that needs cleaning
+            raw_content = "# Test\\-Title\n\nContent with \\*escaped\\* characters"
+            cleaned_content = "# Test-Title\n\nContent with *escaped* characters"
+            
+            mock_export = Mock()
+            mock_files.export_media.return_value = mock_export
+            
+            # Mock the download process
+            mock_downloader = Mock()
+            mock_downloader.next_chunk.side_effect = [(Mock(progress=lambda: 1.0), True)]
+            
+            with patch('markmeld.google_drive.MediaIoBaseDownload') as mock_downloader_class:
+                mock_downloader_class.return_value = mock_downloader
+                
+                with patch.object(processor, '_remove_auto_title', return_value=raw_content):
+                    with patch('markmeld.google_drive.io.BytesIO') as mock_io:
+                        mock_file = Mock()
+                        mock_file.read.return_value = raw_content.encode('utf-8')
+                        mock_file.seek = Mock()
+                        mock_io.return_value = mock_file
+                        
+                        # Call _download_raw_markdown with default apply_cleaning=True
+                        result = processor._download_raw_markdown('test_doc_id')
+                        
+                        # Verify that the cached content is cleaned
+                        assert 'test_doc_id' in processor._doc_cache
+                        cached_content = processor._doc_cache['test_doc_id']['content']
+                        
+                        # The cached content should have escape characters cleaned
+                        assert '\\*' not in cached_content
+                        assert '\\-' not in cached_content
+                        assert '*escaped*' in cached_content
+                        assert 'Test-Title' in cached_content
 
 
 # Test runner
