@@ -24,7 +24,10 @@ from typing import Union
 from ubiquerg import expandpath
 
 from .const import PKG_NAME, FILE_OPENER_MAP
+from .filter_manager import list_filters, get_filter_path
 from .glob_factory import glob_factory
+
+
 
 _LOGGER = getLogger(PKG_NAME)
 
@@ -57,7 +60,9 @@ class MyTemplate(StringTemplate):
     """
     delimiter = ""
     idpattern = None
-    braceidpattern = r"[_a-z][_a-z0-9]*"
+    # braceidpattern = r"[_a-z][_a-z0-9]*"
+    braceidpattern = r"[_a-z0-9-][_a-z0-9-]*"  # allow hyphens.
+    # braceidpattern = r"[_a-z][_a-z0-9]*(?:\.[_a-z][_a-z0-9]*)*"  # allows dots, to enable nested variable names
 
 
 def format_command(tgt):
@@ -80,6 +85,11 @@ def format_command(tgt):
         tgt.meta["output_file"] = expandpath(tgt.meta["output_file"]).format(**tgt.meta)
     else:
         tgt.meta["output_file"] = None
+
+    # # Add in custom command keys for embedded lua filters
+    for f in list_filters():
+        _LOGGER.debug(f"Adding filter: {f}")
+        tgt.meta[f"mm-{f}"] = get_filter_path(f)
 
     # Recursively expand variables (up to 5 iterations to prevent infinite loops)
     # This allows for variables to contain variables
