@@ -56,7 +56,17 @@ setup(
         ],
     },
     keywords="bioinformatics, sequencing, ngs",
-    package_data={"refgenie": [os.path.join("refgenie", "*")]},
+    package_data={
+        "markmeld": [
+            "filters/**/*.lua",
+            "filters/**/*.md",
+            "filters/**/*.yaml",
+            "filters/**/*.bib",
+            "filters/**/*.pdf",
+            "autocomplete/*.bash",
+            "config_template.yaml"
+        ]
+    },
     include_package_data=True,
     url="http://markmeld.databio.org",
     author="Nathan Sheffield",

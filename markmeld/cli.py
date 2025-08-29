@@ -10,6 +10,7 @@ from .exceptions import *
 from .melder import MarkdownMelder
 from .utilities import load_config_wrapper, get_file_open_cmd
 from ._version import __version__
+from .filter_manager import list_filters, get_filter_path, validate_filter_name
 
 tpl = """imports: null
 version: 1
@@ -116,6 +117,16 @@ def build_argparser():
         help="Extra key=value variable pairs",
     )
 
+    parser.add_argument(
+        "-f",
+        "--filters",
+        dest="filters",
+        metavar="FILTER",
+        nargs="?",
+        const="__list__",
+        help="List available filters or get path to specific filter",
+    )
+
     return parser
 
 
@@ -129,6 +140,31 @@ def main(test_args=None):
         args.__dict__.update(test_args)
     global _LOGGER
     _LOGGER = logmuse.logger_via_cli(args, make_root=True)
+
+    # Handle filter commands
+    if args.filters is not None:
+        if args.filters == "__list__":
+            # List all available filters
+            filters = list_filters()
+            if filters:
+                _LOGGER.info("Available filters:")
+                for filter_name in filters:
+                    _LOGGER.info(f"  {filter_name}")
+            else:
+                _LOGGER.info("No filters found")
+        else:
+            # Get path to specific filter
+            filter_path = get_filter_path(args.filters)
+            if filter_path:
+                # Just print the path, nothing else
+                print(filter_path)
+            else:
+                _LOGGER.error(f"Filter '{args.filters}' not found")
+                available = list_filters()
+                if available:
+                    _LOGGER.error(f"Available filters: {', '.join(available)}")
+                sys.exit(1)
+        sys.exit(0)
 
     if args.init:
         global tpl
