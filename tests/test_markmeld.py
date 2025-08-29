@@ -38,7 +38,7 @@ def test_cli():
     from markmeld.cli import main
 
     with pytest.raises(SystemExit):
-        main(test_args={"config": "tests/test_data/_markmeld_basic.yaml"})
+        main(test_args={"config": "tests/test_data/_markmeld_basic.yaml", "target": None, "list": True})
 
 
 def test_MarkdownMelder_demo():

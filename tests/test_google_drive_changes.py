@@ -21,11 +21,12 @@ class TestActiveChangesDetection:
         # Mock credentials
         mock_creds_instance = MagicMock()
         mock_creds_instance.service_account_email = "test@example.com"
-        mock_creds.from_service_account_file.return_value = mock_creds_instance
+        mock_creds.from_service_account_info.return_value = mock_creds_instance
         
         # Create processor
+        test_creds = {'type': 'service_account', 'project_id': 'test', 'client_email': 'test@example.com'}
         processor = GoogleDriveProcessor(
-            credentials_path="dummy_path.json",
+            credentials_dict=test_creds,
             save_to_disk=False
         )
         
@@ -65,11 +66,12 @@ class TestActiveChangesDetection:
         # Mock credentials
         mock_creds_instance = MagicMock()
         mock_creds_instance.service_account_email = "test@example.com"
-        mock_creds.from_service_account_file.return_value = mock_creds_instance
+        mock_creds.from_service_account_info.return_value = mock_creds_instance
         
         # Create processor
+        test_creds = {'type': 'service_account', 'project_id': 'test', 'client_email': 'test@example.com'}
         processor = GoogleDriveProcessor(
-            credentials_path="dummy_path.json",
+            credentials_dict=test_creds,
             save_to_disk=False
         )
         
@@ -113,11 +115,12 @@ class TestActiveChangesDetection:
         # Mock credentials
         mock_creds_instance = MagicMock()
         mock_creds_instance.service_account_email = "test@example.com"
-        mock_creds.from_service_account_file.return_value = mock_creds_instance
+        mock_creds.from_service_account_info.return_value = mock_creds_instance
         
         # Create processor
+        test_creds = {'type': 'service_account', 'project_id': 'test', 'client_email': 'test@example.com'}
         processor = GoogleDriveProcessor(
-            credentials_path="dummy_path.json",
+            credentials_dict=test_creds,
             save_to_disk=False
         )
         
@@ -157,11 +160,12 @@ class TestActiveChangesDetection:
         # Mock credentials
         mock_creds_instance = MagicMock()
         mock_creds_instance.service_account_email = "test@example.com"
-        mock_creds.from_service_account_file.return_value = mock_creds_instance
+        mock_creds.from_service_account_info.return_value = mock_creds_instance
         
         # Create processor
+        test_creds = {'type': 'service_account', 'project_id': 'test', 'client_email': 'test@example.com'}
         processor = GoogleDriveProcessor(
-            credentials_path="dummy_path.json",
+            credentials_dict=test_creds,
             save_to_disk=False
         )
         

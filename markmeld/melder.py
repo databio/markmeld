@@ -562,6 +562,72 @@ class MarkdownMelder(object):
         _LOGGER.info(tgt)
         return True
 
+    def preprocess_google_doc(self, tgt):
+        """
+        Preprocess a Google Doc target by fetching the document and figures.
+        Transforms the target's data to use local cached content.
+        
+        Args:
+            tgt: Target object with google-doc type configuration
+            
+        Returns:
+            Modified Target object with local content, or None on failure
+        """
+        try:
+            # Extract Google Doc configuration
+            if "data" not in tgt.meta or "google_docs" not in tgt.meta["data"]:
+                _LOGGER.error("Google Doc target missing 'data.google_docs' configuration")
+                return None
+            
+            google_config = tgt.meta["data"]["google_docs"]
+            doc_id = google_config.get("doc_id") or google_config.get("manuscript")
+            
+            if not doc_id:
+                _LOGGER.error("Google Doc target missing 'doc_id' or 'manuscript' field")
+                return None
+            
+            folder_id = google_config.get("folder_id")
+            
+            # Initialize Google Drive processor (uses cached credentials)
+            from .google_drive import GoogleDriveProcessor
+            gdp = GoogleDriveProcessor()
+            
+            _LOGGER.info(f"MM | Fetching Google Doc: {doc_id}")
+            
+            # Process document and figures
+            if folder_id:
+                # Process figures if folder specified
+                result = gdp.process_document_figures(doc_id, folder_id, skip_unchanged=True)
+                doc_content = result['document']
+            else:
+                # Just fetch document, update paths for any embedded figures
+                doc_content = gdp.download_doc(
+                    doc_id, 
+                    clean=True, 
+                    parse_frontmatter=False,
+                    update_figure_paths=True,
+                    folder_id=folder_id
+                )
+            
+            # Transform target data to use the fetched content
+            tgt.meta["data"] = {
+                "md_content": {
+                    "manuscript": doc_content
+                }
+            }
+            
+            # Remove the type field so it processes as a normal target
+            del tgt.meta["type"]
+            
+            _LOGGER.info("MM | Google Doc preprocessing complete")
+            return tgt
+            
+        except Exception as e:
+            _LOGGER.error(f"Error preprocessing Google Doc: {e}")
+            import traceback
+            _LOGGER.debug(traceback.format_exc())
+            return None
+
     def build_target(self, target_name, print_only=False, vardump=False, report=True):
         """
         @return [False|tgt] if the
@@ -570,6 +636,14 @@ class MarkdownMelder(object):
         _LOGGER.info(
             f"MM | Building target: {tgt.target_name} from file {tgt.meta['_cfg_file_path']}"
         )
+
+        # Check for Google Doc type and preprocess if needed
+        if "type" in tgt.meta and tgt.meta["type"] == "google-doc":
+            _LOGGER.info("MM | Processing Google Doc target...")
+            tgt = self.preprocess_google_doc(tgt)
+            if not tgt:
+                _LOGGER.error("Failed to preprocess Google Doc target")
+                return tgt
 
         # First, run any pre-builds
         prebuild_results = self.build_side_targets(tgt, "prebuild")

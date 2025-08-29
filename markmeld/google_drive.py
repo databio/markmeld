@@ -12,12 +12,11 @@ import json
 import logging
 import os
 import re
-import subprocess
 import tempfile
 
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Dict, Any, Union, List
+from typing import Optional, Dict, Any, Union, List, Tuple
 from functools import wraps
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
@@ -33,6 +32,10 @@ from .utilities import (
     strip_bold_from_headings,
     replace_svg_extensions
 )
+
+# Import cache manager and figure converter
+from .cloud_cache_manager import CloudCacheManager
+from .figure_converter import FigureConverter
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(message)s')
@@ -64,7 +67,7 @@ class GoogleDriveProcessor:
     def __init__(self, 
                  credentials_path: Optional[str] = None,
                  credentials_dict: Optional[Dict[str, Any]] = None,
-                 local_base_dir: str = "fig",
+                 cache_root: Union[str, Path] = ".cache",
                  scopes: Optional[List[str]] = None,
                  save_to_disk: bool = True):
         """
@@ -73,7 +76,7 @@ class GoogleDriveProcessor:
         Args:
             credentials_path: Path to the service account credentials JSON file
             credentials_dict: Dictionary containing service account credentials
-            local_base_dir: Base directory for all local output
+            cache_root: Root directory for the centralized cache (default: ".cache")
             scopes: List of Google API scopes
             save_to_disk: Whether to save downloaded documents to disk
             
@@ -149,11 +152,16 @@ class GoogleDriveProcessor:
         
         # Store initialization parameters
         self.scopes = scopes
-        self.local_base_dir = Path(local_base_dir)
         self.save_to_disk = save_to_disk
+        
+        # Initialize cache manager
+        self.cache_manager = CloudCacheManager(cache_root)
         
         # Initialize drive service
         self.drive_service = build('drive', 'v3', credentials=self.credentials)
+        
+        # Initialize figure converter
+        self.figure_converter = FigureConverter(self.cache_manager, self.drive_service)
         
         # Get service account email
         try:
@@ -199,35 +207,10 @@ class GoogleDriveProcessor:
             f"  type={self._credentials_info.get('type', 'unknown')},\n"
             f"  project_id={self._credentials_info.get('project_id', 'unknown')},\n"
             f"  client_email={self._credentials_info.get('client_email', 'unknown')},\n"
-            f"  local_base_dir={self.local_base_dir},\n"
+            f"  cache_root={self.cache_manager.cache_root},\n"
             f"  save_to_disk={self.save_to_disk}\n"
             f")"
         )
-    
-    # ====================
-    # Properties with lazy directory creation
-    # ====================
-    
-    @property
-    def docs_dir(self) -> Path:
-        """Get docs directory, creating it if needed."""
-        docs_dir = self.local_base_dir / "docs"
-        docs_dir.mkdir(parents=True, exist_ok=True)
-        return docs_dir
-    
-    @property
-    def pdf_dir(self) -> Path:
-        """Get PDF directory, creating it if needed."""
-        pdf_dir = self.local_base_dir / "pdf"
-        pdf_dir.mkdir(parents=True, exist_ok=True)
-        return pdf_dir
-    
-    @property
-    def digest_dir(self) -> Path:
-        """Get digest directory, creating it if needed."""
-        digest_dir = self.local_base_dir / "digest"
-        digest_dir.mkdir(parents=True, exist_ok=True)
-        return digest_dir
     
     # ====================
     # Core Download and Processing
@@ -553,14 +536,14 @@ class GoogleDriveProcessor:
     
     def _get_doc_path(self, doc_id: str) -> Path:
         """Get the full path where a document would be saved on disk."""
-        return self.docs_dir / self._get_doc_filename(doc_id)
+        return self.cache_manager.get_cache_path(doc_id, 'docs', self._get_doc_filename(doc_id))
     
     def _load_from_disk(self, doc_id: str) -> Optional[str]:
         """Try to load a document from disk cache."""
         if not self.save_to_disk:
             return None
         
-        doc_path = self._get_doc_path(doc_id)
+        doc_path = self.cache_manager.get_cache_path(doc_id, 'docs', self._get_doc_filename(doc_id))
         if doc_path.exists():
             try:
                 content = doc_path.read_text(encoding='utf-8')
@@ -623,224 +606,51 @@ class GoogleDriveProcessor:
     # SVG Processing
     # ====================
     
-    def process_svg_folder(self, folder_id: str, skip_unchanged: bool = True) -> Dict[str, Any]:
-        """Process all SVG files in a Google Drive folder, converting to local PDFs."""
-        logger.info(f"Processing SVG files from Google Drive folder: {folder_id}")
-        logger.info(f"PDFs will be saved to: {self.pdf_dir}")
-        
-        # List SVG files from Drive
-        svg_files = self.list_svg_files(folder_id)
-        
-        results = {
-            'processed': [],
-            'skipped': [],
-            'failed': [],
-            'stats': {
-                'total_svgs': len(svg_files),
-                'converted': 0,
-                'skipped': 0,
-                'failed': 0
-            }
-        }
-        
-        for svg_file in svg_files:
-            file_id = svg_file['id']
-            file_name = svg_file['name']
-            remote_digest = svg_file.get('md5Checksum', '')
-            
-            logger.info(f"Processing: {file_name}")
-            
-            try:
-                # Check if unchanged
-                if skip_unchanged:
-                    local_digest = self.load_local_digest(file_name)
-                    
-                    if local_digest == remote_digest and local_digest:
-                        pdf_name = os.path.splitext(file_name)[0] + '.pdf'
-                        pdf_path = self.pdf_dir / pdf_name
-                        logger.info(f"  Skipping (unchanged): {file_name} -> {pdf_path}")
-                        results['skipped'].append(file_name)
-                        results['stats']['skipped'] += 1
-                        continue
-                
-                # Download SVG to temp location
-                svg_path = Path(tempfile.mktemp(suffix='.svg'))
-                self.download_file(file_id, str(svg_path))
-                
-                try:
-                    # Convert to PDF
-                    pdf_name = os.path.splitext(file_name)[0] + '.pdf'
-                    pdf_path = self.pdf_dir / pdf_name
-                    
-                    success, error_msg = self.convert_svg_to_pdf(str(svg_path), str(pdf_path))
-                    
-                    if success:
-                        # Save digest
-                        if skip_unchanged:
-                            self.save_local_digest(file_name, remote_digest)
-                        
-                        logger.info(f"  Converted: {file_name} -> {pdf_path}")
-                        results['processed'].append(file_name)
-                        results['stats']['converted'] += 1
-                    else:
-                        logger.error(f"  Failed to convert: {file_name}")
-                        logger.error(f"    Error: {error_msg}")
-                        results['failed'].append({
-                            'file': file_name,
-                            'error': error_msg
-                        })
-                        results['stats']['failed'] += 1
-                finally:
-                    # Clean up SVG file
-                    if svg_path.exists():
-                        svg_path.unlink()
-                        
-            except Exception as e:
-                error_msg = f"{type(e).__name__}: {str(e)}"
-                logger.error(f"  Error processing {file_name}: {error_msg}")
-                results['failed'].append({
-                    'file': file_name,
-                    'error': error_msg
-                })
-                results['stats']['failed'] += 1
-        
-        return results
-    
-    def list_svg_files(self, folder_id: str) -> List[Dict[str, Any]]:
-        """List all SVG files in a Google Drive folder."""
-        svg_files = []
-        page_token = None
-        
-        while True:
-            response = self.drive_service.files().list(
-                q=f"'{folder_id}' in parents and mimeType='image/svg+xml' and trashed=false",
-                fields="nextPageToken, files(id, name, md5Checksum, modifiedTime)",
-                pageToken=page_token
-            ).execute()
-            
-            svg_files.extend(response.get('files', []))
-            page_token = response.get('nextPageToken')
-            
-            if not page_token:
-                break
-        
-        return svg_files
-    
-    def convert_svg_to_pdf(self, svg_path: str, pdf_path: str) -> tuple[bool, str]:
-        """Convert SVG to PDF using Inkscape."""
-        try:
-            # Check if input file exists
-            if not os.path.exists(svg_path):
-                error_msg = f"Input SVG file does not exist: {svg_path}"
-                return False, error_msg
-            
-            # Run Inkscape conversion
-            cmd = [
-                self.inkscape_command,
-                "--batch-process",
-                "--export-type=pdf",
-                f"--export-filename={pdf_path}",
-                svg_path
-            ]
-            
-            logger.info(f"  Running: {' '.join(cmd)}")
-            
-            # Set environment to avoid X11/DBus issues
-            env = os.environ.copy()
-            env['DISPLAY'] = ''
-            
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=60,
-                env=env
-            )
-            
-            # Check return code and if PDF was created
-            if result.returncode != 0:
-                error_msg = f"Inkscape returned non-zero exit code {result.returncode}. Error: {result.stderr.strip() if result.stderr else result.stdout.strip()}"
-                return False, error_msg
-            
-            if not os.path.exists(pdf_path):
-                error_msg = f"PDF file was not created at {pdf_path}. Output: {result.stderr.strip() if result.stderr else result.stdout.strip()}"
-                return False, error_msg
-            
-            return True, ""
-            
-        except subprocess.TimeoutExpired:
-            return False, "Inkscape conversion timed out after 60 seconds"
-        except FileNotFoundError:
-            return False, f"Inkscape not found: '{self.inkscape_command}'"
-        except Exception as e:
-            return False, f"Unexpected error: {type(e).__name__}: {str(e)}"
-    
+    # Legacy SVG folder processing methods removed - use process_document_figures instead
     # ====================
     # Digest Management (path-based only)
     # ====================
     
-    def load_local_digest(self, file_identifier: str) -> Optional[str]:
+    def load_local_digest(self, file_identifier: str, doc_id: str) -> Optional[str]:
         """
         Load stored digest from local filesystem.
-        Automatically handles path structure based on whether file_identifier contains paths.
+        Delegates to CloudCacheManager.
+        
+        Args:
+            file_identifier: The file identifier/path
+            doc_id: Document ID for cache context
         """
-        # Create digest path that mirrors the original structure
-        digest_path = Path(file_identifier).with_suffix('.digest')
-        digest_file = self.digest_dir / digest_path
-        
-        if digest_file.exists():
-            try:
-                return digest_file.read_text().strip()
-            except Exception as e:
-                logger.error(f"Error reading digest file {digest_file}: {str(e)}")
-                return None
-        
-        return None
+        return self.cache_manager.load_digest(doc_id, file_identifier)
     
-    def save_local_digest(self, file_identifier: str, digest: str):
+    def save_local_digest(self, file_identifier: str, digest: str, doc_id: str):
         """
         Save digest to local filesystem.
-        Automatically handles path structure based on whether file_identifier contains paths.
-        """
-        # Create digest path that mirrors the original structure
-        digest_path = Path(file_identifier).with_suffix('.digest')
-        digest_file = self.digest_dir / digest_path
+        Delegates to CloudCacheManager.
         
-        try:
-            # Create parent directories if needed
-            digest_file.parent.mkdir(parents=True, exist_ok=True)
-            digest_file.write_text(digest)
-        except Exception as e:
-            logger.error(f"Error saving digest file {digest_file}: {str(e)}")
+        Args:
+            file_identifier: The file identifier/path
+            digest: The digest to save
+            doc_id: Document ID for cache context
+        """
+        self.cache_manager.save_digest(doc_id, file_identifier, digest)
     
     # ====================
     # Document-Driven Figure Processing
     # ====================
     
-    def extract_figure_paths(self, markdown_content: str) -> List[str]:
-        """Extract all figure paths from markdown content."""
-        # Find markdown images: ![alt](path)
-        inline_pattern = r'!\[[^\]]*\]\(([^)]+)\)'
-        
-        # Find reference-style images: [ref]: path
-        ref_pattern = r'^\[[^\]]+\]:\s*(.+)$'
-        
-        paths = []
-        paths.extend(re.findall(inline_pattern, markdown_content))
-        paths.extend(re.findall(ref_pattern, markdown_content, re.MULTILINE))
-        
-        # Filter out URLs and data URIs, keep only local paths
-        local_paths = [p for p in paths if not p.startswith(('http://', 'https://', 'data:'))]
-        
-        # Remove duplicates while preserving order
-        seen = set()
-        unique_paths = []
-        for path in local_paths:
-            if path not in seen:
-                seen.add(path)
-                unique_paths.append(path)
-        
-        return unique_paths
+    def parse_figure_parameters(self, param_string: str) -> dict:
+        """
+        Parse figure parameters from markdown syntax.
+        Delegates to FigureConverter.
+        """
+        return self.figure_converter.parse_figure_parameters(param_string)
+    
+    def extract_figure_paths(self, markdown_content: str) -> List[Tuple[str, Dict[str, Any]]]:
+        """
+        Extract all figure paths and their parameters from markdown content.
+        Delegates to FigureConverter.
+        """
+        return self.figure_converter.extract_figure_paths(markdown_content)
     
     def extract_csv_paths(self, markdown_content: str) -> List[str]:
         """Extract all CSV file paths from markdown content using {csv/...} syntax."""
@@ -877,15 +687,23 @@ class GoogleDriveProcessor:
     
     def process_document_figures(self, doc_id: str, folder_id: Optional[str] = None, 
                                 skip_unchanged: bool = True) -> Dict[str, Any]:
-        """Process only figures referenced in the document."""
+        """
+        Process all figures referenced in the document including SVG, CSV, and Google Sheets.
+        
+        This method processes:
+        - SVG files -> PDF conversion
+        - CSV files -> PDF table conversion
+        - Google Sheets -> PDF table conversion
+        - PDF files -> direct download
+        """
         logger.info(f"Processing figures for document: {doc_id}")
         
         # Download and read the document (with cleaning to remove embedded images)
         doc_content = self.download_doc(doc_id, clean=True, parse_frontmatter=False, update_figure_paths=False)
         
-        # Extract figure paths
-        figure_paths = self.extract_figure_paths(doc_content)
-        logger.info(f"Found {len(figure_paths)} figure references in document")
+        # Extract figure paths with parameters
+        figure_data = self.extract_figure_paths(doc_content)
+        logger.info(f"Found {len(figure_data)} figure references in document")
         
         # If no folder_id provided, try to find the parent folder of the document
         if not folder_id:
@@ -895,34 +713,55 @@ class GoogleDriveProcessor:
                 if parents:
                     folder_id = parents[0]
                     logger.info(f"Using document's parent folder: {folder_id}")
+                    
+                    # Save folder_id to document metadata for future use
+                    self.cache_manager.save_metadata(doc_id, {
+                        'doc_id': doc_id,
+                        'folder_id': folder_id,
+                        'doc_name': doc_metadata.get('name', 'Unknown')
+                    })
                 else:
                     logger.warning("No parent folder found for document")
             except Exception as e:
                 logger.error(f"Error getting document parent folder: {e}")
         
+        # Prepare list of just paths for batch fetching
+        figure_paths = [path for path, _ in figure_data]
+        
         # Optimize API calls by pre-fetching file metadata for all referenced folders
         folder_file_cache = self._batch_fetch_folder_metadata(figure_paths, folder_id)
         
-        # Process each figure path
+        # Process each figure with its parameters
         results = {'processed': [], 'skipped': [], 'failed': [], 'mapping': {}}
         
-        # Create converted directory structure
-        converted_dir = Path('converted')
-        converted_dir.mkdir(parents=True, exist_ok=True)
-        
-        for fig_path in figure_paths:
+        for fig_path, params in figure_data:
             logger.info(f"Processing: {fig_path}")
             
-            # Check if it's a PDF file
-            is_pdf = fig_path.endswith('.pdf')
-            is_svg = fig_path.endswith('.svg')
+            # Determine figure type
+            figure_type = self.figure_converter.get_figure_type(fig_path)
             
-            # Skip if neither SVG nor PDF
-            if not is_svg and not is_pdf:
-                logger.info(f"  Skipping unsupported file type: {fig_path}")
+            # Skip unknown types
+            if figure_type == 'unknown':
+                logger.info(f"  Skipping unknown file type: {fig_path}")
                 continue
             
-            # Try to find the file in the cached metadata
+            # For Google Sheets, we don't need to find them in Drive folder
+            if figure_type == 'sheet':
+                # Use FigureConverter for Google Sheets
+                converted_path = self.figure_converter.convert_figure(
+                    fig_path, params, doc_id, None
+                )
+                
+                if converted_path:
+                    logger.info(f"  Converted: {fig_path} -> {converted_path}")
+                    results['processed'].append(fig_path)
+                    results['mapping'][fig_path] = converted_path
+                else:
+                    logger.error(f"  Failed to convert Google Sheet")
+                    results['failed'].append(fig_path)
+                continue
+            
+            # Try to find the file in the cached metadata (for non-Sheet files)
             file_info = None
             if folder_id:
                 file_info = self._find_file_in_cache(fig_path, folder_file_cache)
@@ -932,70 +771,112 @@ class GoogleDriveProcessor:
                 results['failed'].append(fig_path)
                 continue
             
-            # Get digest from cached metadata (no additional API call needed!)
-            remote_digest = file_info.get('md5Checksum', '')
+            # For PDF files, just download directly
+            if figure_type == 'pdf':
+                try:
+                    output_path = Path(fig_path)
+                    output_path.parent.mkdir(parents=True, exist_ok=True)
+                    self.download_file(file_info['id'], str(output_path))
+                    logger.info(f"  Downloaded: {fig_path}")
+                    results['processed'].append(fig_path)
+                    # No path mapping needed for PDFs
+                except Exception as e:
+                    logger.error(f"  Error downloading PDF: {e}")
+                    results['failed'].append(fig_path)
+                continue
             
-            # Create output path structure
-            if is_svg:
-                # For SVG files, create path in converted directory with .pdf extension
-                pdf_path = fig_path.replace('.svg', '.pdf')
-                output_path = converted_dir / pdf_path
-            else:
-                # For PDF files, mirror the original path structure
-                output_path = Path(fig_path)
-            
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            
-            # Check if we should skip unchanged files
-            if skip_unchanged and remote_digest:
-                local_digest = self.load_local_digest(fig_path)
-                if local_digest == remote_digest and output_path.exists():
-                    logger.info(f"  Skipping (unchanged): {fig_path}")
+            # For SVG and CSV files, need to download first then convert
+            try:
+                # Check if conversion is needed first (before downloading)
+                output_path = self.figure_converter.get_output_path(fig_path, doc_id, figure_type)
+                
+                # Check cache before downloading
+                if not self.figure_converter.needs_conversion(fig_path, doc_id, output_path, file_info, params):
+                    logger.info(f"  Using cached: {output_path}")
                     results['skipped'].append(fig_path)
                     results['mapping'][fig_path] = str(output_path)
                     continue
-            
-            # Download and process
-            try:
-                if is_svg:
-                    # For SVG: download to a local temp file in the output directory
-                    # This ensures we have write access and avoids Docker /tmp issues
-                    temp_dir = output_path.parent
-                    temp_dir.mkdir(parents=True, exist_ok=True)
+                
+                # Determine source file (cached or need to download)
+                source_file = None
+                
+                if figure_type == 'csv':
+                    # For CSV, check if we have a cached copy
+                    cached_csv_path = self.cache_manager.get_cache_path(doc_id, 'csv', fig_path)
                     
-                    # Create a unique temp filename in the local directory
-                    temp_svg = temp_dir / f".temp_{Path(fig_path).stem}_{os.getpid()}.svg"
+                    # Check if cached CSV exists and is current
+                    if cached_csv_path.exists() and file_info and 'md5Checksum' in file_info:
+                        stored_digest = self.figure_converter._load_digest(fig_path, doc_id, 'file')
+                        if stored_digest == file_info['md5Checksum']:
+                            logger.info(f"  Using cached CSV: {cached_csv_path}")
+                            source_file = cached_csv_path
                     
-                    self.download_file(file_info['id'], str(temp_svg))
-                    
-                    # Convert to PDF
-                    success, error_msg = self.convert_svg_to_pdf(str(temp_svg), str(output_path))
-                    
-                    # Clean up temp file
-                    if temp_svg.exists():
-                        temp_svg.unlink()
-                    
-                    if success:
-                        logger.info(f"  Converted: {fig_path} -> {output_path}")
-                        results['processed'].append(fig_path)
-                        results['mapping'][fig_path] = str(output_path)
-                        
-                        # Save digest
-                        if skip_unchanged and remote_digest:
-                            self.save_local_digest(fig_path, remote_digest)
-                    else:
-                        logger.error(f"  Failed to convert: {error_msg}")
-                        results['failed'].append(fig_path)
+                    if not source_file:
+                        # Need to download CSV
+                        logger.info(f"  Downloading CSV: {fig_path}")
+                        self.download_file(file_info['id'], str(cached_csv_path))
+                        source_file = cached_csv_path
+                        # Save file digest after download
+                        if file_info and 'md5Checksum' in file_info:
+                            self.figure_converter.save_digest(fig_path, file_info['md5Checksum'], doc_id, 'file')
+                
+                elif figure_type == 'svg':
+                    # For SVG, use temp file (SVGs are typically smaller and don't benefit as much from caching)
+                    temp_dir = self.cache_manager.get_cache_dir(doc_id, 'converted')
+                    temp_file = temp_dir / f".temp_{Path(fig_path).stem}_{os.getpid()}.svg"
+                    self.download_file(file_info['id'], str(temp_file))
+                    source_file = temp_file
                 else:
-                    # For PDF: download directly to target location
-                    self.download_file(file_info['id'], str(output_path))
-                    logger.info(f"  Downloaded: {fig_path} -> {output_path}")
-                    results['processed'].append(fig_path)
-                    # No path mapping needed for PDFs - they keep the same path
+                    # Other types
+                    temp_dir = self.cache_manager.get_cache_dir(doc_id, 'converted')
+                    temp_file = temp_dir / f".temp_{Path(fig_path).stem}_{os.getpid()}"
+                    self.download_file(file_info['id'], str(temp_file))
+                    source_file = temp_file
+                
+                # Convert using the source file
+                if figure_type == 'svg':
+                    # For SVG, convert directly
+                    success = self.figure_converter.convert_svg(str(source_file), output_path)
+                    if success:
+                        converted_path = str(output_path)
+                        # Save digest for original path
+                        if file_info and 'md5Checksum' in file_info:
+                            self.figure_converter.save_digest(fig_path, file_info['md5Checksum'], doc_id)
+                    else:
+                        converted_path = None
                     
-                    # Save digest
-                    if skip_unchanged and remote_digest:
-                        self.save_local_digest(fig_path, remote_digest)
+                    # Clean up temp SVG file
+                    if source_file.name.startswith('.temp_') and source_file.exists():
+                        source_file.unlink()
+                        
+                elif figure_type == 'csv':
+                    # For CSV, convert with parameters
+                    success = self.figure_converter.convert_csv(str(source_file), output_path, params)
+                    if success:
+                        converted_path = str(output_path)
+                        # Note: File digest already saved after download if needed
+                        # Save parameter digest (even if empty)
+                        params_to_save = params if params is not None else {}
+                        params_digest = self.figure_converter.compute_params_digest(params_to_save)
+                        self.figure_converter.save_digest(fig_path, params_digest, doc_id, 'params')
+                    else:
+                        converted_path = None
+                    # CSV files are cached, not deleted
+                    
+                else:
+                    converted_path = None
+                    # Clean up other temp files
+                    if source_file and source_file.name.startswith('.temp_') and source_file.exists():
+                        source_file.unlink()
+                
+                if converted_path:
+                    logger.info(f"  Converted: {fig_path} -> {converted_path}")
+                    results['processed'].append(fig_path)
+                    # Map original path to converted path
+                    results['mapping'][fig_path] = converted_path
+                else:
+                    logger.error(f"  Failed to convert {figure_type} file")
+                    results['failed'].append(fig_path)
                     
             except Exception as e:
                 logger.error(f"  Error processing {fig_path}: {str(e)[:200]}")
@@ -1040,6 +921,13 @@ class GoogleDriveProcessor:
                 if parents:
                     folder_id = parents[0]
                     logger.info(f"Using document's parent folder: {folder_id}")
+                    
+                    # Save folder_id to document metadata for future use
+                    self.cache_manager.save_metadata(doc_id, {
+                        'doc_id': doc_id,
+                        'folder_id': folder_id,
+                        'doc_name': doc_metadata.get('name', 'Unknown')
+                    })
                 else:
                     logger.warning("No parent folder found for document")
             except Exception as e:
@@ -1048,8 +936,8 @@ class GoogleDriveProcessor:
         # Batch fetch metadata
         folder_cache = self._batch_fetch_folder_metadata([], folder_id, csv_paths=csv_paths)
         
-        # Process CSVs
-        results = self._process_csv_files(csv_paths, folder_cache, skip_unchanged)
+        # Process CSVs with doc_id for cache context
+        results = self._process_csv_files(csv_paths, folder_cache, skip_unchanged, doc_id)
         
         # Summary
         logger.info(f"\n=== CSV Processing Complete ===")
@@ -1063,7 +951,7 @@ class GoogleDriveProcessor:
         }
     
     def _process_csv_files(self, csv_paths: List[str], folder_file_cache: Dict, 
-                          skip_unchanged: bool = True) -> Dict[str, Any]:
+                          skip_unchanged: bool = True, doc_id: str = None) -> Dict[str, Any]:
         """Process CSV files referenced in the document."""
         results = {'processed': [], 'skipped': [], 'failed': []}
         
@@ -1078,14 +966,17 @@ class GoogleDriveProcessor:
                 results['failed'].append(csv_path)
                 continue
             
-            # Create local path structure
-            local_path = Path(csv_path)
-            local_path.parent.mkdir(parents=True, exist_ok=True)
+            # Create local path structure using cache manager
+            if doc_id:
+                local_path = self.cache_manager.get_cache_path(doc_id, 'csv', csv_path)
+            else:
+                local_path = Path(csv_path)
+                local_path.parent.mkdir(parents=True, exist_ok=True)
             
             # Check if unchanged (using digest)
             remote_digest = file_info.get('md5Checksum', '')
             if skip_unchanged and remote_digest:
-                local_digest = self.load_local_digest(csv_path)
+                local_digest = self.load_local_digest(csv_path, doc_id) if doc_id else self.load_local_digest(csv_path, 'default')
                 if local_digest == remote_digest and local_path.exists():
                     logger.info(f"  Skipping (unchanged): {csv_path}")
                     results['skipped'].append(csv_path)
@@ -1099,7 +990,7 @@ class GoogleDriveProcessor:
                 
                 # Save digest for future cache checks
                 if skip_unchanged and remote_digest:
-                    self.save_local_digest(csv_path, remote_digest)
+                    self.save_local_digest(csv_path, remote_digest, doc_id) if doc_id else self.save_local_digest(csv_path, remote_digest, 'default')
                     
             except Exception as e:
                 logger.error(f"  Error downloading {csv_path}: {str(e)}")
@@ -1258,9 +1149,28 @@ class GoogleDriveProcessor:
             return None
     
     def _update_figure_paths(self, markdown_content: str, path_mapping: Dict[str, str]) -> str:
-        """Replace figure paths in document with converted paths."""
+        """Replace figure paths in document with converted paths and strip parameters."""
         updated = markdown_content
         
+        # First, handle paths with parameters - strip the parameters
+        # Pattern to match figure references with parameters
+        param_pattern = r'(!\[[^\]]*\]\()([^)]+)(\))(\{[^}]*\})'
+        
+        def replace_with_mapping(match):
+            prefix = match.group(1)  # ![alt](
+            path = match.group(2)     # the path
+            suffix = match.group(3)   # )
+            # Parameters in group(4) are ignored (stripped)
+            
+            # Check if this path has a mapping
+            if path in path_mapping:
+                return f"{prefix}{path_mapping[path]}{suffix}"
+            return f"{prefix}{path}{suffix}"
+        
+        # Replace figures with parameters
+        updated = re.sub(param_pattern, replace_with_mapping, updated)
+        
+        # Then handle regular path replacements for paths without parameters
         for old_path, new_path in path_mapping.items():
             # Replace in both inline and reference style images
             updated = updated.replace(f']({old_path})', f']({new_path})')

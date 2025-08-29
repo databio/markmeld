@@ -1,0 +1,40 @@
+# Example configuration for Google Doc targets
+# This demonstrates how to use Google Docs as manuscript sources with markmeld
+
+targets:
+  # Basic Google Doc target - just the document
+  basic:
+    type: google-doc
+    jinja_template: ../demo/md_template.jinja
+    output_file: "{today}_google_doc_output.pdf"
+    data:
+      google_docs:
+        doc_id: "YOUR_GOOGLE_DOC_ID_HERE"  # Replace with actual Google Doc ID
+  
+  # Google Doc with figures from Drive folder
+  with_figures:
+    type: google-doc
+    jinja_template: ../demo/md_template.jinja
+    output_file: "{today}_google_doc_with_figures.pdf"
+    data:
+      google_docs:
+        doc_id: "YOUR_GOOGLE_DOC_ID_HERE"  # Replace with actual Google Doc ID
+        folder_id: "YOUR_FOLDER_ID_HERE"   # Optional: folder containing figures
+  
+  # Alternative field name (manuscript instead of doc_id)
+  manuscript:
+    type: google-doc
+    jinja_template: ../demo/md_template.jinja
+    output_file: "{today}_manuscript.pdf"
+    data:
+      google_docs:
+        manuscript: "YOUR_GOOGLE_DOC_ID_HERE"  # Can use 'manuscript' instead of 'doc_id'
+        folder_id: "YOUR_FOLDER_ID_HERE"       # Optional
+
+# Notes:
+# 1. The 'type: google-doc' tells markmeld to fetch content from Google Drive
+# 2. Document and figures are automatically cached for faster subsequent builds
+# 3. SVG figures are automatically converted to PDF
+# 4. Set MM_GOOGLE_DRIVE_CREDENTIALS environment variable to your service account credentials
+#    (can be either a path to JSON file or the JSON content itself)
+# 5. After preprocessing, the target behaves like a normal markmeld target

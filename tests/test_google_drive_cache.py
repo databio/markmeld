@@ -18,7 +18,7 @@ except ImportError:
 class TestGoogleDriveCache:
     """Test the cache functionality of GoogleDriveProcessor."""
     
-    @patch('markmeld.google_drive.service_account.Credentials.from_service_account_file')
+    @patch('markmeld.google_drive.service_account.Credentials.from_service_account_info')
     @patch('markmeld.google_drive.build')
     def test_cache_initialization(self, mock_build, mock_creds):
         """Test that cache is properly initialized."""
@@ -26,7 +26,7 @@ class TestGoogleDriveCache:
         mock_creds.return_value = MagicMock(service_account_email="test@example.com")
         mock_build.return_value = MagicMock()
         
-        processor = GoogleDriveProcessor(credentials_path="fake_path.json")
+        processor = GoogleDriveProcessor(credentials_dict={'type': 'service_account', 'project_id': 'test', 'client_email': 'test@example.com'})
         
         assert hasattr(processor, '_doc_cache')
         assert hasattr(processor, '_cache_hits')
@@ -35,14 +35,14 @@ class TestGoogleDriveCache:
         assert processor._cache_hits == 0
         assert processor._cache_misses == 0
     
-    @patch('markmeld.google_drive.service_account.Credentials.from_service_account_file')
+    @patch('markmeld.google_drive.service_account.Credentials.from_service_account_info')
     @patch('markmeld.google_drive.build')
     def test_cache_stats_empty(self, mock_build, mock_creds):
         """Test cache stats with empty cache."""
         mock_creds.return_value = MagicMock(service_account_email="test@example.com")
         mock_build.return_value = MagicMock()
         
-        processor = GoogleDriveProcessor(credentials_path="fake_path.json")
+        processor = GoogleDriveProcessor(credentials_dict={'type': 'service_account', 'project_id': 'test', 'client_email': 'test@example.com'})
         stats = processor.get_cache_stats()
         
         assert stats['size'] == 0
@@ -51,7 +51,7 @@ class TestGoogleDriveCache:
         assert stats['hit_rate'] == 0.0
         assert stats['cached_docs'] == []
     
-    @patch('markmeld.google_drive.service_account.Credentials.from_service_account_file')
+    @patch('markmeld.google_drive.service_account.Credentials.from_service_account_info')
     @patch('markmeld.google_drive.build')
     @patch('markmeld.google_drive.MediaIoBaseDownload')
     def test_cache_miss_and_hit(self, mock_downloader_class, mock_build, mock_creds):
@@ -70,7 +70,7 @@ class TestGoogleDriveCache:
         mock_request = MagicMock()
         mock_service.files().export_media.return_value = mock_request
         
-        processor = GoogleDriveProcessor(credentials_path="fake_path.json")
+        processor = GoogleDriveProcessor(credentials_dict={'type': 'service_account', 'project_id': 'test', 'client_email': 'test@example.com'})
         
         # Mock get_metadata
         processor.get_metadata = MagicMock(return_value={
@@ -102,7 +102,7 @@ class TestGoogleDriveCache:
         assert stats['hit_rate'] == 0.5
         assert content1 == content2
     
-    @patch('markmeld.google_drive.service_account.Credentials.from_service_account_file')
+    @patch('markmeld.google_drive.service_account.Credentials.from_service_account_info')
     @patch('markmeld.google_drive.build')
     @patch('markmeld.google_drive.MediaIoBaseDownload')
     def test_cache_invalidation_on_modification(self, mock_downloader_class, mock_build, mock_creds):
@@ -118,7 +118,7 @@ class TestGoogleDriveCache:
         mock_request = MagicMock()
         mock_service.files().export_media.return_value = mock_request
         
-        processor = GoogleDriveProcessor(credentials_path="fake_path.json")
+        processor = GoogleDriveProcessor(credentials_dict={'type': 'service_account', 'project_id': 'test', 'client_email': 'test@example.com'})
         
         # Initial metadata
         processor.get_metadata = MagicMock(return_value={
@@ -156,14 +156,14 @@ class TestGoogleDriveCache:
         assert stats['misses'] >= 1  # At least one cache miss
         assert stats['hits'] == 0  # No cache hits since metadata changed
     
-    @patch('markmeld.google_drive.service_account.Credentials.from_service_account_file')
+    @patch('markmeld.google_drive.service_account.Credentials.from_service_account_info')
     @patch('markmeld.google_drive.build')
     def test_clear_cache(self, mock_build, mock_creds):
         """Test clearing cache functionality."""
         mock_creds.return_value = MagicMock(service_account_email="test@example.com")
         mock_build.return_value = MagicMock()
         
-        processor = GoogleDriveProcessor(credentials_path="fake_path.json")
+        processor = GoogleDriveProcessor(credentials_dict={'type': 'service_account', 'project_id': 'test', 'client_email': 'test@example.com'})
         
         # Manually add items to cache
         processor._doc_cache['doc1'] = {'content': 'content1', 'metadata': {}}
@@ -181,7 +181,7 @@ class TestGoogleDriveCache:
         processor.clear_cache()
         assert len(processor._doc_cache) == 0
     
-    @patch('markmeld.google_drive.service_account.Credentials.from_service_account_file')
+    @patch('markmeld.google_drive.service_account.Credentials.from_service_account_info')
     @patch('markmeld.google_drive.build')
     @patch('markmeld.google_drive.MediaIoBaseDownload')
     def test_preload_cache(self, mock_downloader_class, mock_build, mock_creds):
@@ -197,7 +197,7 @@ class TestGoogleDriveCache:
         mock_request = MagicMock()
         mock_service.files().export_media.return_value = mock_request
         
-        processor = GoogleDriveProcessor(credentials_path="fake_path.json")
+        processor = GoogleDriveProcessor(credentials_dict={'type': 'service_account', 'project_id': 'test', 'client_email': 'test@example.com'})
         processor.get_metadata = MagicMock(return_value={
             'modifiedTime': '2024-01-01T10:00:00Z'
         })

@@ -94,11 +94,11 @@ class TestGoogleDriveProcessorFunctionality:
         # Check for expected methods
         expected_methods = [
             'download_doc',
-            'process_svg_folder',
-            'convert_svg_to_pdf',
+            'process_document_figures',  # Replaced process_svg_folder
+            'process_document_assets',   # Modern document-driven processing
             'get_metadata',
             'download_file',
-            'list_svg_files',
+            'extract_figure_paths',      # Figure extraction from markdown
         ]
         
         for method in expected_methods:
@@ -111,15 +111,24 @@ class TestGoogleDriveProcessorFunctionality:
         except ImportError:
             pytest.skip("Google dependencies not installed")
         
-        # Initialize with test credentials
+        # Mock credentials from dict
+        mock_google_deps['service_account'].Credentials.from_service_account_info.return_value = mock_google_deps['credentials']
+        
+        # Initialize with test credentials dict
+        test_creds = {
+            'type': 'service_account',
+            'project_id': 'test-project',
+            'client_email': 'test@example.com'
+        }
+        
         processor = GoogleDriveProcessor(
-            credentials_path="/fake/path/credentials.json",
-            local_base_dir="test_output"
+            credentials_dict=test_creds,
+            cache_root="test_cache"
         )
         
         # Verify initialization
-        assert processor.credentials_path == "/fake/path/credentials.json"
-        assert str(processor.local_base_dir) == "test_output"
+        assert processor.credentials_path is None  # No path when using dict
+        assert str(processor.cache_manager.cache_root) == "test_cache"
         assert processor.service_account_email == "test@example.com"
     
     def test_clean_markdown_functionality(self):
@@ -272,11 +281,12 @@ class TestGoogleDriveProcessorMocked:
             # Setup mocks
             mock_creds = Mock()
             mock_creds.service_account_email = "test@example.com"
-            mock_sa.Credentials.from_service_account_file.return_value = mock_creds
+            mock_sa.Credentials.from_service_account_info.return_value = mock_creds
             mock_build.return_value = Mock()
             
             # Create processor
-            processor = GoogleDriveProcessor(credentials_path="/fake/credentials.json")
+            test_creds = {'type': 'service_account', 'project_id': 'test', 'client_email': 'test@example.com'}
+            processor = GoogleDriveProcessor(credentials_dict=test_creds)
             
             # Test properties
             assert processor.service_account_email == "test@example.com"
@@ -298,10 +308,11 @@ class TestGoogleDriveCSVFunctionality:
             # Setup mocks
             mock_creds = Mock()
             mock_creds.service_account_email = "test@example.com"
-            mock_sa.Credentials.from_service_account_file.return_value = mock_creds
+            mock_sa.Credentials.from_service_account_info.return_value = mock_creds
             mock_build.return_value = Mock()
             
-            processor = GoogleDriveProcessor(credentials_path="/fake/credentials.json")
+            test_creds = {'type': 'service_account', 'project_id': 'test', 'client_email': 'test@example.com'}
+            processor = GoogleDriveProcessor(credentials_dict=test_creds)
             
             # Test content with CSV references
             markdown_content = """
@@ -336,10 +347,11 @@ class TestGoogleDriveCSVFunctionality:
             # Setup mocks
             mock_creds = Mock()
             mock_creds.service_account_email = "test@example.com"
-            mock_sa.Credentials.from_service_account_file.return_value = mock_creds
+            mock_sa.Credentials.from_service_account_info.return_value = mock_creds
             mock_build.return_value = Mock()
             
-            processor = GoogleDriveProcessor(credentials_path="/fake/credentials.json")
+            test_creds = {'type': 'service_account', 'project_id': 'test', 'client_email': 'test@example.com'}
+            processor = GoogleDriveProcessor(credentials_dict=test_creds)
             
             # Test content without CSV references
             markdown_content = """
@@ -385,10 +397,11 @@ class TestGoogleDriveCSVFunctionality:
             # Setup mocks
             mock_creds = Mock()
             mock_creds.service_account_email = "test@example.com"
-            mock_sa.Credentials.from_service_account_file.return_value = mock_creds
+            mock_sa.Credentials.from_service_account_info.return_value = mock_creds
             mock_build.return_value = Mock()
             
-            processor = GoogleDriveProcessor(credentials_path="/fake/credentials.json")
+            test_creds = {'type': 'service_account', 'project_id': 'test', 'client_email': 'test@example.com'}
+            processor = GoogleDriveProcessor(credentials_dict=test_creds)
             
             # Test various patterns
             test_cases = [
@@ -425,14 +438,15 @@ class TestCleanedContentCaching(unittest.TestCase):
             # Setup mocks
             mock_creds = Mock()
             mock_creds.service_account_email = "test@example.com"
-            mock_sa.Credentials.from_service_account_file.return_value = mock_creds
+            mock_sa.Credentials.from_service_account_info.return_value = mock_creds
             
             mock_drive_service = Mock()
             mock_files = Mock()
             mock_drive_service.files.return_value = mock_files
             mock_build.return_value = mock_drive_service
             
-            processor = GoogleDriveProcessor(credentials_path="/fake/credentials.json")
+            test_creds = {'type': 'service_account', 'project_id': 'test', 'client_email': 'test@example.com'}
+            processor = GoogleDriveProcessor(credentials_dict=test_creds)
             
             # Mock the document export with content that needs cleaning
             raw_content = "# Test\\-Title\n\nContent with \\*escaped\\* characters"
