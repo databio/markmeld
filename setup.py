@@ -63,6 +63,8 @@ setup(
             "filters/**/*.yaml",
             "filters/**/*.bib",
             "filters/**/*.pdf",
+            "templates/**/*.jinja",
+            "csl/*.csl",
             "autocomplete/*.bash",
             "config_template.yaml"
         ]

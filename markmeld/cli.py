@@ -10,7 +10,7 @@ from .exceptions import *
 from .melder import MarkdownMelder
 from .utilities import load_config_wrapper, get_file_open_cmd
 from ._version import __version__
-from .filter_manager import list_filters, get_filter_path, validate_filter_name
+from .resource_manager import list_filters, get_filter_path
 
 tpl = """imports: null
 version: 1
@@ -127,6 +127,28 @@ def build_argparser():
         help="List available filters or get path to specific filter",
     )
 
+    # Cache management flags for Google Doc targets
+    parser.add_argument(
+        "--clear-cache",
+        action="store_true",
+        default=False,
+        help="Clear cached Google Docs before building (for google-doc targets)",
+    )
+
+    parser.add_argument(
+        "--force-refresh",
+        action="store_true",
+        default=False,
+        help="Force refresh from Google Drive, bypassing cache (for google-doc targets)",
+    )
+
+    parser.add_argument(
+        "--cache-status",
+        action="store_true",
+        default=False,
+        help="Show cache status for google-doc targets",
+    )
+
     return parser
 
 
@@ -219,6 +241,62 @@ def main(test_args=None):
 
     _LOGGER.debug("Melding...")  # Meld it!
     mm = MarkdownMelder(cfg)
+
+    # Handle cache management for Google Doc targets
+    if args.cache_status or args.clear_cache or args.force_refresh:
+        from .melder import Target
+        from .const import TARGET_TYPE_KEY, GOOGLE_DOC_TARGET_TYPE
+        
+        # Check if target is a google-doc type
+        if args.target:
+            tgt = Target(mm.cfg, args.target)
+            if TARGET_TYPE_KEY in tgt.meta and tgt.meta[TARGET_TYPE_KEY] == GOOGLE_DOC_TARGET_TYPE:
+                from .cloud_cache_manager import CloudCacheManager
+                from .google_drive import GoogleDriveProcessor
+                
+                # Get doc_id from target configuration
+                if "data" in tgt.meta and "google_docs" in tgt.meta["data"]:
+                    google_config = tgt.meta["data"]["google_docs"]
+                    doc_id = google_config.get("doc_id") or google_config.get("manuscript")
+                    
+                    if doc_id:
+                        cache_manager = CloudCacheManager()
+                        
+                        if args.cache_status:
+                            # Show cache status
+                            cache_dir = cache_manager.get_cache_dir(doc_id, 'docs')
+                            if cache_dir.exists():
+                                _LOGGER.info(f"Cache exists for document {doc_id}")
+                                _LOGGER.info(f"Cache location: {cache_dir}")
+                                # Check for cached files
+                                cached_files = list(cache_dir.glob("*.md"))
+                                if cached_files:
+                                    _LOGGER.info(f"Cached documents: {len(cached_files)}")
+                                    for f in cached_files:
+                                        _LOGGER.info(f"  - {f.name}")
+                            else:
+                                _LOGGER.info(f"No cache found for document {doc_id}")
+                            sys.exit(0)
+                        
+                        if args.clear_cache:
+                            # Clear cache for this document
+                            _LOGGER.info(f"Clearing cache for document {doc_id}")
+                            doc_cache_root = cache_manager.cache_root / doc_id
+                            if doc_cache_root.exists():
+                                import shutil
+                                shutil.rmtree(doc_cache_root)
+                                _LOGGER.info("Cache cleared successfully")
+                            else:
+                                _LOGGER.info("No cache to clear")
+                        
+                        if args.force_refresh:
+                            # Set flag to bypass cache
+                            _LOGGER.info("Force refresh enabled - will bypass cache")
+                            # This will be handled in preprocess_google_doc
+                            tgt.meta["force_refresh"] = True
+            else:
+                if args.cache_status or args.clear_cache or args.force_refresh:
+                    _LOGGER.warning("Cache management flags only work with google-doc targets")
 
     if args.explain:
         explained_target = mm.describe_target(args.target)

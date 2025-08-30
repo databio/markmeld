@@ -24,7 +24,6 @@ from typing import Union
 from ubiquerg import expandpath
 
 from .const import PKG_NAME, FILE_OPENER_MAP
-from .filter_manager import list_filters, get_filter_path
 from .glob_factory import glob_factory
 
 
@@ -86,10 +85,11 @@ def format_command(tgt):
     else:
         tgt.meta["output_file"] = None
 
-    # # Add in custom command keys for embedded lua filters
-    for f in list_filters():
-        _LOGGER.debug(f"Adding filter: {f}")
-        tgt.meta[f"mm-{f}"] = get_filter_path(f)
+    # Add in custom command keys for all embedded resources
+    # (Note: These should already be injected during Target initialization,
+    # but we ensure they're present here for backward compatibility)
+    from .resource_manager import inject_resource_variables
+    tgt.meta = inject_resource_variables(tgt.meta)
 
     # Recursively expand variables (up to 5 iterations to prevent infinite loops)
     # This allows for variables to contain variables

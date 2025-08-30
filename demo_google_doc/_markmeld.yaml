@@ -33,8 +33,13 @@ targets:
 
 # Notes:
 # 1. The 'type: google-doc' tells markmeld to fetch content from Google Drive
+#    (uses TARGET_TYPE_KEY: GOOGLE_DOC_TARGET_TYPE internally)
 # 2. Document and figures are automatically cached for faster subsequent builds
 # 3. SVG figures are automatically converted to PDF
 # 4. Set MM_GOOGLE_DRIVE_CREDENTIALS environment variable to your service account credentials
 #    (can be either a path to JSON file or the JSON content itself)
 # 5. After preprocessing, the target behaves like a normal markmeld target
+# 6. Use CLI flags for cache management:
+#    --clear-cache: Clear cached documents before building
+#    --force-refresh: Force download from Google Drive, bypassing cache
+#    --cache-status: Show cache information for the target

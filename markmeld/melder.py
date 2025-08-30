@@ -17,7 +17,7 @@ from logging import getLogger
 from ubiquerg import expandpath
 from ubiquerg import is_url
 
-from .const import PKG_NAME
+from .const import PKG_NAME, GOOGLE_DOCS_KEY, TARGET_TYPE_KEY, GOOGLE_DOC_TARGET_TYPE
 from .exceptions import *
 from .utilities import *
 from .api_handler import APIHandler
@@ -347,7 +347,18 @@ def load_template(cfg: str) -> Template:
 
     jinja_tpl = None
     root = cfg["mm_templates"] if "mm_templates" in cfg else None
-    jinja_tpl = make_abspath(cfg["jinja_template"], cfg["_cfg_file_path"], root)
+    
+    # Substitute variables in jinja_template path
+    jinja_template_raw = cfg["jinja_template"]
+    from .utilities import MyTemplate
+    jinja_template_substituted = MyTemplate(jinja_template_raw).safe_substitute(**cfg)
+    
+    # If it's an absolute path after substitution, use it directly
+    # Otherwise, make it absolute relative to the config file
+    if os.path.isabs(jinja_template_substituted):
+        jinja_tpl = jinja_template_substituted
+    else:
+        jinja_tpl = make_abspath(jinja_template_substituted, cfg["_cfg_file_path"], root)
     _LOGGER.info(f"MM | jinja template: {jinja_tpl}")
     # # if os.path.isfile(cfg["md_template"]):
     # #     jinja_tpl = cfg["md_template"]
@@ -449,6 +460,10 @@ class Target(object):
                 options_array.append('--output "{output_file}"')
             options = " ".join(options_array)
             meta["command"] = f"pandoc {options}"
+
+        # Inject embedded resource variables (filters, templates, CSL files)
+        from .resource_manager import inject_resource_variables
+        meta = inject_resource_variables(meta)
 
         _LOGGER.debug(f"meta: {meta}")
         self.meta = meta
@@ -575,11 +590,11 @@ class MarkdownMelder(object):
         """
         try:
             # Extract Google Doc configuration
-            if "data" not in tgt.meta or "google_docs" not in tgt.meta["data"]:
-                _LOGGER.error("Google Doc target missing 'data.google_docs' configuration")
+            if "data" not in tgt.meta or GOOGLE_DOCS_KEY not in tgt.meta["data"]:
+                _LOGGER.error(f"Google Doc target missing 'data.{GOOGLE_DOCS_KEY}' configuration")
                 return None
             
-            google_config = tgt.meta["data"]["google_docs"]
+            google_config = tgt.meta["data"][GOOGLE_DOCS_KEY]
             doc_id = google_config.get("doc_id") or google_config.get("manuscript")
             
             if not doc_id:
@@ -587,6 +602,7 @@ class MarkdownMelder(object):
                 return None
             
             folder_id = google_config.get("folder_id")
+            force_refresh = tgt.meta.get("force_refresh", False)
             
             # Initialize Google Drive processor (uses cached credentials)
             from .google_drive import GoogleDriveProcessor
@@ -597,7 +613,12 @@ class MarkdownMelder(object):
             # Process document and figures
             if folder_id:
                 # Process figures if folder specified
-                result = gdp.process_document_figures(doc_id, folder_id, skip_unchanged=True)
+                result = gdp.process_document_figures(
+                    doc_id, 
+                    folder_id, 
+                    skip_unchanged=(not force_refresh),
+                    force_refresh=force_refresh
+                )
                 doc_content = result['document']
             else:
                 # Just fetch document, update paths for any embedded figures
@@ -606,7 +627,8 @@ class MarkdownMelder(object):
                     clean=True, 
                     parse_frontmatter=False,
                     update_figure_paths=True,
-                    folder_id=folder_id
+                    folder_id=folder_id,
+                    force_refresh=force_refresh
                 )
             
             # Transform target data to use the fetched content
@@ -617,7 +639,7 @@ class MarkdownMelder(object):
             }
             
             # Remove the type field so it processes as a normal target
-            del tgt.meta["type"]
+            del tgt.meta[TARGET_TYPE_KEY]
             
             _LOGGER.info("MM | Google Doc preprocessing complete")
             return tgt
@@ -638,7 +660,7 @@ class MarkdownMelder(object):
         )
 
         # Check for Google Doc type and preprocess if needed
-        if "type" in tgt.meta and tgt.meta["type"] == "google-doc":
+        if TARGET_TYPE_KEY in tgt.meta and tgt.meta[TARGET_TYPE_KEY] == GOOGLE_DOC_TARGET_TYPE:
             _LOGGER.info("MM | Processing Google Doc target...")
             tgt = self.preprocess_google_doc(tgt)
             if not tgt:
