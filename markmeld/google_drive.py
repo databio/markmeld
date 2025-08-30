@@ -61,7 +61,7 @@ class GoogleDriveProcessor:
     Provides functionality for:
     - Downloading Google Docs and converting them to clean markdown
     - Processing SVG files from Google Drive and converting them to PDFs
-    - In-memory caching of Google Docs to avoid redundant downloads
+    - Disk caching of Google Docs to avoid redundant downloads
     """
     
     def __init__(self, 
@@ -172,11 +172,6 @@ class GoogleDriveProcessor:
         # SVG processing configuration
         self.inkscape_command = "inkscape"
         
-        # Initialize document cache
-        self._doc_cache = {}
-        self._cache_hits = 0
-        self._cache_misses = 0
-        
         # Log credentials information
         self._log_credentials_info()
     
@@ -281,35 +276,16 @@ class GoogleDriveProcessor:
     def _download_raw_markdown(self, doc_id: str, skip_disk_save: bool = False, apply_cleaning: bool = True) -> str:
         """
         Internal method to download markdown from Google Drive.
-        Includes in-memory and disk caching support.
-        Now caches cleaned content by default instead of raw content.
+        Includes disk caching support.
+        Caches cleaned content by default instead of raw content.
         """
-        # Check in-memory cache first
-        if self._is_doc_cached(doc_id):
-            self._cache_hits += 1
-            logger.info(f"Memory cache hit for document {doc_id}")
-            # Don't save to disk when retrieving from memory cache
-            return self._doc_cache[doc_id]['content']
-        
         # Check disk cache if enabled
         disk_content = self._load_from_disk(doc_id)
         if disk_content is not None:
-            # Add to memory cache for faster subsequent access
-            metadata = self.get_metadata(doc_id)
-            self._doc_cache[doc_id] = {
-                'content': disk_content,
-                'metadata': {
-                    'modifiedTime': metadata.get('modifiedTime'),
-                    'md5Checksum': metadata.get('md5Checksum'),
-                },
-                'cached_at': datetime.now(),
-                'loaded_from_disk': True
-            }
             return disk_content
         
-        # Cache miss - download the document
-        self._cache_misses += 1
-        logger.info(f"Cache miss for document {doc_id} - downloading from Google Drive...")
+        # Need to download from Google Drive (either not cached or cache is outdated)
+        logger.info(f"Downloading document {doc_id} from Google Drive...")
         
         # Check for active changes before downloading
         self._check_for_active_changes(doc_id)
@@ -342,18 +318,6 @@ class GoogleDriveProcessor:
             content = clean_markdown(content)
             logger.info(f"Applied cleaning to document {doc_id} before caching")
         
-        # Cache the document (now cleaned by default)
-        metadata = self.get_metadata(doc_id)
-        self._doc_cache[doc_id] = {
-            'content': content,
-            'metadata': {
-                'modifiedTime': metadata.get('modifiedTime'),
-                'md5Checksum': metadata.get('md5Checksum'),
-            },
-            'cached_at': datetime.now(),
-            'loaded_from_disk': False
-        }
-        
         # Save to disk if enabled
         if not skip_disk_save and self.save_to_disk:
             self._save_to_disk(doc_id, content, is_cleaned=apply_cleaning)
@@ -381,25 +345,6 @@ class GoogleDriveProcessor:
         
         return content
     
-    def _is_doc_cached(self, doc_id: str) -> bool:
-        """Check if document is in cache and still valid."""
-        if doc_id not in self._doc_cache:
-            return False
-        
-        # Get current metadata
-        current_metadata = self.get_metadata(doc_id)
-        cached_metadata = self._doc_cache[doc_id]['metadata']
-        
-        # Compare modified time (primary check)
-        if current_metadata.get('modifiedTime') != cached_metadata.get('modifiedTime'):
-            return False
-        
-        # If md5 available, use as secondary validation
-        if 'md5Checksum' in current_metadata and 'md5Checksum' in cached_metadata:
-            if current_metadata['md5Checksum'] != cached_metadata['md5Checksum']:
-                return False
-        
-        return True
     
     def _check_for_active_changes(self, doc_id: str):
         """
@@ -484,39 +429,6 @@ class GoogleDriveProcessor:
             logger.debug(f"Could not check for active changes: {e}")
     
     # ====================
-    # Cache Management
-    # ====================
-    
-    def clear_cache(self, doc_id: Optional[str] = None):
-        """Clear the document cache."""
-        if doc_id:
-            self._doc_cache.pop(doc_id, None)
-            logger.info(f"Cleared cache for document {doc_id}")
-        else:
-            self._doc_cache.clear()
-            logger.info("Cleared entire document cache")
-    
-    def get_cache_stats(self) -> Dict[str, Any]:
-        """Get cache statistics."""
-        return {
-            'size': len(self._doc_cache),
-            'hits': self._cache_hits,
-            'misses': self._cache_misses,
-            'hit_rate': self._cache_hits / max(1, self._cache_hits + self._cache_misses),
-            'cached_docs': list(self._doc_cache.keys())
-        }
-    
-    def preload_cache(self, doc_ids: List[str]):
-        """Preload multiple documents into cache."""
-        logger.info(f"Preloading {len(doc_ids)} documents into cache...")
-        for doc_id in doc_ids:
-            try:
-                self._download_raw_markdown(doc_id)
-                logger.info(f"  Preloaded: {doc_id}")
-            except Exception as e:
-                logger.error(f"  Failed to preload {doc_id}: {e}")
-    
-    # ====================
     # Disk Cache Operations
     # ====================
     
@@ -556,16 +468,27 @@ class GoogleDriveProcessor:
                     # Check if file has our metadata comment
                     if content.startswith("<!-- gdrive-modified:") and google_modified:
                         first_line = content.split('\n')[0]
-                        if f"gdrive-modified: {google_modified}" in first_line:
-                            logger.info(f"Loading from disk cache: {doc_path}")
-                            # Remove the metadata comment before returning
-                            lines = content.split('\n')
-                            if lines[0].startswith("<!-- gdrive-modified:"):
-                                content = '\n'.join(lines[1:])
-                                if content.startswith('\n'):
-                                    content = content[1:]
-                            return content
-                except:
+                        # Extract cached modification time from comment
+                        if "gdrive-modified:" in first_line:
+                            import re
+                            match = re.search(r'gdrive-modified:\s*([^\s]+)', first_line)
+                            if match:
+                                cached_modified = match.group(1)
+                                logger.debug(f"Cached modified time: {cached_modified}")
+                                logger.debug(f"Google modified time: {google_modified}")
+                                if cached_modified == google_modified:
+                                    logger.info(f"Loading from disk cache (unchanged): {doc_path}")
+                                    # Remove the metadata comment before returning
+                                    lines = content.split('\n')
+                                    if lines[0].startswith("<!-- gdrive-modified:"):
+                                        content = '\n'.join(lines[1:])
+                                        if content.startswith('\n'):
+                                            content = content[1:]
+                                    return content
+                                else:
+                                    logger.info(f"Document has been modified on Google Drive, cache is outdated")
+                except Exception as e:
+                    logger.debug(f"Error checking metadata: {e}")
                     pass
                 
                 # If we can't verify, return None to trigger re-download
@@ -795,6 +718,7 @@ class GoogleDriveProcessor:
                     logger.info(f"  Using cached: {output_path}")
                     results['skipped'].append(fig_path)
                     results['mapping'][fig_path] = str(output_path)
+                    logger.info(f"  Added to mapping: {fig_path} -> {str(output_path)}")
                     continue
                 
                 # Determine source file (cached or need to download)
@@ -802,7 +726,9 @@ class GoogleDriveProcessor:
                 
                 if figure_type == 'csv':
                     # For CSV, check if we have a cached copy
-                    cached_csv_path = self.cache_manager.get_cache_path(doc_id, 'csv', fig_path)
+                    # Remove 'csv/' prefix from path since we're already in csv subdirectory
+                    csv_filename = fig_path.replace('csv/', '') if fig_path.startswith('csv/') else fig_path
+                    cached_csv_path = self.cache_manager.get_cache_path(doc_id, 'csv', csv_filename)
                     
                     # Check if cached CSV exists and is current
                     if cached_csv_path.exists() and file_info and 'md5Checksum' in file_info:
@@ -816,16 +742,30 @@ class GoogleDriveProcessor:
                         logger.info(f"  Downloading CSV: {fig_path}")
                         self.download_file(file_info['id'], str(cached_csv_path))
                         source_file = cached_csv_path
-                        # Save file digest after download
-                        if file_info and 'md5Checksum' in file_info:
-                            self.figure_converter.save_digest(fig_path, file_info['md5Checksum'], doc_id, 'file')
+                        # Don't save digest here - convert_figure will handle it
                 
                 elif figure_type == 'svg':
-                    # For SVG, use temp file (SVGs are typically smaller and don't benefit as much from caching)
-                    temp_dir = self.cache_manager.get_cache_dir(doc_id, 'converted')
-                    temp_file = temp_dir / f".temp_{Path(fig_path).stem}_{os.getpid()}.svg"
-                    self.download_file(file_info['id'], str(temp_file))
-                    source_file = temp_file
+                    # For SVG, cache the file like CSV
+                    # Remove 'fig/' prefix from path since we're already in fig subdirectory
+                    svg_filename = fig_path.replace('fig/', '') if fig_path.startswith('fig/') else fig_path
+                    cached_svg_path = self.cache_manager.get_cache_path(doc_id, 'fig', svg_filename)
+                    
+                    # Check if cached SVG exists and is current
+                    if cached_svg_path.exists() and file_info and 'md5Checksum' in file_info:
+                        stored_digest = self.figure_converter._load_digest(fig_path, doc_id, 'file')
+                        if stored_digest == file_info['md5Checksum']:
+                            logger.info(f"  Using cached SVG: {cached_svg_path}")
+                            source_file = cached_svg_path
+                        else:
+                            # Need to download SVG
+                            logger.info(f"  Downloading SVG: {fig_path}")
+                            self.download_file(file_info['id'], str(cached_svg_path))
+                            source_file = cached_svg_path
+                    else:
+                        # Need to download SVG
+                        logger.info(f"  Downloading SVG: {fig_path}")
+                        self.download_file(file_info['id'], str(cached_svg_path))
+                        source_file = cached_svg_path
                 else:
                     # Other types
                     temp_dir = self.cache_manager.get_cache_dir(doc_id, 'converted')
@@ -841,26 +781,17 @@ class GoogleDriveProcessor:
                         converted_path = str(output_path)
                         # Save digest for original path
                         if file_info and 'md5Checksum' in file_info:
-                            self.figure_converter.save_digest(fig_path, file_info['md5Checksum'], doc_id)
+                            self.figure_converter.save_digest(fig_path, file_info['md5Checksum'], doc_id, 'file')
                     else:
                         converted_path = None
-                    
-                    # Clean up temp SVG file
-                    if source_file.name.startswith('.temp_') and source_file.exists():
-                        source_file.unlink()
+                    # SVG files are cached, not deleted
                         
                 elif figure_type == 'csv':
-                    # For CSV, convert with parameters
-                    success = self.figure_converter.convert_csv(str(source_file), output_path, params)
-                    if success:
-                        converted_path = str(output_path)
-                        # Note: File digest already saved after download if needed
-                        # Save parameter digest (even if empty)
-                        params_to_save = params if params is not None else {}
-                        params_digest = self.figure_converter.compute_params_digest(params_to_save)
-                        self.figure_converter.save_digest(fig_path, params_digest, doc_id, 'params')
-                    else:
-                        converted_path = None
+                    # For CSV, use convert_figure which handles digest saving properly
+                    # Pass original fig_path for digest operations
+                    converted_path = self.figure_converter.convert_figure(
+                        str(source_file), params, doc_id, file_info, original_path=fig_path
+                    )
                     # CSV files are cached, not deleted
                     
                 else:
@@ -883,7 +814,18 @@ class GoogleDriveProcessor:
                 results['failed'].append(fig_path)
         
         # Update document with new paths (this replaces .svg with converted .pdf paths)
+        logger.info(f"DEBUG: Mapping has {len(results['mapping'])} entries:")
+        for old_p, new_p in results['mapping'].items():
+            logger.info(f"  {old_p} -> {new_p}")
         updated_content = self._update_figure_paths(doc_content, results['mapping'])
+        
+        # Check if replacement worked
+        import re
+        remaining_svgs = re.findall(r'[^)]+\.svg\)', updated_content)
+        if remaining_svgs:
+            logger.warning(f"WARNING: {len(remaining_svgs)} SVG paths remain after replacement!")
+            for svg in remaining_svgs[:5]:  # Show first 5
+                logger.warning(f"  Still has: {svg}")
         
         # Summary
         logger.info(f"\n=== Figure Processing Complete ===")
@@ -1149,10 +1091,11 @@ class GoogleDriveProcessor:
             return None
     
     def _update_figure_paths(self, markdown_content: str, path_mapping: Dict[str, str]) -> str:
-        """Replace figure paths in document with converted paths and strip parameters."""
+        """Replace figure paths in document with converted paths while preserving parameters."""
+        logger.debug(f"_update_figure_paths called with {len(path_mapping)} mappings")
         updated = markdown_content
         
-        # First, handle paths with parameters - strip the parameters
+        # First, handle paths with parameters - preserve the parameters
         # Pattern to match figure references with parameters
         param_pattern = r'(!\[[^\]]*\]\()([^)]+)(\))(\{[^}]*\})'
         
@@ -1160,12 +1103,12 @@ class GoogleDriveProcessor:
             prefix = match.group(1)  # ![alt](
             path = match.group(2)     # the path
             suffix = match.group(3)   # )
-            # Parameters in group(4) are ignored (stripped)
+            params = match.group(4)   # {parameters} - now preserved
             
             # Check if this path has a mapping
             if path in path_mapping:
-                return f"{prefix}{path_mapping[path]}{suffix}"
-            return f"{prefix}{path}{suffix}"
+                return f"{prefix}{path_mapping[path]}{suffix}{params}"
+            return f"{prefix}{path}{suffix}{params}"
         
         # Replace figures with parameters
         updated = re.sub(param_pattern, replace_with_mapping, updated)

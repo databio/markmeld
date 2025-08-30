@@ -42,7 +42,8 @@ class CloudCacheManager:
         'converted': 'converted',  # Modern: document-referenced figures
         'pdf': 'pdf',             # Legacy: bulk SVG folder processing
         'digest': 'digest',       # MD5 checksums for tracking changes
-        'csv': 'csv'              # CSV data files
+        'csv': 'csv',             # CSV data files
+        'fig': 'fig'              # Cached figure source files (SVG, etc.)
     }
     
     def __init__(self, cache_root: Union[str, Path] = ".cache", create_dirs: bool = True):
@@ -300,7 +301,8 @@ class CloudCacheManager:
             The digest string or None if not found
         """
         # Create digest path that mirrors the original structure
-        digest_path = Path(file_identifier).with_suffix('.digest')
+        # Don't use with_suffix as it replaces the last suffix, which breaks .params files
+        digest_path = Path(str(file_identifier) + '.digest')
         digest_file = self.get_cache_path(doc_id, 'digest', digest_path)
         
         if digest_file.exists():
@@ -323,11 +325,13 @@ class CloudCacheManager:
             digest: The digest to save
         """
         # Create digest path that mirrors the original structure
-        digest_path = Path(file_identifier).with_suffix('.digest')
+        # Don't use with_suffix as it replaces the last suffix, which breaks .params files
+        digest_path = Path(str(file_identifier) + '.digest')
         digest_file = self.get_cache_path(doc_id, 'digest', digest_path)
         
         try:
             # Parent directories are created automatically by get_cache_path
             digest_file.write_text(digest)
+            logger.debug(f"Saved digest to {digest_file}: {digest}")
         except Exception as e:
             logger.error(f"Error saving digest file {digest_file}: {str(e)}")

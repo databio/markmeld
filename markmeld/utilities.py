@@ -526,12 +526,12 @@ def check_and_fix_latex_incompatible_chars(markdown_content: str) -> str:
         '−': '-',           # U+2212 MINUS SIGN → hyphen-minus
         ''': "'",           # U+2019 RIGHT SINGLE QUOTATION MARK → apostrophe
         ''': "'",           # U+2018 LEFT SINGLE QUOTATION MARK → apostrophe
-        '"': '"',           # U+201C LEFT DOUBLE QUOTATION MARK → quotation mark
-        '"': '"',           # U+201D RIGHT DOUBLE QUOTATION MARK → quotation mark
+        '\u201C': '"',           # U+201C LEFT DOUBLE QUOTATION MARK → quotation mark
+        '\u201D': '"',           # U+201D RIGHT DOUBLE QUOTATION MARK → quotation mark
         '…': '...',         # U+2026 HORIZONTAL ELLIPSIS → three dots
         '–': '--',          # U+2013 EN DASH → double hyphen
         '—': '---',         # U+2014 EM DASH → triple hyphen
-        ' ': ' ',           # U+00A0 NO-BREAK SPACE → regular space
+        '\u00A0': ' ',           # U+00A0 NO-BREAK SPACE → regular space
         '​': '',            # U+200B ZERO WIDTH SPACE → remove
         '‐': '-',           # U+2010 HYPHEN → hyphen-minus
         '×': 'x',           # U+00D7 MULTIPLICATION SIGN → letter x

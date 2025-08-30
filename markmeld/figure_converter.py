@@ -58,19 +58,24 @@ class FigureConverter:
         }
     
     def convert_figure(self, source_path: str, params: Dict[str, Any], 
-                      doc_id: str, file_info: Optional[Dict] = None) -> Optional[str]:
+                      doc_id: str, file_info: Optional[Dict] = None, 
+                      original_path: Optional[str] = None) -> Optional[str]:
         """
         Main routing method for figure conversion.
         
         Args:
-            source_path: Path to the source figure file
+            source_path: Path to the source figure file (may be cached path)
             params: Parameters dictionary from markdown
             doc_id: Document ID for cache context
             file_info: Optional file metadata from Google Drive
+            original_path: Original path from markdown (for digest keys)
             
         Returns:
             Path to the converted PDF file, or None if conversion failed
         """
+        # Use original_path for digest operations if provided
+        digest_path = original_path if original_path else source_path
+        
         figure_type = self.get_figure_type(source_path)
         
         if figure_type == 'pdf':
@@ -78,10 +83,10 @@ class FigureConverter:
             return source_path
         
         # Determine output path
-        output_path = self.get_output_path(source_path, doc_id, figure_type)
+        output_path = self.get_output_path(digest_path, doc_id, figure_type)
         
         # Check if conversion is needed
-        if not self.needs_conversion(source_path, doc_id, output_path, file_info, params):
+        if not self.needs_conversion(digest_path, doc_id, output_path, file_info, params):
             logger.info(f"  Using cached: {output_path}")
             return str(output_path)
         
@@ -98,15 +103,18 @@ class FigureConverter:
                 return None
             
             if success:
-                # Save digests for future cache checks
+                # Save digests for future cache checks (use original path as key)
                 if file_info and 'md5Checksum' in file_info:
-                    self.save_digest(source_path, file_info['md5Checksum'], doc_id, 'file')
+                    logger.info(f"  Saving file digest for {digest_path}: {file_info['md5Checksum']}")
+                    self.save_digest(digest_path, file_info['md5Checksum'], doc_id, 'file')
                 
                 # For CSV files, also save parameter digest (even if empty)
                 if figure_type == 'csv':
                     params_to_save = params if params is not None else {}
                     params_digest = self.compute_params_digest(params_to_save)
-                    self.save_digest(source_path, params_digest, doc_id, 'params')
+                    logger.info(f"  Saving params digest for {digest_path}: {params_digest}")
+                    logger.info(f"  Params being saved: {params_to_save}")
+                    self.save_digest(digest_path, params_digest, doc_id, 'params')
                 
                 return str(output_path)
             else:
@@ -175,16 +183,22 @@ class FigureConverter:
             # Check file digest
             if file_info and 'md5Checksum' in file_info:
                 stored_file_digest = self._load_digest(source_path, doc_id, 'file')
-                logger.debug(f"  File digest - stored: {stored_file_digest}, current: {file_info.get('md5Checksum')}")
-                if stored_file_digest != file_info['md5Checksum']:
+                current_digest = file_info.get('md5Checksum')
+                logger.info(f"  File digest - stored: {stored_file_digest}, current: {current_digest}")
+                if stored_file_digest != current_digest:
                     logger.info(f"  File has changed, re-converting")
                     return True  # File has changed
+            else:
+                # No file_info provided - can't check file changes, assume needs conversion
+                logger.debug(f"  No file_info provided for CSV, assuming needs conversion")
+                return True
             
             # Check parameter digest (even if params is empty dict)
             params_to_check = params if params is not None else {}
             params_digest = self.compute_params_digest(params_to_check)
             stored_params_digest = self._load_digest(source_path, doc_id, 'params')
-            logger.debug(f"  Params digest - stored: {stored_params_digest}, current: {params_digest}")
+            logger.info(f"  Params digest - stored: {stored_params_digest}, current: {params_digest}")
+            logger.debug(f"  Current params: {params_to_check}")
             if stored_params_digest != params_digest:
                 logger.info(f"  Parameters changed - re-converting")
                 logger.info(f"    Old digest: {stored_params_digest}")
@@ -411,9 +425,9 @@ class FigureConverter:
         logger.debug(f"  Input params: {params}")
         
         # Extract and convert parameters
-        if 'width' in params:
+        if 'fig_width' in params:
             # Convert width like "174mm", "174", or "auto"
-            width_str = str(params['width']).strip().lower()
+            width_str = str(params['fig_width']).strip().lower()
             if width_str == 'auto':
                 # Use CSS auto for width
                 table_params['fig_width_mm'] = 'auto'
@@ -427,7 +441,7 @@ class FigureConverter:
                     table_params['fig_width_mm'] = float(width_str)
                     logger.debug(f"  Set width: {table_params['fig_width_mm']}mm")
                 except ValueError:
-                    logger.warning(f"  Invalid width value '{params['width']}', using default")
+                    logger.warning(f"  Invalid width value '{params['fig_width']}', using default")
                     # Default already in table_params
         
         if 'font-size' in params:
@@ -440,9 +454,9 @@ class FigureConverter:
                 table_params['font_size_pt'] = float(size_str)
             logger.debug(f"  Set font-size: {table_params['font_size_pt']}pt")
         
-        if 'height' in params:
+        if 'fig_height' in params:
             # Convert height like "200mm", "200", or "auto"
-            height_str = str(params['height']).strip().lower()
+            height_str = str(params['fig_height']).strip().lower()
             if height_str == 'auto':
                 # Use CSS auto for height
                 table_params['fig_height_mm'] = 'auto'
@@ -457,7 +471,7 @@ class FigureConverter:
                     logger.info(f"  Using explicit height: {table_params['fig_height_mm']}mm")
                 except ValueError:
                     # If conversion fails, fall back to CSS auto
-                    logger.warning(f"  Invalid height value '{params['height']}', using CSS auto")
+                    logger.warning(f"  Invalid height value '{params['fig_height']}', using CSS auto")
                     table_params['fig_height_mm'] = 'auto'
         else:
             # Auto-calculate height based on row count (+1 for header)

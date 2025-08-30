@@ -290,6 +290,69 @@ class TestGoogleDriveProcessorMocked:
             
             # Test properties
             assert processor.service_account_email == "test@example.com"
+    
+    def test_update_figure_paths_preserves_parameters(self):
+        """Test that _update_figure_paths preserves figure parameters during path updates."""
+        try:
+            from markmeld import GoogleDriveProcessor
+        except ImportError:
+            pytest.skip("Google dependencies not installed")
+        
+        with patch('markmeld.google_drive.service_account') as mock_sa, \
+             patch('markmeld.google_drive.build') as mock_build:
+            
+            # Setup mocks
+            mock_creds = Mock()
+            mock_creds.service_account_email = "test@example.com"
+            mock_sa.Credentials.from_service_account_info.return_value = mock_creds
+            mock_build.return_value = Mock()
+            
+            test_creds = {'type': 'service_account', 'project_id': 'test', 'client_email': 'test@example.com'}
+            processor = GoogleDriveProcessor(credentials_dict=test_creds)
+            
+            # Test cases with various parameter formats
+            test_cases = [
+                # (input_markdown, path_mapping, expected_output)
+                (
+                    "![Figure 1](figure1.svg){width=174mm}",
+                    {"figure1.svg": "figure1.pdf"},
+                    "![Figure 1](figure1.pdf){width=174mm}"
+                ),
+                (
+                    "![Table](data.csv){width=174mm font-size=6pt}",
+                    {"data.csv": "data.pdf"},
+                    "![Table](data.pdf){width=174mm font-size=6pt}"
+                ),
+                (
+                    '![Complex](chart.svg){col-widths="20,5,8" col-align="left,center,right"}',
+                    {"chart.svg": "chart.pdf"},
+                    '![Complex](chart.pdf){col-widths="20,5,8" col-align="left,center,right"}'
+                ),
+                (
+                    "![Empty params](image.png){}",
+                    {"image.png": "image.pdf"},
+                    "![Empty params](image.pdf){}"
+                ),
+                (
+                    "![No params](regular.jpg) and ![With params](special.svg){width=100px}",
+                    {"regular.jpg": "regular.pdf", "special.svg": "special.pdf"},
+                    "![No params](regular.pdf) and ![With params](special.pdf){width=100px}"
+                ),
+                (
+                    "Some text before ![Figure](fig.svg){width=50%} and after",
+                    {"fig.svg": "fig.pdf"},
+                    "Some text before ![Figure](fig.pdf){width=50%} and after"
+                ),
+                (
+                    "Multiple: ![A](a.svg){width=10} ![B](b.svg){height=20} ![C](c.svg){}",
+                    {"a.svg": "a.pdf", "b.svg": "b.pdf", "c.svg": "c.pdf"},
+                    "Multiple: ![A](a.pdf){width=10} ![B](b.pdf){height=20} ![C](c.pdf){}"
+                )
+            ]
+            
+            for input_md, mapping, expected in test_cases:
+                result = processor._update_figure_paths(input_md, mapping)
+                assert result == expected, f"Failed for input: {input_md}"
 
 
 class TestGoogleDriveCSVFunctionality:
@@ -472,15 +535,12 @@ class TestCleanedContentCaching(unittest.TestCase):
                         # Call _download_raw_markdown with default apply_cleaning=True
                         result = processor._download_raw_markdown('test_doc_id')
                         
-                        # Verify that the cached content is cleaned
-                        assert 'test_doc_id' in processor._doc_cache
-                        cached_content = processor._doc_cache['test_doc_id']['content']
-                        
-                        # The cached content should have escape characters cleaned
-                        assert '\\*' not in cached_content
-                        assert '\\-' not in cached_content
-                        assert '*escaped*' in cached_content
-                        assert 'Test-Title' in cached_content
+                        # Verify that the returned content is cleaned
+                        # The result should have escape characters cleaned
+                        assert '\\*' not in result
+                        assert '\\-' not in result
+                        assert '*escaped*' in result
+                        assert 'Test-Title' in result
 
 
 # Test runner
