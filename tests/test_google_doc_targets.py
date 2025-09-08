@@ -18,8 +18,7 @@ def test_google_doc_target_creation():
                 "output_file": "output.pdf",
                 "data": {
                     GOOGLE_DOCS_KEY: {
-                        "doc_id": "test_doc_id",
-                        "folder_id": "test_folder_id"
+                        "manuscript": "test_doc_id"
                     }
                 }
             }
@@ -34,19 +33,21 @@ def test_google_doc_target_creation():
     assert tgt.meta[TARGET_TYPE_KEY] == GOOGLE_DOC_TARGET_TYPE
     assert "data" in tgt.meta
     assert GOOGLE_DOCS_KEY in tgt.meta["data"]
-    assert tgt.meta["data"][GOOGLE_DOCS_KEY]["doc_id"] == "test_doc_id"
+    assert tgt.meta["data"][GOOGLE_DOCS_KEY]["manuscript"] == "test_doc_id"
 
 
-def test_google_doc_alternate_field_names():
-    """Test that 'manuscript' field works as alternative to 'doc_id'"""
+def test_google_doc_multiple_documents():
+    """Test that multiple Google Docs can be configured"""
     config = {
         "targets": {
-            "manuscript": {
+            "multi_doc": {
                 TARGET_TYPE_KEY: GOOGLE_DOC_TARGET_TYPE,
                 "jinja_template": "template.jinja",
                 "data": {
                     GOOGLE_DOCS_KEY: {
-                        "manuscript": "manuscript_id"
+                        "manuscript": "manuscript_id",
+                        "data": "data_doc_id",
+                        "supplement": "supplement_id"
                     }
                 }
             }
@@ -54,10 +55,12 @@ def test_google_doc_alternate_field_names():
         "_cfg_file_path": os.getcwd()
     }
     
-    tgt = Target(config, "manuscript")
+    tgt = Target(config, "multi_doc")
     
     assert GOOGLE_DOCS_KEY in tgt.meta["data"]
     assert tgt.meta["data"][GOOGLE_DOCS_KEY]["manuscript"] == "manuscript_id"
+    assert tgt.meta["data"][GOOGLE_DOCS_KEY]["data"] == "data_doc_id"
+    assert tgt.meta["data"][GOOGLE_DOCS_KEY]["supplement"] == "supplement_id"
 
 
 def test_google_doc_type_alongside_existing_types():
@@ -66,7 +69,7 @@ def test_google_doc_type_alongside_existing_types():
         "targets": {
             "gdoc": {
                 TARGET_TYPE_KEY: GOOGLE_DOC_TARGET_TYPE,
-                "data": {GOOGLE_DOCS_KEY: {"doc_id": "123"}}
+                "data": {GOOGLE_DOCS_KEY: {"manuscript": "123"}}
             },
             "raw": {
                 TARGET_TYPE_KEY: "raw",
@@ -115,17 +118,14 @@ def test_google_doc_missing_config():
     assert result is None
 
 
-def test_google_doc_missing_doc_id():
-    """Test error handling for missing doc_id"""
+def test_google_doc_empty_dictionary():
+    """Test error handling for empty dictionary"""
     mm = MarkdownMelder({
         "targets": {
             "bad": {
                 TARGET_TYPE_KEY: GOOGLE_DOC_TARGET_TYPE,
                 "data": {
-                    GOOGLE_DOCS_KEY: {
-                        # Missing both doc_id and manuscript
-                        "folder_id": "some_folder"
-                    }
+                    GOOGLE_DOCS_KEY: {}  # Empty dictionary
                 }
             }
         },
@@ -135,7 +135,7 @@ def test_google_doc_missing_doc_id():
     tgt = Target(mm.cfg, "bad")
     result = mm.preprocess_google_doc(tgt)
     
-    # Should return None on missing doc_id
+    # Should return None on empty dictionary
     assert result is None
 
 
@@ -148,7 +148,7 @@ def test_google_doc_force_refresh():
                 "jinja_template": "template.jinja",
                 "data": {
                     GOOGLE_DOCS_KEY: {
-                        "doc_id": "test_doc_id"
+                        "manuscript": "test_doc_id"
                     }
                 }
             }
@@ -174,7 +174,7 @@ def test_google_doc_with_constants():
                 "data": {
                     GOOGLE_DOCS_KEY: {
                         "manuscript": "test_manuscript_id",
-                        "folder_id": "test_folder_id"
+                        "letter": "test_letter_id"
                     }
                 }
             }
@@ -188,4 +188,25 @@ def test_google_doc_with_constants():
     assert tgt.meta[TARGET_TYPE_KEY] == GOOGLE_DOC_TARGET_TYPE
     assert GOOGLE_DOCS_KEY in tgt.meta["data"]
     assert tgt.meta["data"][GOOGLE_DOCS_KEY]["manuscript"] == "test_manuscript_id"
-    assert tgt.meta["data"][GOOGLE_DOCS_KEY]["folder_id"] == "test_folder_id"
+    assert tgt.meta["data"][GOOGLE_DOCS_KEY]["letter"] == "test_letter_id"
+
+
+def test_google_doc_non_dictionary():
+    """Test error handling when google_docs is not a dictionary"""
+    mm = MarkdownMelder({
+        "targets": {
+            "bad": {
+                TARGET_TYPE_KEY: GOOGLE_DOC_TARGET_TYPE,
+                "data": {
+                    GOOGLE_DOCS_KEY: "not_a_dict"  # String instead of dict
+                }
+            }
+        },
+        "_cfg_file_path": os.getcwd()
+    })
+    
+    tgt = Target(mm.cfg, "bad")
+    result = mm.preprocess_google_doc(tgt)
+    
+    # Should return None when google_docs is not a dictionary
+    assert result is None

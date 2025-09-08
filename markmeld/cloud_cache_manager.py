@@ -117,20 +117,34 @@ class CloudCacheManager:
     def save_metadata(self, doc_id: str, metadata: Dict[str, Any]):
         """
         Save document metadata to cache.
+        Merges new metadata with existing metadata to preserve fields.
         
         Args:
             doc_id: The document ID
-            metadata: Metadata dictionary to save
+            metadata: Metadata dictionary to save (will be merged with existing)
         """
         metadata_path = self.cache_root / doc_id / 'metadata.json'
         metadata_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Load existing metadata first
+        existing = {}
+        if metadata_path.exists():
+            try:
+                with open(metadata_path, 'r') as f:
+                    existing = json.load(f)
+            except (json.JSONDecodeError, IOError):
+                pass
+        
+        # Merge with existing metadata (new values override)
+        existing.update(metadata)
+        metadata = existing
         
         # Add timestamp
         metadata['last_accessed'] = datetime.now().isoformat()
         if 'created_at' not in metadata:
             metadata['created_at'] = datetime.now().isoformat()
         if 'cache_version' not in metadata:
-            metadata['cache_version'] = '1.0'
+            metadata['cache_version'] = '2.0'  # Bump version for new changes API support
         
         with open(metadata_path, 'w') as f:
             json.dump(metadata, f, indent=2)

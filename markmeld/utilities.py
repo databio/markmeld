@@ -452,7 +452,8 @@ def clean_escape_characters(markdown_content: str) -> str:
     content = content.replace('\\-', '-')
     content = content.replace('\\*', '*')
     content = content.replace('\\=', '=')
-        
+    content = content.replace('\\+', '+')
+
     # Handle LaTeX commands: remove escape before backslash when followed by alphanumeric
     content = re.sub(r'\\(\\[a-zA-Z0-9])', r'\1', content)
 

@@ -594,48 +594,59 @@ class MarkdownMelder(object):
                 _LOGGER.error(f"Google Doc target missing 'data.{GOOGLE_DOCS_KEY}' configuration")
                 return None
             
-            google_config = tgt.meta["data"][GOOGLE_DOCS_KEY]
-            doc_id = google_config.get("doc_id") or google_config.get("manuscript")
+            google_docs = tgt.meta["data"][GOOGLE_DOCS_KEY]
             
-            if not doc_id:
-                _LOGGER.error("Google Doc target missing 'doc_id' or 'manuscript' field")
+            # google_docs should now be a dict like:
+            # { "manuscript": "doc_id_1", "data": "doc_id_2" }
+            if not isinstance(google_docs, dict):
+                _LOGGER.error(f"Google Doc target 'data.{GOOGLE_DOCS_KEY}' must be a dictionary mapping variable names to document IDs")
                 return None
             
-            folder_id = google_config.get("folder_id")
+            if not google_docs:
+                _LOGGER.error(f"Google Doc target 'data.{GOOGLE_DOCS_KEY}' dictionary is empty")
+                return None
+            
             force_refresh = tgt.meta.get("force_refresh", False)
             
             # Initialize Google Drive processor (uses cached credentials)
             from .google_drive import GoogleDriveProcessor
             gdp = GoogleDriveProcessor()
             
-            _LOGGER.info(f"MM | Fetching Google Doc: {doc_id}")
+            md_content = {}
             
-            # Process document and figures
-            if folder_id:
-                # Process figures if folder specified
+            # Process each Google Doc
+            for var_name, doc_id in google_docs.items():
+                if not doc_id:
+                    _LOGGER.warning(f"Skipping empty doc_id for variable '{var_name}'")
+                    md_content[var_name] = ""
+                    continue
+                
+                _LOGGER.info(f"MM | Fetching Google Doc '{var_name}': {doc_id}")
+                
+                # Process document and figures
+                _LOGGER.info(f"MM | Processing document '{var_name}' and all associated figures/CSVs...")
                 result = gdp.process_document_figures(
                     doc_id, 
-                    folder_id, 
-                    skip_unchanged=(not force_refresh),
-                    force_refresh=force_refresh
+                    None,  # No folder_id needed - method will find parent folder automatically
+                    skip_unchanged=(not force_refresh)
                 )
-                doc_content = result['document']
-            else:
-                # Just fetch document, update paths for any embedded figures
-                doc_content = gdp.download_doc(
-                    doc_id, 
-                    clean=True, 
-                    parse_frontmatter=False,
-                    update_figure_paths=True,
-                    folder_id=folder_id,
-                    force_refresh=force_refresh
-                )
+                
+                # Store content using the variable name as the key
+                md_content[var_name] = result['document']
+                
+                # Log processing results
+                if 'results' in result:
+                    results = result['results']
+                    if results.get('processed'):
+                        _LOGGER.info(f"MM | Processed {len(results['processed'])} figures/CSVs for '{var_name}'")
+                    if results.get('skipped'):
+                        _LOGGER.info(f"MM | Skipped {len(results['skipped'])} unchanged figures/CSVs for '{var_name}'")
+                    if results.get('failed'):
+                        _LOGGER.warning(f"MM | Failed to process {len(results['failed'])} figures/CSVs for '{var_name}'")
             
             # Transform target data to use the fetched content
             tgt.meta["data"] = {
-                "md_content": {
-                    "manuscript": doc_content
-                }
+                "md_content": md_content
             }
             
             # Remove the type field so it processes as a normal target
@@ -647,7 +658,7 @@ class MarkdownMelder(object):
         except Exception as e:
             _LOGGER.error(f"Error preprocessing Google Doc: {e}")
             import traceback
-            _LOGGER.debug(traceback.format_exc())
+            _LOGGER.error(f"Full traceback:\n{traceback.format_exc()}")
             return None
 
     def build_target(self, target_name, print_only=False, vardump=False, report=True):

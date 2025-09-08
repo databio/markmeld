@@ -1,3 +1,7 @@
 # AI Progress Log
 
+2025-09-05  Implemented process_document_figures simplification plan - removed 5 legacy functions (process_drive_folder and helpers, ~224 lines) and refactored process_document_figures from 244 to 114 lines (53% reduction) by extracting helper methods (_prepare_document_and_folder, _log_figure_processing_summary, _get_cached_file_or_download, _convert_file) and consolidating duplicate SVG/CSV processing logic. Also updated google_docs configuration to use dictionary pattern for consistency with other data sources. Total code reduction: ~354 lines. All 77 tests passing.
+
+2025-09-05  Implemented Google Doc variable configuration plan - changed google_docs from supporting single doc_id to dictionary pattern mapping variable names to document IDs (e.g., {"manuscript": "doc_id1", "data": "doc_id2"}), following same pattern as md_files and yaml_files for consistency. Removed folder_id support and updated CLI/tests accordingly. Enables multiple Google Docs per target with flexible variable naming.
+
 2025-08-29  Implemented cloud processing maintenance plan by removing deprecated.py and backup files, consolidating cache/digest operations in CloudCacheManager, removing legacy SVG bulk processing methods, and moving figure parsing logic to FigureConverter - reduced codebase by 2,617 lines (44%) while maintaining all functionality with 50 tests passing.

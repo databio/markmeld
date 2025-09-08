@@ -22,6 +22,10 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
 
+# Suppress the 403 Forbidden warnings from googleapiclient
+# These are misleading as the download actually succeeds
+logging.getLogger('googleapiclient.http').setLevel(logging.ERROR)
+
 # Import utility functions from utilities module
 from .utilities import (
     sanitize_filename,
@@ -285,7 +289,8 @@ class GoogleDriveProcessor:
             return disk_content
         
         # Need to download from Google Drive (either not cached or cache is outdated)
-        logger.info(f"Downloading document {doc_id} from Google Drive...")
+        logger.info(f"✗ Changes detected - downloading fresh content from Google Drive...")
+        logger.info(f"  Document ID: {doc_id}")
         
         # Check for active changes before downloading
         self._check_for_active_changes(doc_id)
@@ -346,87 +351,298 @@ class GoogleDriveProcessor:
         return content
     
     
+    def _document_has_suggestions(self, doc_id: str) -> bool:
+        """
+        Check if a Google Doc has any suggested edits.
+        
+        Uses the Google Docs API to fetch the document with suggestions inline
+        and checks for suggestion markers in the content.
+        """
+        try:
+            # Build Google Docs service if not already available
+            if not hasattr(self, 'docs_service'):
+                self.docs_service = build('docs', 'v1', credentials=self.credentials)
+            
+            # Fetch document with suggestions inline
+            doc = self.docs_service.documents().get(
+                documentId=doc_id,
+                suggestionsViewMode='SUGGESTIONS_INLINE'
+            ).execute()
+            
+            # Check for suggestions in the document content
+            if self._check_element_for_suggestions(doc.get('body', {})):
+                return True
+            
+            # Check headers and footers if they exist
+            for header_id in doc.get('headers', {}):
+                if self._check_element_for_suggestions(doc['headers'][header_id]):
+                    return True
+            
+            for footer_id in doc.get('footers', {}):
+                if self._check_element_for_suggestions(doc['footers'][footer_id]):
+                    return True
+            
+            # Check footnotes if they exist
+            for footnote_id in doc.get('footnotes', {}):
+                if self._check_element_for_suggestions(doc['footnotes'][footnote_id]):
+                    return True
+            
+            return False
+            
+        except Exception as e:
+            logger.debug(f"Could not check for suggestions using Docs API: {e}")
+            # Fall back to false if we can't check
+            return False
+    
+    def _check_element_for_suggestions(self, element: dict) -> bool:
+        """
+        Recursively check a document element for suggestion markers.
+        
+        Returns True if any suggestions are found.
+        """
+        if not element:
+            return False
+        
+        # Check for suggestion IDs in various fields
+        if element.get('suggestedInsertionIds') or element.get('suggestedDeletionIds'):
+            return True
+        
+        # Check for suggested text style changes
+        if element.get('suggestedTextStyleChanges'):
+            return True
+        
+        # Check for suggested paragraph style changes
+        if element.get('suggestedParagraphStyleChanges'):
+            return True
+        
+        # Check for suggested named style changes
+        if element.get('suggestedNamedStylesChanges'):
+            return True
+        
+        # Check for suggested bullet changes
+        if element.get('suggestedBulletChanges'):
+            return True
+        
+        # Check for suggested positioning changes
+        if element.get('suggestedPositionedObjectPositioningChanges'):
+            return True
+        
+        # Recursively check content arrays
+        if 'content' in element:
+            for content_element in element['content']:
+                if self._check_element_for_suggestions(content_element):
+                    return True
+        
+        # Check paragraph elements
+        if 'paragraph' in element:
+            if self._check_element_for_suggestions(element['paragraph']):
+                return True
+            
+            # Check elements within paragraph
+            if 'elements' in element['paragraph']:
+                for elem in element['paragraph']['elements']:
+                    if self._check_element_for_suggestions(elem):
+                        return True
+        
+        # Check table
+        if 'table' in element:
+            table = element['table']
+            # Check table rows
+            for row in table.get('tableRows', []):
+                for cell in row.get('tableCells', []):
+                    if self._check_element_for_suggestions(cell):
+                        return True
+                    # Check content within cell
+                    for content in cell.get('content', []):
+                        if self._check_element_for_suggestions(content):
+                            return True
+        
+        # Check section break
+        if 'sectionBreak' in element:
+            if self._check_element_for_suggestions(element['sectionBreak']):
+                return True
+        
+        # Check table of contents
+        if 'tableOfContents' in element:
+            if self._check_element_for_suggestions(element['tableOfContents']):
+                return True
+        
+        # Check text run
+        if 'textRun' in element:
+            text_run = element['textRun']
+            if text_run.get('suggestedInsertionIds') or text_run.get('suggestedDeletionIds'):
+                return True
+            if text_run.get('suggestedTextStyleChanges'):
+                return True
+        
+        return False
+    
     def _check_for_active_changes(self, doc_id: str):
         """
-        Check if a document has active changes/suggestions and warn the user.
+        Check if a document has active suggestions and warn the user.
         
-        This uses the Google Drive API's revisions endpoint to check if the document
-        has unpublished changes that might not be reflected in the exported content.
+        This uses the Google Docs API to check if the document contains
+        suggested edits that haven't been accepted or rejected.
         """
         try:
             # Get document metadata first
             metadata = self.get_metadata(doc_id)
             doc_name = metadata.get('name', doc_id)
             
-            # Try to get revision information
-            # Note: The revisions API may require additional permissions
+            # Check for suggestions using Google Docs API
+            if self._document_has_suggestions(doc_id):
+                logger.warning("")
+                logger.warning("=" * 70)
+                logger.warning("⚠️  WARNING: DOCUMENT HAS SUGGESTED EDITS")
+                logger.warning("=" * 70)
+                logger.warning(f"Document: {doc_name}")
+                logger.warning("")
+                logger.warning("This document contains unresolved suggested edits that")
+                logger.warning("may not be included in the exported version.")
+                logger.warning("")
+                logger.warning("You are building a production PDF from a document with")
+                logger.warning("suggested edits, which is probably not what you want.")
+                logger.warning("")
+                logger.warning("Please review and accept/reject all suggested edits in")
+                logger.warning("Google Docs before generating the final output.")
+                logger.warning("=" * 70)
+                logger.warning("")
+            
+            # Also check for unresolved comments
             try:
-                revisions = self.drive_service.revisions().list(
+                comments = self.drive_service.comments().list(
                     fileId=doc_id,
-                    fields='revisions(id,modifiedTime,published,keepForever)',
-                    pageSize=10
+                    fields='comments(resolved)',
+                    includeDeleted=False
                 ).execute()
                 
-                revisions_list = revisions.get('revisions', [])
+                unresolved_comments = [c for c in comments.get('comments', []) 
+                                     if not c.get('resolved', False)]
                 
-                # Check if the latest revision is unpublished (has active changes)
-                if revisions_list:
-                    latest_revision = revisions_list[-1]
-                    if not latest_revision.get('published', True):
-                        logger.warning("")
-                        logger.warning("=" * 70)
-                        logger.warning("⚠️  WARNING: DOCUMENT HAS ACTIVE CHANGES")
-                        logger.warning("=" * 70)
-                        logger.warning(f"Document: {doc_name}")
-                        logger.warning("")
-                        logger.warning("This document appears to have unpublished changes or active")
-                        logger.warning("suggestions that may not be included in the exported version.")
-                        logger.warning("")
-                        logger.warning("You are building a production PDF from a document with active")
-                        logger.warning("changes, which is probably not what you want.")
-                        logger.warning("")
-                        logger.warning("Please review and accept/reject all changes in Google Docs")
-                        logger.warning("before generating the final output.")
-                        logger.warning("=" * 70)
-                        logger.warning("")
-                        
-            except Exception as rev_error:
-                # Revisions API might fail due to permissions or API limitations
-                # In this case, try alternative approach using comments/suggestions
-                try:
-                    # Check for active comments which might indicate ongoing review
-                    comments = self.drive_service.comments().list(
-                        fileId=doc_id,
-                        fields='comments(resolved)',
-                        includeDeleted=False
-                    ).execute()
+                if unresolved_comments:
+                    logger.warning("")
+                    logger.warning("=" * 70)
+                    logger.warning("⚠️  WARNING: DOCUMENT HAS UNRESOLVED COMMENTS")
+                    logger.warning("=" * 70)
+                    logger.warning(f"Document: {doc_name}")
+                    logger.warning(f"Unresolved comments: {len(unresolved_comments)}")
+                    logger.warning("")
+                    logger.warning("This document has unresolved comments which may indicate")
+                    logger.warning("ongoing review or required changes.")
+                    logger.warning("")
+                    logger.warning("Consider resolving all comments before generating")
+                    logger.warning("the final output.")
+                    logger.warning("=" * 70)
+                    logger.warning("")
                     
-                    unresolved_comments = [c for c in comments.get('comments', []) 
-                                         if not c.get('resolved', False)]
-                    
-                    if unresolved_comments:
-                        logger.warning("")
-                        logger.warning("=" * 70)
-                        logger.warning("⚠️  WARNING: DOCUMENT HAS UNRESOLVED COMMENTS")
-                        logger.warning("=" * 70)
-                        logger.warning(f"Document: {doc_name}")
-                        logger.warning(f"Unresolved comments: {len(unresolved_comments)}")
-                        logger.warning("")
-                        logger.warning("This document has unresolved comments which may indicate")
-                        logger.warning("ongoing review or required changes.")
-                        logger.warning("")
-                        logger.warning("Consider resolving all comments before generating")
-                        logger.warning("the final output.")
-                        logger.warning("=" * 70)
-                        logger.warning("")
-                        
-                except:
-                    # Comments API also failed, skip the check silently
-                    pass
-                    
+            except:
+                # Comments API failed, skip the check silently
+                pass
+                
         except Exception as e:
             # Don't fail the download if the check fails, just log a debug message
             logger.debug(f"Could not check for active changes: {e}")
+    
+    # ====================
+    # Changes API Implementation
+    # ====================
+    
+    def check_for_changes_via_changes_api(self, doc_id: str) -> bool:
+        """
+        Check if a document has changed using the Google Drive Changes API.
+        
+        Args:
+            doc_id: The ID of the document to check
+            
+        Returns:
+            True if the document has changed, False if not
+        """
+        try:
+            # Load metadata to get stored change token
+            metadata = self.cache_manager.load_metadata(doc_id)
+            stored_token = metadata.get('change_token') if metadata else None
+            
+            if not stored_token:
+                # No token means first run or cache was cleared
+                logger.info("  No change token found - first time caching this document")
+                return True
+            
+            # Use the stored token to check for changes
+            try:
+                # List changes since the stored token
+                response = self.drive_service.changes().list(
+                    pageToken=stored_token,
+                    spaces='drive',
+                    includeRemoved=True,
+                    fields='nextPageToken, newStartPageToken, changes(fileId, removed)'
+                ).execute()
+                
+                # Get the new/remote token
+                remote_token = response.get('newStartPageToken') or response.get('nextPageToken')
+                
+                # Check if our document is in the changes list
+                changes = response.get('changes', [])
+                doc_changed = False
+                for change in changes:
+                    if change.get('fileId') == doc_id:
+                        doc_changed = True
+                        break
+                
+                # Display token info with clear context
+                if remote_token and remote_token != stored_token:
+                    logger.info(f"  Change tokens: {stored_token[:20]}... → {remote_token[:20]}...")
+                    if doc_changed:
+                        logger.info(f"  ✗ This document was modified - downloading fresh copy")
+                    else:
+                        logger.info(f"  ✓ This document unchanged (other Drive files changed) - using cached version")
+                else:
+                    logger.info(f"  Change token: {stored_token[:20]}... (no Drive activity)")
+                    logger.info(f"  ✓ No changes detected - using cached version")
+                
+                if doc_changed:
+                    return True
+                
+                # Update the token to the latest (for next check)
+                if remote_token and remote_token != stored_token:
+                    # Save the new token for next time
+                    self.cache_manager.save_metadata(doc_id, {
+                        'doc_id': doc_id,
+                        'change_token': remote_token
+                    })
+                
+                return False
+                
+            except Exception as e:
+                # Token might be invalid/expired
+                if 'Invalid pageToken' in str(e) or 'invalid' in str(e).lower():
+                    logger.warning(f"  Change token is invalid or expired")
+                    logger.info("  Will download fresh copy and get new token")
+                else:
+                    logger.warning(f"  Error with change detection: {str(e)[:100]}")
+                    logger.info("  Falling back to re-download for safety")
+                return True
+                
+        except Exception as e:
+            logger.error(f"Error checking for changes via Changes API: {str(e)[:200]}")
+            logger.info("  Falling back to re-download for safety")
+            # On error, be safe and assume changed
+            return True
+    
+    def get_current_change_token(self) -> Optional[str]:
+        """
+        Get a fresh change token for the current state of the drive.
+        
+        Returns:
+            The current change token or None if error
+        """
+        try:
+            response = self.drive_service.changes().getStartPageToken(
+                supportsAllDrives=False
+            ).execute()
+            return response.get('startPageToken')
+        except Exception as e:
+            logger.error(f"Error getting change token: {e}")
+            return None
     
     # ====================
     # Disk Cache Operations
@@ -437,9 +653,22 @@ class GoogleDriveProcessor:
         try:
             metadata = self.get_metadata(doc_id)
             doc_name = metadata.get('name', doc_id)
+            
+            # Ensure doc_name is a string before passing to sanitize_filename
+            if not isinstance(doc_name, str):
+                logger.warning(f"Document name is not a string: {type(doc_name)} - {doc_name}")
+                doc_name = str(doc_name) if doc_name else doc_id
+            
             safe_name = sanitize_filename(doc_name)
-        except:
-            safe_name = doc_id
+        except Exception as e:
+            logger.warning(f"Could not get metadata for doc {doc_id}: {e}")
+            # Ensure doc_id is a string
+            safe_name = str(doc_id) if not isinstance(doc_id, str) else doc_id
+        
+        # Ensure safe_name is a string before calling endswith
+        if not isinstance(safe_name, str):
+            logger.error(f"safe_name is not a string: {type(safe_name)} - {safe_name}")
+            safe_name = str(safe_name)
         
         if not safe_name.endswith('.md'):
             safe_name += '.md'
@@ -456,51 +685,40 @@ class GoogleDriveProcessor:
             return None
         
         doc_path = self.cache_manager.get_cache_path(doc_id, 'docs', self._get_doc_filename(doc_id))
-        if doc_path.exists():
+        if not doc_path.exists():
+            return None
+            
+        logger.info(f"Checking for changes in document {doc_id}...")
+        
+        # Use Changes API to check if document has changed
+        has_changed = self.check_for_changes_via_changes_api(doc_id)
+        
+        if not has_changed:
+            # Document hasn't changed, load from cache
             try:
                 content = doc_path.read_text(encoding='utf-8')
                 
-                # Check if Google Drive version is newer
-                try:
-                    metadata = self.get_metadata(doc_id)
-                    google_modified = metadata.get('modifiedTime', '')
-                    
-                    # Check if file has our metadata comment
-                    if content.startswith("<!-- gdrive-modified:") and google_modified:
-                        first_line = content.split('\n')[0]
-                        # Extract cached modification time from comment
-                        if "gdrive-modified:" in first_line:
-                            import re
-                            match = re.search(r'gdrive-modified:\s*([^\s]+)', first_line)
-                            if match:
-                                cached_modified = match.group(1)
-                                logger.debug(f"Cached modified time: {cached_modified}")
-                                logger.debug(f"Google modified time: {google_modified}")
-                                if cached_modified == google_modified:
-                                    logger.info(f"Loading from disk cache (unchanged): {doc_path}")
-                                    # Remove the metadata comment before returning
-                                    lines = content.split('\n')
-                                    if lines[0].startswith("<!-- gdrive-modified:"):
-                                        content = '\n'.join(lines[1:])
-                                        if content.startswith('\n'):
-                                            content = content[1:]
-                                    return content
-                                else:
-                                    logger.info(f"Document has been modified on Google Drive, cache is outdated")
-                except Exception as e:
-                    logger.debug(f"Error checking metadata: {e}")
-                    pass
+                # Handle legacy cached files with HTML comments (migration)
+                if content.startswith("<!-- gdrive-modified:"):
+                    lines = content.split('\n')
+                    content = '\n'.join(lines[1:])
+                    if content.startswith('\n'):
+                        content = content[1:]
+                    # Migrate by re-saving without the comment
+                    doc_path.write_text(content, encoding='utf-8')
+                    logger.debug("  Migrated legacy cached file (removed HTML comment)")
                 
-                # If we can't verify, return None to trigger re-download
-                return None
-                
+                return content
             except Exception as e:
                 logger.error(f"Error loading from disk cache: {e}")
-        
-        return None
+                return None
+        else:
+            # Document has changed, will need to re-download
+            logger.info("  Document has changed - will download fresh copy")
+            return None
     
     def _save_to_disk(self, doc_id: str, content: str, is_cleaned: bool = False):
-        """Save document content to disk with metadata for cache validation."""
+        """Save document content to disk and update metadata."""
         if not self.save_to_disk:
             return
         
@@ -508,20 +726,40 @@ class GoogleDriveProcessor:
         try:
             doc_path.parent.mkdir(parents=True, exist_ok=True)
             
-            # Add metadata comment for cache validation
-            try:
-                metadata = self.get_metadata(doc_id)
-                modified_time = metadata.get('modifiedTime', '')
-                cleaned_flag = "cleaned" if is_cleaned else "raw"
-                if modified_time:
-                    content_with_meta = f"<!-- gdrive-modified: {modified_time} gdrive-state: {cleaned_flag} -->\n{content}"
-                else:
-                    content_with_meta = content
-            except:
-                content_with_meta = content
-            
-            doc_path.write_text(content_with_meta, encoding='utf-8')
+            # Save clean content without HTML comments
+            doc_path.write_text(content, encoding='utf-8')
             logger.info(f"Saved to disk: {doc_path}")
+            
+            # Get current change token and save metadata
+            try:
+                # Get document metadata
+                doc_metadata = self.get_metadata(doc_id)
+                
+                # Get current change token
+                change_token = self.get_current_change_token()
+                
+                # Save all metadata to metadata.json
+                metadata = {
+                    'doc_id': doc_id,
+                    'doc_name': doc_metadata.get('name', 'Unknown'),
+                    'change_token': change_token,
+                    'cleaned_state': 'cleaned' if is_cleaned else 'raw',
+                    'modified_time': doc_metadata.get('modifiedTime', '')
+                }
+                
+                # Also try to get folder_id if available
+                parents = doc_metadata.get('parents', [])
+                if parents:
+                    metadata['folder_id'] = parents[0]
+                
+                self.cache_manager.save_metadata(doc_id, metadata)
+                
+                if change_token:
+                    logger.info(f"  Saved change token: {change_token[:20]}...")
+                
+            except Exception as e:
+                logger.debug(f"Error saving metadata: {e}")
+                
         except Exception as e:
             logger.error(f"Error saving to disk: {e}")
     
@@ -529,7 +767,8 @@ class GoogleDriveProcessor:
     # SVG Processing
     # ====================
     
-    # Legacy SVG folder processing methods removed - use process_document_figures instead
+    # Note: Legacy SVG folder processing methods have been removed
+    # Use process_document_figures() for document-driven figure processing
     # ====================
     # Digest Management (path-based only)
     # ====================
@@ -608,19 +847,8 @@ class GoogleDriveProcessor:
             logger.error(f"Error searching for file {filename}: {e}")
             return None
     
-    def process_document_figures(self, doc_id: str, folder_id: Optional[str] = None, 
-                                skip_unchanged: bool = True) -> Dict[str, Any]:
-        """
-        Process all figures referenced in the document including SVG, CSV, and Google Sheets.
-        
-        This method processes:
-        - SVG files -> PDF conversion
-        - CSV files -> PDF table conversion
-        - Google Sheets -> PDF table conversion
-        - PDF files -> direct download
-        """
-        logger.info(f"Processing figures for document: {doc_id}")
-        
+    def _prepare_document_and_folder(self, doc_id: str, folder_id: Optional[str]) -> tuple[str, list, str]:
+        """Prepare document content and determine folder ID."""
         # Download and read the document (with cleaning to remove embedded images)
         doc_content = self.download_doc(doc_id, clean=True, parse_frontmatter=False, update_figure_paths=False)
         
@@ -648,33 +876,118 @@ class GoogleDriveProcessor:
             except Exception as e:
                 logger.error(f"Error getting document parent folder: {e}")
         
-        # Prepare list of just paths for batch fetching
-        figure_paths = [path for path, _ in figure_data]
+        return doc_content, figure_data, folder_id
+    
+    def _log_figure_processing_summary(self, results: dict):
+        """Log summary of figure processing results."""
+        logger.info(f"\n=== Figure Processing Complete ===")
+        logger.info(f"✓ Processed: {len(results['processed'])} figures")
+        logger.info(f"⏭ Skipped: {len(results['skipped'])} unchanged figures")
+        logger.info(f"✗ Failed: {len(results['failed'])} figures")
         
-        # Optimize API calls by pre-fetching file metadata for all referenced folders
+        # List failed conversions for clarity
+        if results['failed']:
+            logger.warning(f"\n⚠️  The following {len(results['failed'])} files FAILED to convert to PDF:")
+            for failed_file in results['failed']:
+                logger.warning(f"   - {failed_file}")
+            logger.warning(f"   Check the error messages above for details on each failure.")
+    
+    def _get_cached_file_or_download(self, fig_path: str, file_info: dict, doc_id: str, figure_type: str) -> Path:
+        """Get cached file or download if needed. Returns Path to source file."""
+        if figure_type == 'csv':
+            # Remove 'csv/' prefix from path since we're already in csv subdirectory
+            filename = fig_path.replace('csv/', '') if fig_path.startswith('csv/') else fig_path
+            cached_path = self.cache_manager.get_cache_path(doc_id, 'csv', filename)
+        elif figure_type == 'svg':
+            # Remove 'fig/' prefix from path since we're already in fig subdirectory
+            filename = fig_path.replace('fig/', '') if fig_path.startswith('fig/') else fig_path
+            cached_path = self.cache_manager.get_cache_path(doc_id, 'fig', filename)
+        else:
+            # Other types - use temp file
+            temp_dir = self.cache_manager.get_cache_dir(doc_id, 'converted')
+            cached_path = temp_dir / f".temp_{Path(fig_path).stem}_{os.getpid()}"
+        
+        # Check if cached file exists and is current
+        if cached_path.exists() and file_info and 'md5Checksum' in file_info:
+            stored_digest = self.figure_converter._load_digest(fig_path, doc_id, 'file')
+            if stored_digest == file_info['md5Checksum']:
+                logger.info(f"  Using cached {figure_type.upper()}: {cached_path}")
+                return cached_path
+        
+        # Need to download
+        logger.info(f"  Downloading {figure_type.upper()}: {fig_path}")
+        self.download_file(file_info['id'], str(cached_path))
+        return cached_path
+    
+    def _convert_file(self, fig_path: str, source_file: Path, file_info: dict, params: dict, doc_id: str, figure_type: str, output_path: Path) -> str:
+        """Convert file and return converted path, or None if failed."""
+        if figure_type == 'svg':
+            # For SVG, convert directly
+            success = self.figure_converter.convert_svg(str(source_file), output_path)
+            if success:
+                # Save digest for original path
+                if file_info and 'md5Checksum' in file_info:
+                    self.figure_converter.save_digest(fig_path, file_info['md5Checksum'], doc_id, 'file')
+                return str(output_path)
+            else:
+                logger.warning(f"⚠️  PDF CONVERSION FAILED for {fig_path}")
+                logger.warning(f"    SVG file exists at: {source_file}")
+                logger.warning(f"    Expected PDF output: {output_path}")
+                logger.warning(f"    Check inkscape installation and SVG file validity")
+                return None
+        
+        elif figure_type == 'csv':
+            # For CSV, use convert_figure which handles digest saving properly
+            converted_path = self.figure_converter.convert_figure(
+                str(source_file), params, doc_id, file_info, original_path=fig_path
+            )
+            if not converted_path:
+                logger.warning(f"⚠️  PDF CONVERSION FAILED for {fig_path}")
+                logger.warning(f"    CSV file exists at: {source_file}")
+                logger.warning(f"    Check table_pdf_builder installation")
+            return converted_path
+        
+        else:
+            # Clean up temp files for other types
+            if source_file.name.startswith('.temp_') and source_file.exists():
+                source_file.unlink()
+            return None
+
+    def process_document_figures(self, doc_id: str, folder_id: Optional[str] = None, 
+                                skip_unchanged: bool = True) -> Dict[str, Any]:
+        """
+        Process all figures referenced in the document including SVG, CSV, and Google Sheets.
+        
+        This method processes:
+        - SVG files -> PDF conversion
+        - CSV files -> PDF table conversion
+        - Google Sheets -> PDF table conversion
+        - PDF files -> direct download
+        """
+        logger.info(f"Processing figures for document: {doc_id}")
+        
+        # Prepare document and determine folder
+        doc_content, figure_data, folder_id = self._prepare_document_and_folder(doc_id, folder_id)
+        
+        # Prepare list of paths for batch fetching and optimize API calls
+        figure_paths = [path for path, _ in figure_data]
         folder_file_cache = self._batch_fetch_folder_metadata(figure_paths, folder_id)
         
-        # Process each figure with its parameters
+        # Process each figure
         results = {'processed': [], 'skipped': [], 'failed': [], 'mapping': {}}
         
         for fig_path, params in figure_data:
             logger.info(f"Processing: {fig_path}")
             
-            # Determine figure type
+            # Determine figure type and skip unknown
             figure_type = self.figure_converter.get_figure_type(fig_path)
-            
-            # Skip unknown types
             if figure_type == 'unknown':
                 logger.info(f"  Skipping unknown file type: {fig_path}")
                 continue
             
-            # For Google Sheets, we don't need to find them in Drive folder
+            # Handle Google Sheets separately
             if figure_type == 'sheet':
-                # Use FigureConverter for Google Sheets
-                converted_path = self.figure_converter.convert_figure(
-                    fig_path, params, doc_id, None
-                )
-                
+                converted_path = self.figure_converter.convert_figure(fig_path, params, doc_id, None)
                 if converted_path:
                     logger.info(f"  Converted: {fig_path} -> {converted_path}")
                     results['processed'].append(fig_path)
@@ -684,17 +997,14 @@ class GoogleDriveProcessor:
                     results['failed'].append(fig_path)
                 continue
             
-            # Try to find the file in the cached metadata (for non-Sheet files)
-            file_info = None
-            if folder_id:
-                file_info = self._find_file_in_cache(fig_path, folder_file_cache)
-            
+            # Find file in Drive (skip if not found)
+            file_info = self._find_file_in_cache(fig_path, folder_file_cache) if folder_id else None
             if not file_info:
                 logger.error(f"  Failed: File not found in Google Drive")
                 results['failed'].append(fig_path)
                 continue
             
-            # For PDF files, just download directly
+            # Handle PDF files - direct download
             if figure_type == 'pdf':
                 try:
                     output_path = Path(fig_path)
@@ -702,18 +1012,16 @@ class GoogleDriveProcessor:
                     self.download_file(file_info['id'], str(output_path))
                     logger.info(f"  Downloaded: {fig_path}")
                     results['processed'].append(fig_path)
-                    # No path mapping needed for PDFs
                 except Exception as e:
                     logger.error(f"  Error downloading PDF: {e}")
                     results['failed'].append(fig_path)
                 continue
             
-            # For SVG and CSV files, need to download first then convert
+            # Handle SVG and CSV files - download and convert
             try:
-                # Check if conversion is needed first (before downloading)
                 output_path = self.figure_converter.get_output_path(fig_path, doc_id, figure_type)
                 
-                # Check cache before downloading
+                # Check if conversion needed (skip if cached)
                 if not self.figure_converter.needs_conversion(fig_path, doc_id, output_path, file_info, params):
                     logger.info(f"  Using cached: {output_path}")
                     results['skipped'].append(fig_path)
@@ -721,89 +1029,15 @@ class GoogleDriveProcessor:
                     logger.info(f"  Added to mapping: {fig_path} -> {str(output_path)}")
                     continue
                 
-                # Determine source file (cached or need to download)
-                source_file = None
+                # Get source file (cached or download)
+                source_file = self._get_cached_file_or_download(fig_path, file_info, doc_id, figure_type)
                 
-                if figure_type == 'csv':
-                    # For CSV, check if we have a cached copy
-                    # Remove 'csv/' prefix from path since we're already in csv subdirectory
-                    csv_filename = fig_path.replace('csv/', '') if fig_path.startswith('csv/') else fig_path
-                    cached_csv_path = self.cache_manager.get_cache_path(doc_id, 'csv', csv_filename)
-                    
-                    # Check if cached CSV exists and is current
-                    if cached_csv_path.exists() and file_info and 'md5Checksum' in file_info:
-                        stored_digest = self.figure_converter._load_digest(fig_path, doc_id, 'file')
-                        if stored_digest == file_info['md5Checksum']:
-                            logger.info(f"  Using cached CSV: {cached_csv_path}")
-                            source_file = cached_csv_path
-                    
-                    if not source_file:
-                        # Need to download CSV
-                        logger.info(f"  Downloading CSV: {fig_path}")
-                        self.download_file(file_info['id'], str(cached_csv_path))
-                        source_file = cached_csv_path
-                        # Don't save digest here - convert_figure will handle it
-                
-                elif figure_type == 'svg':
-                    # For SVG, cache the file like CSV
-                    # Remove 'fig/' prefix from path since we're already in fig subdirectory
-                    svg_filename = fig_path.replace('fig/', '') if fig_path.startswith('fig/') else fig_path
-                    cached_svg_path = self.cache_manager.get_cache_path(doc_id, 'fig', svg_filename)
-                    
-                    # Check if cached SVG exists and is current
-                    if cached_svg_path.exists() and file_info and 'md5Checksum' in file_info:
-                        stored_digest = self.figure_converter._load_digest(fig_path, doc_id, 'file')
-                        if stored_digest == file_info['md5Checksum']:
-                            logger.info(f"  Using cached SVG: {cached_svg_path}")
-                            source_file = cached_svg_path
-                        else:
-                            # Need to download SVG
-                            logger.info(f"  Downloading SVG: {fig_path}")
-                            self.download_file(file_info['id'], str(cached_svg_path))
-                            source_file = cached_svg_path
-                    else:
-                        # Need to download SVG
-                        logger.info(f"  Downloading SVG: {fig_path}")
-                        self.download_file(file_info['id'], str(cached_svg_path))
-                        source_file = cached_svg_path
-                else:
-                    # Other types
-                    temp_dir = self.cache_manager.get_cache_dir(doc_id, 'converted')
-                    temp_file = temp_dir / f".temp_{Path(fig_path).stem}_{os.getpid()}"
-                    self.download_file(file_info['id'], str(temp_file))
-                    source_file = temp_file
-                
-                # Convert using the source file
-                if figure_type == 'svg':
-                    # For SVG, convert directly
-                    success = self.figure_converter.convert_svg(str(source_file), output_path)
-                    if success:
-                        converted_path = str(output_path)
-                        # Save digest for original path
-                        if file_info and 'md5Checksum' in file_info:
-                            self.figure_converter.save_digest(fig_path, file_info['md5Checksum'], doc_id, 'file')
-                    else:
-                        converted_path = None
-                    # SVG files are cached, not deleted
-                        
-                elif figure_type == 'csv':
-                    # For CSV, use convert_figure which handles digest saving properly
-                    # Pass original fig_path for digest operations
-                    converted_path = self.figure_converter.convert_figure(
-                        str(source_file), params, doc_id, file_info, original_path=fig_path
-                    )
-                    # CSV files are cached, not deleted
-                    
-                else:
-                    converted_path = None
-                    # Clean up other temp files
-                    if source_file and source_file.name.startswith('.temp_') and source_file.exists():
-                        source_file.unlink()
+                # Convert file
+                converted_path = self._convert_file(fig_path, source_file, file_info, params, doc_id, figure_type, output_path)
                 
                 if converted_path:
                     logger.info(f"  Converted: {fig_path} -> {converted_path}")
                     results['processed'].append(fig_path)
-                    # Map original path to converted path
                     results['mapping'][fig_path] = converted_path
                 else:
                     logger.error(f"  Failed to convert {figure_type} file")
@@ -813,13 +1047,12 @@ class GoogleDriveProcessor:
                 logger.error(f"  Error processing {fig_path}: {str(e)[:200]}")
                 results['failed'].append(fig_path)
         
-        # Update document with new paths (this replaces .svg with converted .pdf paths)
+        # Update document with new paths and check for remaining SVGs
         logger.info(f"DEBUG: Mapping has {len(results['mapping'])} entries:")
         for old_p, new_p in results['mapping'].items():
             logger.info(f"  {old_p} -> {new_p}")
         updated_content = self._update_figure_paths(doc_content, results['mapping'])
         
-        # Check if replacement worked
         import re
         remaining_svgs = re.findall(r'[^)]+\.svg\)', updated_content)
         if remaining_svgs:
@@ -827,11 +1060,8 @@ class GoogleDriveProcessor:
             for svg in remaining_svgs[:5]:  # Show first 5
                 logger.warning(f"  Still has: {svg}")
         
-        # Summary
-        logger.info(f"\n=== Figure Processing Complete ===")
-        logger.info(f"✓ Processed: {len(results['processed'])} figures")
-        logger.info(f"⏭ Skipped: {len(results['skipped'])} unchanged figures")
-        logger.info(f"✗ Failed: {len(results['failed'])} figures")
+        # Log processing summary
+        self._log_figure_processing_summary(results)
         
         return {
             'document': updated_content,
@@ -1160,10 +1390,13 @@ class GoogleDriveProcessor:
             Updated markdown content with figure paths replaced
         """
         # Extract figure paths from the document
-        figure_paths = self.extract_figure_paths(markdown_content)
+        figure_data = self.extract_figure_paths(markdown_content)
         
-        if not figure_paths:
+        if not figure_data:
             return markdown_content
+        
+        # Extract just the paths from the (path, params) tuples
+        figure_paths = [path for path, _ in figure_data]
         
         # If no folder_id provided, try to find the parent folder of the document
         if not folder_id:
@@ -1298,224 +1531,3 @@ class GoogleDriveProcessor:
         logger.info("=" * 50)
         
         return results
-    
-    # ====================
-    # Unified Folder Processing
-    # ====================
-    
-    def process_drive_folder(self, 
-                            folder_id: str,
-                            process_doc: bool = True,
-                            process_figs: bool = True,
-                            output_path: Optional[Union[str, Path]] = None) -> Dict[str, Any]:
-        """Process a Google Drive folder containing a manuscript and figures."""
-        results = {
-            'document': None,
-            'document_id': None,
-            'document_name': None,
-            'figs_results': None,
-            'figs_folder_id': None,
-            'errors': []
-        }
-        
-        # Process document if requested
-        if process_doc:
-            try:
-                doc_info = self._find_manuscript_in_folder(folder_id)
-                if doc_info:
-                    logger.info(f"Found manuscript: {doc_info['name']} (ID: {doc_info['id']})")
-                    results['document_id'] = doc_info['id']
-                    results['document_name'] = doc_info['name']
-                    
-                    # Download and clean the document
-                    results['document'] = self.download_doc(
-                        doc_info['id'],
-                        clean=True,
-                        output_path=output_path,
-                        parse_frontmatter=True
-                    )
-                    logger.info(f"Successfully processed manuscript: {doc_info['name']}")
-                else:
-                    error_msg = "Could not find manuscript document"
-                    results['errors'].append(error_msg)
-                    logger.warning(f"Warning: {error_msg}")
-            except Exception as e:
-                error_msg = f"Error processing document: {str(e)}"
-                results['errors'].append(error_msg)
-                logger.error(f"Error: {error_msg}")
-        
-        # Process figures if requested
-        if process_figs:
-            try:
-                figs_folder_id = self._find_figs_folder(folder_id)
-                if figs_folder_id:
-                    logger.info(f"Found figs folder (ID: {figs_folder_id})")
-                    results['figs_folder_id'] = figs_folder_id
-                    results['figs_results'] = self.process_svg_folder(figs_folder_id)
-                    
-                    stats = results['figs_results'].get('stats', {})
-                    logger.info(f"Processed figures: {stats.get('converted', 0)} converted, "
-                              f"{stats.get('skipped', 0)} skipped, {stats.get('failed', 0)} failed")
-                else:
-                    error_msg = "Could not find figs subfolder"
-                    results['errors'].append(error_msg)
-                    logger.warning(f"Warning: {error_msg}")
-            except Exception as e:
-                error_msg = f"Error processing figures: {str(e)}"
-                results['errors'].append(error_msg)
-                logger.error(f"Error: {error_msg}")
-        
-        # Summary
-        logger.info("\n=== Processing Complete ===")
-        if results['document_name']:
-            logger.info(f"✓ Document: {results['document_name']}")
-        if results['figs_results']:
-            stats = results['figs_results'].get('stats', {})
-            logger.info(f"✓ Figures: {stats.get('total_svgs', 0)} SVGs processed")
-        if results['errors']:
-            logger.info(f"⚠ Errors encountered: {len(results['errors'])}")
-            for error in results['errors']:
-                logger.info(f"  - {error}")
-        
-        return results
-    
-    def _find_manuscript_in_folder(self, folder_id: str) -> Optional[Dict[str, Any]]:
-        """Find the manuscript document in a Google Drive folder."""
-        # List all Google Docs in the folder
-        docs = self._list_documents_in_folder(folder_id)
-        
-        # First try to find actual documents
-        if docs:
-            # If only one doc, use it
-            if len(docs) == 1:
-                return docs[0]
-            
-            # Look for one with 'manuscript' in the name
-            manuscript_docs = [doc for doc in docs if 'manuscript' in doc['name'].lower()]
-            
-            if len(manuscript_docs) == 1:
-                return manuscript_docs[0]
-            elif len(manuscript_docs) > 1:
-                logger.warning(f"Found {len(manuscript_docs)} documents with 'manuscript' in name, using: {manuscript_docs[0]['name']}")
-                return manuscript_docs[0]
-            else:
-                logger.warning(f"Found {len(docs)} documents but none with 'manuscript' in the name")
-                return None
-        
-        # No actual documents found, look for shortcuts
-        return self._find_manuscript_shortcut(folder_id)
-    
-    def _list_documents_in_folder(self, folder_id: str) -> List[Dict[str, Any]]:
-        """List all Google Docs in a folder."""
-        docs = []
-        page_token = None
-        
-        while True:
-            response = self.drive_service.files().list(
-                q=f"'{folder_id}' in parents and mimeType='application/vnd.google-apps.document' and trashed=false",
-                fields="nextPageToken, files(id, name, mimeType)",
-                pageToken=page_token
-            ).execute()
-            
-            docs.extend(response.get('files', []))
-            page_token = response.get('nextPageToken')
-            
-            if not page_token:
-                break
-        
-        return docs
-    
-    def _find_manuscript_shortcut(self, folder_id: str) -> Optional[Dict[str, Any]]:
-        """Find shortcuts to Google Docs in a folder."""
-        logger.info("No Google Docs found in folder, looking for shortcuts/links...")
-        shortcuts = []
-        page_token = None
-        
-        while True:
-            response = self.drive_service.files().list(
-                q=f"'{folder_id}' in parents and mimeType='application/vnd.google-apps.shortcut' and trashed=false",
-                fields="nextPageToken, files(id, name, mimeType, shortcutDetails)",
-                pageToken=page_token
-            ).execute()
-            
-            shortcuts.extend(response.get('files', []))
-            page_token = response.get('nextPageToken')
-            
-            if not page_token:
-                break
-        
-        if not shortcuts:
-            return None
-        
-        # Filter shortcuts that point to Google Docs
-        doc_shortcuts = []
-        for shortcut in shortcuts:
-            shortcut_details = shortcut.get('shortcutDetails', {})
-            target_mime = shortcut_details.get('targetMimeType', '')
-            if target_mime == 'application/vnd.google-apps.document':
-                shortcut['targetId'] = shortcut_details.get('targetId')
-                doc_shortcuts.append(shortcut)
-        
-        if not doc_shortcuts:
-            logger.info("No shortcuts to Google Docs found")
-            return None
-        
-        # If only one doc shortcut, use it
-        if len(doc_shortcuts) == 1:
-            logger.info(f"Found shortcut to document: {doc_shortcuts[0]['name']}")
-            return {
-                'id': doc_shortcuts[0]['targetId'],
-                'name': doc_shortcuts[0]['name'].replace('.gdoc', ''),
-                'mimeType': 'application/vnd.google-apps.document'
-            }
-        
-        # Look for one with 'manuscript' in the name
-        manuscript_shortcuts = [s for s in doc_shortcuts if 'manuscript' in s['name'].lower()]
-        
-        if manuscript_shortcuts:
-            logger.info(f"Found shortcut with 'manuscript' in name: {manuscript_shortcuts[0]['name']}")
-            return {
-                'id': manuscript_shortcuts[0]['targetId'],
-                'name': manuscript_shortcuts[0]['name'].replace('.gdoc', ''),
-                'mimeType': 'application/vnd.google-apps.document'
-            }
-        
-        logger.warning(f"Found {len(doc_shortcuts)} document shortcuts but none with 'manuscript' in the name")
-        return None
-    
-    def _find_figs_folder(self, folder_id: str) -> Optional[str]:
-        """Find the figures subfolder in a Google Drive folder."""
-        # List all subfolders
-        folders = []
-        page_token = None
-        
-        while True:
-            response = self.drive_service.files().list(
-                q=f"'{folder_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false",
-                fields="nextPageToken, files(id, name)",
-                pageToken=page_token
-            ).execute()
-            
-            folders.extend(response.get('files', []))
-            page_token = response.get('nextPageToken')
-            
-            if not page_token:
-                break
-        
-        if not folders:
-            return None
-        
-        # If only one folder, use it
-        if len(folders) == 1:
-            logger.info(f"Using subfolder: {folders[0]['name']}")
-            return folders[0]['id']
-        
-        # Look for one named 'figs'
-        figs_folders = [f for f in folders if f['name'].lower() == 'figs']
-        
-        if figs_folders:
-            return figs_folders[0]['id']
-        else:
-            logger.warning(f"Found {len(folders)} subfolders but none named 'figs'")
-            return None
-

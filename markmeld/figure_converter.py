@@ -256,24 +256,36 @@ class FigureConverter:
             )
             
             if result.returncode != 0:
-                logger.error(f"Inkscape error: {result.stderr}")
+                logger.error(f"❌ Inkscape conversion failed with return code {result.returncode}")
+                logger.error(f"   Command: {' '.join(cmd)}")
+                if result.stderr:
+                    logger.error(f"   Error output: {result.stderr[:500]}")
+                if result.stdout:
+                    logger.debug(f"   Output: {result.stdout[:500]}")
                 return False
             
             if not output_path.exists():
-                logger.error(f"PDF file was not created at {output_path}")
+                logger.error(f"❌ PDF file was not created at {output_path}")
+                logger.error(f"   SVG source: {svg_path}")
+                logger.error(f"   Check if Inkscape completed successfully")
                 return False
             
             logger.info(f"  Converted: {svg_path} -> {output_path}")
             return True
             
         except subprocess.TimeoutExpired:
-            logger.error("Inkscape conversion timed out")
+            logger.error(f"❌ Inkscape conversion timed out after 60 seconds")
+            logger.error(f"   SVG file: {svg_path}")
+            logger.error(f"   This may indicate a complex or corrupted SVG file")
             return False
         except FileNotFoundError:
-            logger.error(f"Inkscape not found: '{self.inkscape_command}'")
+            logger.error(f"❌ Inkscape not found: '{self.inkscape_command}'")
+            logger.error(f"   Please install Inkscape: sudo apt-get install inkscape (Ubuntu/Debian)")
+            logger.error(f"   Or: brew install inkscape (macOS)")
             return False
         except Exception as e:
-            logger.error(f"Unexpected error in SVG conversion: {e}")
+            logger.error(f"❌ Unexpected error in SVG conversion: {e}")
+            logger.error(f"   SVG file: {svg_path}")
             return False
     
     def convert_csv(self, csv_path: str, output_path: Path, params: Dict[str, Any]) -> bool:
@@ -732,6 +744,13 @@ class FigureConverter:
         # Process reference-style images (these typically don't have parameters)
         for match in re.finditer(ref_pattern, markdown_content, re.MULTILINE):
             path = match.group(1)
+            figures.append((path, {}))
+        
+        # Also look for CSV files with {csv/...} syntax
+        csv_pattern = r'\{(csv/[^}]+\.csv)\}'
+        for match in re.finditer(csv_pattern, markdown_content):
+            path = match.group(1)
+            # CSVs in {} syntax don't have parameters
             figures.append((path, {}))
         
         # Filter out URLs and data URIs, keep only local paths and Google Sheets

@@ -254,40 +254,44 @@ def main(test_args=None):
                 from .cloud_cache_manager import CloudCacheManager
                 from .google_drive import GoogleDriveProcessor
                 
-                # Get doc_id from target configuration
+                # Get google_docs dictionary from target configuration
                 if "data" in tgt.meta and "google_docs" in tgt.meta["data"]:
-                    google_config = tgt.meta["data"]["google_docs"]
-                    doc_id = google_config.get("doc_id") or google_config.get("manuscript")
+                    google_docs = tgt.meta["data"]["google_docs"]
                     
-                    if doc_id:
+                    # google_docs should now be a dictionary
+                    if isinstance(google_docs, dict) and google_docs:
                         cache_manager = CloudCacheManager()
                         
                         if args.cache_status:
-                            # Show cache status
-                            cache_dir = cache_manager.get_cache_dir(doc_id, 'docs')
-                            if cache_dir.exists():
-                                _LOGGER.info(f"Cache exists for document {doc_id}")
-                                _LOGGER.info(f"Cache location: {cache_dir}")
-                                # Check for cached files
-                                cached_files = list(cache_dir.glob("*.md"))
-                                if cached_files:
-                                    _LOGGER.info(f"Cached documents: {len(cached_files)}")
-                                    for f in cached_files:
-                                        _LOGGER.info(f"  - {f.name}")
-                            else:
-                                _LOGGER.info(f"No cache found for document {doc_id}")
+                            # Show cache status for all documents
+                            for var_name, doc_id in google_docs.items():
+                                if doc_id:
+                                    cache_dir = cache_manager.get_cache_dir(doc_id, 'docs')
+                                    if cache_dir.exists():
+                                        _LOGGER.info(f"Cache exists for '{var_name}' document {doc_id}")
+                                        _LOGGER.info(f"Cache location: {cache_dir}")
+                                        # Check for cached files
+                                        cached_files = list(cache_dir.glob("*.md"))
+                                        if cached_files:
+                                            _LOGGER.info(f"Cached documents: {len(cached_files)}")
+                                            for f in cached_files:
+                                                _LOGGER.info(f"  - {f.name}")
+                                    else:
+                                        _LOGGER.info(f"No cache found for '{var_name}' document {doc_id}")
                             sys.exit(0)
                         
                         if args.clear_cache:
-                            # Clear cache for this document
-                            _LOGGER.info(f"Clearing cache for document {doc_id}")
-                            doc_cache_root = cache_manager.cache_root / doc_id
-                            if doc_cache_root.exists():
-                                import shutil
-                                shutil.rmtree(doc_cache_root)
-                                _LOGGER.info("Cache cleared successfully")
-                            else:
-                                _LOGGER.info("No cache to clear")
+                            # Clear cache for all documents
+                            for var_name, doc_id in google_docs.items():
+                                if doc_id:
+                                    _LOGGER.info(f"Clearing cache for '{var_name}' document {doc_id}")
+                                    doc_cache_root = cache_manager.cache_root / doc_id
+                                    if doc_cache_root.exists():
+                                        import shutil
+                                        shutil.rmtree(doc_cache_root)
+                                        _LOGGER.info(f"Cache cleared successfully for '{var_name}'")
+                                    else:
+                                        _LOGGER.info(f"No cache to clear for '{var_name}'")
                         
                         if args.force_refresh:
                             # Set flag to bypass cache
@@ -314,6 +318,11 @@ def main(test_args=None):
     built_target = mm.build_target(
         args.target, print_only=args.print, vardump=args.dump, report=False
     )
+
+    # Check if build failed before attempting to use built_target
+    if built_target is None:
+        _LOGGER.error("Build failed. Check error messages above for details.")
+        sys.exit(1)
 
     if args.dump:
         import json

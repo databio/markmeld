@@ -11,12 +11,21 @@ class TestActiveChangesDetection:
     
     @patch('markmeld.google_drive.service_account.Credentials')
     @patch('markmeld.google_drive.build')
-    def test_check_for_active_changes_with_unpublished_revision(self, mock_build, mock_creds):
-        """Test warning when document has unpublished revisions."""
+    def test_check_for_active_changes_with_suggestions(self, mock_build, mock_creds):
+        """Test warning when document has suggested edits."""
         
-        # Mock the Google Drive service
-        mock_service = MagicMock()
-        mock_build.return_value = mock_service
+        # Mock the Google Drive and Docs services
+        mock_drive_service = MagicMock()
+        mock_docs_service = MagicMock()
+        
+        def build_side_effect(service_name, version, credentials=None):
+            if service_name == 'drive':
+                return mock_drive_service
+            elif service_name == 'docs':
+                return mock_docs_service
+            return MagicMock()
+        
+        mock_build.side_effect = build_side_effect
         
         # Mock credentials
         mock_creds_instance = MagicMock()
@@ -31,19 +40,34 @@ class TestActiveChangesDetection:
         )
         
         # Mock metadata response
-        mock_service.files().get().execute.return_value = {
+        mock_drive_service.files().get().execute.return_value = {
             'id': 'test_doc_id',
             'name': 'Test Document',
             'modifiedTime': '2024-01-01T00:00:00Z'
         }
         
-        # Mock revisions response with unpublished revision
-        mock_service.revisions().list().execute.return_value = {
-            'revisions': [
-                {'id': '1', 'published': True},
-                {'id': '2', 'published': False}  # Unpublished revision
-            ]
+        # Mock document with suggestions
+        mock_docs_service.documents().get().execute.return_value = {
+            'body': {
+                'content': [
+                    {
+                        'paragraph': {
+                            'elements': [
+                                {
+                                    'textRun': {
+                                        'content': 'Some text',
+                                        'suggestedDeletionIds': ['suggestion1']  # Has suggestions
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
         }
+        
+        # Mock comments (none in this case)
+        mock_drive_service.comments().list().execute.return_value = {'comments': []}
         
         # Capture log output
         with patch('markmeld.google_drive.logger') as mock_logger:
@@ -51,17 +75,26 @@ class TestActiveChangesDetection:
             
             # Verify warning was logged
             warning_calls = [call for call in mock_logger.warning.call_args_list 
-                           if 'DOCUMENT HAS ACTIVE CHANGES' in str(call)]
-            assert len(warning_calls) > 0, "Expected warning about active changes"
+                           if 'DOCUMENT HAS SUGGESTED EDITS' in str(call)]
+            assert len(warning_calls) > 0, "Expected warning about suggested edits"
     
     @patch('markmeld.google_drive.service_account.Credentials')
     @patch('markmeld.google_drive.build')
     def test_check_for_active_changes_with_unresolved_comments(self, mock_build, mock_creds):
         """Test warning when document has unresolved comments."""
         
-        # Mock the Google Drive service
-        mock_service = MagicMock()
-        mock_build.return_value = mock_service
+        # Mock the Google Drive and Docs services
+        mock_drive_service = MagicMock()
+        mock_docs_service = MagicMock()
+        
+        def build_side_effect(service_name, version, credentials=None):
+            if service_name == 'drive':
+                return mock_drive_service
+            elif service_name == 'docs':
+                return mock_docs_service
+            return MagicMock()
+        
+        mock_build.side_effect = build_side_effect
         
         # Mock credentials
         mock_creds_instance = MagicMock()
@@ -76,17 +109,33 @@ class TestActiveChangesDetection:
         )
         
         # Mock metadata response
-        mock_service.files().get().execute.return_value = {
+        mock_drive_service.files().get().execute.return_value = {
             'id': 'test_doc_id',
             'name': 'Test Document',
             'modifiedTime': '2024-01-01T00:00:00Z'
         }
         
-        # Mock revisions to fail (simulating lack of permissions)
-        mock_service.revisions().list().execute.side_effect = Exception("No permission")
+        # Mock document without suggestions
+        mock_docs_service.documents().get().execute.return_value = {
+            'body': {
+                'content': [
+                    {
+                        'paragraph': {
+                            'elements': [
+                                {
+                                    'textRun': {
+                                        'content': 'Some text'
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        }
         
         # Mock comments response with unresolved comments
-        mock_service.comments().list().execute.return_value = {
+        mock_drive_service.comments().list().execute.return_value = {
             'comments': [
                 {'resolved': False},
                 {'resolved': False},
@@ -108,9 +157,18 @@ class TestActiveChangesDetection:
     def test_check_for_active_changes_no_issues(self, mock_build, mock_creds):
         """Test no warning when document has no active changes."""
         
-        # Mock the Google Drive service
-        mock_service = MagicMock()
-        mock_build.return_value = mock_service
+        # Mock the Google Drive and Docs services
+        mock_drive_service = MagicMock()
+        mock_docs_service = MagicMock()
+        
+        def build_side_effect(service_name, version, credentials=None):
+            if service_name == 'drive':
+                return mock_drive_service
+            elif service_name == 'docs':
+                return mock_docs_service
+            return MagicMock()
+        
+        mock_build.side_effect = build_side_effect
         
         # Mock credentials
         mock_creds_instance = MagicMock()
@@ -125,18 +183,35 @@ class TestActiveChangesDetection:
         )
         
         # Mock metadata response
-        mock_service.files().get().execute.return_value = {
+        mock_drive_service.files().get().execute.return_value = {
             'id': 'test_doc_id',
             'name': 'Test Document',
             'modifiedTime': '2024-01-01T00:00:00Z'
         }
         
-        # Mock revisions response with all published
-        mock_service.revisions().list().execute.return_value = {
-            'revisions': [
-                {'id': '1', 'published': True},
-                {'id': '2', 'published': True}  # All published
-            ]
+        # Mock document without suggestions
+        mock_docs_service.documents().get().execute.return_value = {
+            'body': {
+                'content': [
+                    {
+                        'paragraph': {
+                            'elements': [
+                                {
+                                    'textRun': {
+                                        'content': 'Some text'
+                                        # No suggestedDeletionIds, suggestedInsertionIds, etc.
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        }
+        
+        # Mock comments response with no unresolved comments
+        mock_drive_service.comments().list().execute.return_value = {
+            'comments': []  # No comments at all
         }
         
         # Capture log output
