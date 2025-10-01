@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Markmeld is a markdown melder that merges YAML and markdown content using Jinja2 templates to produce polished documents like resumes, proposals, manuscripts, and more. It's particularly powerful when combined with pandoc for various output formats (HTML, PDF via LaTeX).
 
+Markmeld provides the core functionality around building PDF and other outputs from input markdown files.
+
 ## Key Commands
 
 ### Development
@@ -22,24 +24,6 @@ black .
 # Build demo documents
 cd demo
 mm default
-```
-
-### CLI Usage
-```bash
-# Initialize a config file
-mm --init
-
-# Build a target
-mm <target_name>
-
-# List available targets
-mm -l
-
-# Print output instead of running pandoc
-mm <target_name> -p
-
-# Dump content object for debugging
-mm <target_name> -d
 ```
 
 ## Architecture
@@ -105,6 +89,109 @@ Tests are in `tests/` and use pytest. Key test files:
 Test data is in `tests/test_data/` with various configuration examples.
 Add any new tests into `tests/test_*.py` and use pytest to ruth them.
 
+
+## Using Markmeld 
+
+### CLI Usage
+```bash
+# Initialize a config file
+mm --init
+
+# Build a target
+mm <target_name>
+
+# List available targets
+mm -l
+
+# Print output instead of running pandoc
+mm <target_name> -p
+
+# Dump content object for debugging
+mm <target_name> -d
+```
+
+
+
+### Basic Usage as a Python Library
+```python
+from markmeld import MarkdownMelder, load_config_file
+
+# Load configuration from file
+cfg = load_config_file("_markmeld.yaml")
+
+# Create MarkdownMelder instance
+mm = MarkdownMelder(cfg)
+
+# Build target (print_only=True renders without running command)
+result = mm.build_target("my_target", print_only=True)
+
+# Access rendered output
+print(result.melded_output)
+```
+
+### Programmatic Configuration (No Files Needed) as a Python Library
+```python
+from markmeld import MarkdownMelder
+
+config = {
+    "_cfg_file_path": "/tmp/temp.yaml",  # Required for path resolution
+    "targets": {
+        "document": {
+            "_workpath": "/tmp",  # Required working directory
+            "_defpath": "/tmp",   # Required definition path
+            "data": {
+                "md_content": {
+                    "body": "# Title\n\nContent here"
+                },
+                "yaml_content": {
+                    "metadata": {"author": "John Doe", "date": "2024-01-01"}
+                }
+            },
+            "jinja_template": "template.jinja",
+            "command": None  # Just render, don't execute
+        }
+    }
+}
+
+mm = MarkdownMelder(config)
+result = mm.build_target("document", print_only=True)
+```
+
+### Working with Build Results
+```python
+result = mm.build_target("target_name", print_only=True)
+
+# Access rendered output
+result.melded_output  # String of rendered content
+
+# Access input data passed to template
+result.melded_input   # Dict with all template variables
+
+# Check return code (0 = success)
+result.returncode     # Integer return code
+
+# Access target metadata
+result.meta          # Dict of target configuration
+```
+
+### Building with Subprocess Execution
+```python
+# To actually run commands (e.g., pandoc), omit print_only
+result = mm.build_target("target_name")  # Runs command defined in config
+
+# Or explicitly set print_only=False
+result = mm.build_target("target_name", print_only=False)
+```
+
+### Loop Targets (Mail Merge)
+```python
+# When target has loop configuration, returns dict of results
+results = mm.build_target("loop_target", print_only=True)
+
+# Iterate through results
+for idx, result in results.items():
+    print(f"Iteration {idx}: {result.melded_output}")
+```
 
 ## Common Workflows
 

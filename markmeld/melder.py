@@ -763,6 +763,21 @@ class MarkdownMelder(object):
                 _LOGGER.error("No input detected. Check variable names")
                 tgt.returncode = 2
             else:
+                # Run figure reference analysis if we have markdown content
+                if tgt.melded_output and isinstance(tgt.melded_output, str):
+                    try:
+                        from .figure_converter import FigureConverter
+                        # Create a temporary FigureConverter instance for analysis
+                        fc = FigureConverter(None)  # No cache manager needed for analysis
+                        analysis_report = fc.generate_figure_analysis_report(tgt.melded_output)
+                        if analysis_report:
+                            # Log the analysis report as warnings
+                            for line in analysis_report.split('\n'):
+                                if line.strip():
+                                    _LOGGER.warning(line)
+                    except Exception as e:
+                        _LOGGER.debug(f"Could not analyze figure references: {e}")
+                
                 # Create output folder if it doesn't exist:
                 if tgt.meta["output_file"] and not os.path.dirname(tgt.meta["output_file"]) == "" and not os.path.exists(
                     os.path.dirname(tgt.meta["output_file"])

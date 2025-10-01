@@ -510,33 +510,110 @@ class GoogleDriveProcessor:
             
             # Also check for unresolved comments
             try:
+                # Get detailed comment information including quotedFileContent
                 comments = self.drive_service.comments().list(
                     fileId=doc_id,
-                    fields='comments(resolved)',
+                    fields='comments(id,content,author(displayName,emailAddress),createdTime,modifiedTime,resolved,deleted,replies,quotedFileContent)',
                     includeDeleted=False
                 ).execute()
                 
-                unresolved_comments = [c for c in comments.get('comments', []) 
-                                     if not c.get('resolved', False)]
+                # Filter out deleted and phantom comments
+                all_comments = comments.get('comments', [])
+                unresolved_comments = []
+                
+                for comment in all_comments:
+                    # Skip if explicitly deleted (safety check even with includeDeleted=False)
+                    if comment.get('deleted', False):
+                        continue
+                    
+                    # Skip if no content (phantom comment)
+                    content = comment.get('content', '').strip()
+                    if not content:
+                        continue
+                    
+                    # Skip if this is an "Original content deleted" comment
+                    # These occur when the text a comment was attached to has been deleted
+                    # but the comment itself remains unresolved
+                    if 'original content deleted' in content.lower():
+                        continue
+                    
+                    # Also check if quotedFileContent indicates deleted content
+                    quoted_content = comment.get('quotedFileContent', {})
+                    if quoted_content and not quoted_content.get('value', '').strip():
+                        # Comment's anchor text was deleted
+                        continue
+                    
+                    # Check if unresolved
+                    if not comment.get('resolved', False):
+                        unresolved_comments.append(comment)
                 
                 if unresolved_comments:
                     logger.warning("")
                     logger.warning("=" * 70)
-                    logger.warning("⚠️  WARNING: DOCUMENT HAS UNRESOLVED COMMENTS")
+                    logger.warning("📝 NOTICE: DOCUMENT HAS UNRESOLVED DISCUSSION COMMENTS")
                     logger.warning("=" * 70)
                     logger.warning(f"Document: {doc_name}")
-                    logger.warning(f"Unresolved comments: {len(unresolved_comments)}")
+                    logger.warning(f"")
+                    logger.warning(f"Found {len(unresolved_comments)} unresolved comment(s):")
                     logger.warning("")
-                    logger.warning("This document has unresolved comments which may indicate")
-                    logger.warning("ongoing review or required changes.")
-                    logger.warning("")
-                    logger.warning("Consider resolving all comments before generating")
-                    logger.warning("the final output.")
+                    
+                    # Show details about each comment (up to 5)
+                    for i, comment in enumerate(unresolved_comments[:5], 1):
+                        try:
+                            # Safely get author information
+                            author = comment.get('author', {})
+                            if isinstance(author, dict):
+                                author_name = author.get('displayName', author.get('emailAddress', 'Unknown'))
+                            else:
+                                author_name = 'Unknown'
+                            
+                            # Safely get content
+                            content = comment.get('content', '')
+                            if not isinstance(content, str):
+                                content = str(content) if content else ''
+                            
+                            # Truncate content to 100 chars
+                            if len(content) > 100:
+                                content = content[:97] + '...'
+                            
+                            # Safely get and format created time
+                            created = comment.get('createdTime', '')
+                            if created:
+                                try:
+                                    from datetime import datetime
+                                    dt = datetime.fromisoformat(created.replace('Z', '+00:00'))
+                                    created_str = dt.strftime('%Y-%m-%d %H:%M')
+                                except:
+                                    created_str = created[:10] if len(created) >= 10 else 'Unknown date'
+                            else:
+                                created_str = 'Unknown date'
+                            
+                            logger.warning(f"  {i}. [{author_name}, {created_str}]")
+                            logger.warning(f"     \"{content}\"")
+                            
+                            # Safely check for replies
+                            replies = comment.get('replies', [])
+                            if isinstance(replies, list) and len(replies) > 0:
+                                logger.warning(f"     ({len(replies)} replies in thread)")
+                            logger.warning("")
+                        except Exception as e:
+                            # If we can't process a comment, skip it rather than crash
+                            logger.debug(f"Error processing comment {i}: {e}")
+                            logger.warning(f"  {i}. [Error reading comment details]")
+                            logger.warning("")
+                    
+                    if len(unresolved_comments) > 5:
+                        logger.warning(f"  ... and {len(unresolved_comments) - 5} more comment(s)")
+                        logger.warning("")
+                    
+                    logger.warning("Note: These are discussion comments, not suggested edits.")
+                    logger.warning("Review these comments to ensure all feedback is addressed.")
                     logger.warning("=" * 70)
                     logger.warning("")
                     
-            except:
+            except Exception as e:
                 # Comments API failed, skip the check silently
+                logger.debug(f"Could not check for comments: {e}")
                 pass
                 
         except Exception as e:

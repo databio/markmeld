@@ -438,10 +438,9 @@ def clean_markdown(markdown_content: str,
 
 def clean_escape_characters(markdown_content: str) -> str:
     """Remove escape characters from markdown elements. Used to clean Google Docs exports."""
-    # Handle LaTeX commands first - preserve double backslashes for LaTeX
-    content = markdown_content.replace('\\\\\\', '\\\\')
+    content = markdown_content
     
-    # Remove escapes from various characters
+    # Remove escapes from various markdown characters (but NOT LaTeX ones)
     content = content.replace('\\[', '[')
     content = content.replace('\\]', ']')
     content = content.replace('\\_', '_')
@@ -453,11 +452,16 @@ def clean_escape_characters(markdown_content: str) -> str:
     content = content.replace('\\*', '*')
     content = content.replace('\\=', '=')
     content = content.replace('\\+', '+')
-
-    # Handle LaTeX commands: remove escape before backslash when followed by alphanumeric
-    content = re.sub(r'\\(\\[a-zA-Z0-9])', r'\1', content)
-
-    # content = content.replace('\\\\', '\\')
+    
+    # Handle LaTeX-specific fixes: convert double backslashes before LaTeX commands to single
+    # This fixes Google Docs converting \{ to \\{ while preserving the LaTeX command
+    content = re.sub(r'\\\\([{}\\])', r'\\\1', content)
+    
+    # Handle other LaTeX commands: convert \\alpha to \alpha, etc.
+    content = re.sub(r'\\\\([a-zA-Z]+)', r'\\\1', content)
+    
+    # Finally, clean up any remaining double backslashes that aren't LaTeX commands
+    content = re.sub(r'\\\\(?![{}\\a-zA-Z])', r'\\', content)
 
     return content
 

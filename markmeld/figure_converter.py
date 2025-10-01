@@ -771,3 +771,635 @@ class FigureConverter:
                 unique_figures.append((path, params))
         
         return unique_figures
+    
+    def extract_figure_references(self, markdown_content: str) -> List[Tuple[str, int, str, int, str]]:
+        """
+        Extract all figure references from markdown content.
+
+        Finds references in formats like:
+        - (Fig. 2), (Figure 2), (Fig 2)
+        - (Fig. 2A), (Fig. 3B, 3C), (Figure 3B-D)
+        - (Figure S2), (Supplemental Figure 2)
+        - Figure \ref{fig:label} with or without spaces before panels
+        - Non-parenthetic references: "as shown in Figure 2"
+
+        Returns:
+            List of tuples: (reference_text, figure_number, panel_letters, line_number, context)
+        """
+        references = []
+        lines = markdown_content.split('\n')
+
+        for line_num, line in enumerate(lines, 1):
+            # Skip lines that are image definitions
+            if line.strip().startswith('![') or re.match(r'^\s*\[[^\]]+\]:\s*', line):
+                continue
+
+            # Track positions already matched to avoid duplicates
+            matched_positions = set()
+
+            # Simplified patterns - handle each type separately for better control
+            patterns = [
+                # LaTeX ref style with panel - NO space allowed before panel letter
+                r'\(?\s*Fig(?:ure)?\.?\s*\\ref\{[^}]+\}[A-Z]?(?:-[A-Z])?(?:[,;]\s*[^)]*)?[)]?',
+                # LaTeX ref style WITHOUT panel but potentially with space (error case)
+                r'\(\s*Fig(?:ure)?\.?\s*\\ref\{[^}]+\}\s+[A-Z]?\)',
+                # Parenthetic simple figures - improved to handle commas/semicolons after panels
+                r'\(\s*(?:Supplemental\s+)?Fig(?:ure)?\.?\s*S?\d+[A-Z]?(?:-[A-Z])?(?:[,;]\s*[^)]*)?[)]?',
+                # Multiple panels in parentheses (e.g., "Fig. 3A, 3B")
+                r'\(\s*Fig(?:ure)?\.?\s*S?\d+[A-Z]?(?:\s*,\s*S?\d*[A-Z])+(?:[,;]\s*[^)]*)?[)]?',
+                # Context phrases (including "shown in")
+                r'(?:as\s+shown\s+in\s+|see\s+|shown\s+in\s+|described\s+in\s+|illustrated\s+in\s+)Fig(?:ure)?\.?\s*(?:\\ref\{[^}]+\}|S?\d+)[A-Z]?(?:-[A-Z])?',
+                # Standalone references (but not after "in" to avoid duplicates)
+                r'(?<![(\w])(?<!in\s)Fig(?:ure)?\.?\s*(?:\\ref\{[^}]+\}|S?\d+)[A-Z]?(?:-[A-Z])?(?![)\w])'
+            ]
+
+            for pattern in patterns:
+                for match in re.finditer(pattern, line, re.IGNORECASE):
+                    # Check if any part of this match overlaps with already matched positions
+                    if any(pos in matched_positions for pos in range(match.start(), match.end())):
+                        continue
+
+                    # Mark this position range as matched
+                    for pos in range(match.start(), match.end()):
+                        matched_positions.add(pos)
+
+                    ref_text = match.group(0).strip()
+
+                    # Clean up the reference text (remove trailing punctuation that's not part of parentheses)
+                    if ref_text and ref_text[-1] in ',;' and not ref_text.startswith('('):
+                        ref_text = ref_text[:-1]
+
+                    # Check if this is a multi-figure reference
+                    multi_refs = self.parse_multi_figure_reference(ref_text)
+
+                    if multi_refs:
+                        # Get context once for all references in this match
+                        start_pos = max(0, match.start() - 30)
+                        end_pos = min(len(line), match.end() + 30)
+                        context = line[start_pos:end_pos].strip()
+
+                        # Add each figure reference separately
+                        for figure_num, panels in multi_refs:
+                            references.append((
+                                ref_text,  # Keep original text for reporting
+                                figure_num,
+                                panels,
+                                line_num,
+                                context
+                            ))
+                    else:
+                        # Single reference - parse normally
+                        parsed = self.parse_figure_reference(ref_text)
+                        if parsed:
+                            figure_num, panels = parsed
+
+                            # Get context (surrounding text)
+                            start_pos = max(0, match.start() - 30)
+                            end_pos = min(len(line), match.end() + 30)
+                            context = line[start_pos:end_pos].strip()
+
+                            references.append((
+                                ref_text,
+                                figure_num,
+                                panels,
+                                line_num,
+                                context
+                            ))
+
+        return references
+    
+    def parse_multi_figure_reference(self, ref_text: str) -> Optional[List[Tuple[str, str]]]:
+        """
+        Parse multi-figure references like "(Fig. 3A, 3B)" or "(Fig. S3, S4)".
+        
+        Args:
+            ref_text: Reference text that might contain multiple figures
+            
+        Returns:
+            List of tuples (figure_number, panel_letters) or None if not multi-ref
+        """
+        # Check for patterns like "(Fig. 3A, 3B)" or "(Fig. S3, S4)"
+        # Pattern: Fig. followed by figure number, then comma-separated additional refs
+        pattern = r'\(?\s*Fig(?:ure)?\.?\s*(S?\d+)([A-Z](?:-[A-Z])?)?(?:\s*,\s*([S\d]+[A-Z]?(?:-[A-Z])?(?:\s*,\s*[S\d]+[A-Z]?(?:-[A-Z])?)*))?\)?'
+        
+        match = re.match(pattern, ref_text, re.IGNORECASE)
+        if match and match.group(3):  # Has comma-separated parts
+            refs = []
+            
+            # First figure
+            fig_num = match.group(1)
+            panel = match.group(2) or ''
+            refs.append((fig_num, panel))
+            
+            # Additional figures
+            additional = match.group(3)
+            if additional:
+                # Split by comma and process each
+                for part in additional.split(','):
+                    part = part.strip()
+                    # Check if it's just a panel letter (e.g., "3B")
+                    if re.match(r'^[A-Z](?:-[A-Z])?$', part):
+                        # Just a panel for the same figure
+                        refs.append((fig_num, part))
+                    elif re.match(r'^S?\d+[A-Z]?(?:-[A-Z])?$', part):
+                        # Parse figure number and optional panel
+                        num_match = re.match(r'^(S?\d+)([A-Z](?:-[A-Z])?)?$', part)
+                        if num_match:
+                            refs.append((num_match.group(1), num_match.group(2) or ''))
+            
+            return refs if len(refs) > 1 else None
+        
+        return None
+    
+    def parse_figure_reference(self, ref_text: str) -> Optional[Tuple[str, str]]:
+        """
+        Parse a figure reference to extract figure number and panel letters.
+
+        Args:
+            ref_text: Reference text like "(Fig. 3B)", "Figure S2", etc.
+
+        Returns:
+            Tuple of (figure_number, panel_letters) or None if parsing fails
+        """
+        # Clean up the text - remove parentheses and trailing punctuation
+        ref_text = ref_text.strip('()')
+        if ref_text and ref_text[-1] in ',;':
+            ref_text = ref_text[:-1]
+
+        # Handle LaTeX \ref{} style
+        if '\\ref{' in ref_text:
+            # Extract the label
+            label_match = re.search(r'\\ref\{([^}]+)\}', ref_text)
+            if label_match:
+                label = label_match.group(1)
+                # Check for panel letters IMMEDIATELY after the ref (NO space allowed)
+                # Spaces before panel letters are LaTeX errors
+                panel_match = re.search(r'\\ref\{[^}]+\}([A-Z](?:-[A-Z])?)', ref_text)
+                panels = panel_match.group(1) if panel_match else ''
+                return (label, panels)
+
+        # Handle regular figure references
+        # Match patterns like "Fig. 3B", "Figure S2", "Supplemental Figure 2"
+        # Now also handles spaces before panels
+        patterns = [
+            # Standard format with optional space before panel
+            r'(?:Supplemental\s+)?Fig(?:ure)?\.?\s*(S?\d+)\s*([A-Z](?:-[A-Z])?)?',
+            # Handle single panel letter
+            r'(?:Supplemental\s+)?Fig(?:ure)?\.?\s*(S?\d+)\s*([A-Z])',
+            # Handle comma-separated panels like "3B, 3C"
+            r'(\d+)\s*([A-Z](?:\s*,\s*[A-Z])*)',
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, ref_text, re.IGNORECASE)
+            if match:
+                figure_num = match.group(1)
+                panels = match.group(2) if len(match.groups()) > 1 and match.group(2) else ''
+                # Clean up panels - remove spaces
+                if panels:
+                    panels = panels.replace(' ', '')
+                return (figure_num, panels)
+
+        return None
+    
+    def validate_figure_order(self, references: List[Tuple[str, int, str, int, str]]) -> List[Dict[str, Any]]:
+        """
+        Validate that figure references appear in logical order.
+        
+        Args:
+            references: List of figure references from extract_figure_references
+            
+        Returns:
+            List of order violations with details
+        """
+        violations = []
+        
+        # Track first occurrence of each figure
+        first_occurrences = {}
+        figure_order = []
+        
+        for ref_text, fig_num, panels, line_num, context in references:
+            # Skip LaTeX references for now (they use labels not numbers)
+            if '\\ref{' in str(fig_num):
+                continue
+                
+            # Track first occurrence
+            if fig_num not in first_occurrences:
+                first_occurrences[fig_num] = {
+                    'line': line_num,
+                    'text': ref_text,
+                    'context': context
+                }
+                figure_order.append(fig_num)
+        
+        # Check if main figures are in order
+        main_figures = [f for f in figure_order if not f.startswith('S')]
+        supplemental_figures = [f for f in figure_order if f.startswith('S')]
+        
+        # Check main figure ordering
+        for i in range(1, len(main_figures)):
+            try:
+                curr_num = int(main_figures[i])
+                prev_num = int(main_figures[i-1])
+                
+                if curr_num < prev_num:
+                    violations.append({
+                        'type': 'out_of_order',
+                        'figure': main_figures[i],
+                        'expected_after': main_figures[i-1],
+                        'line': first_occurrences[main_figures[i]]['line'],
+                        'context': first_occurrences[main_figures[i]]['context'],
+                        'message': f"Figure {curr_num} appears after Figure {prev_num}"
+                    })
+            except ValueError:
+                # Skip if not a simple number
+                pass
+        
+        # Check supplemental figure ordering
+        for i in range(1, len(supplemental_figures)):
+            try:
+                curr_num = int(supplemental_figures[i][1:])  # Remove 'S' prefix
+                prev_num = int(supplemental_figures[i-1][1:])
+                
+                if curr_num < prev_num:
+                    violations.append({
+                        'type': 'out_of_order',
+                        'figure': supplemental_figures[i],
+                        'expected_after': supplemental_figures[i-1],
+                        'line': first_occurrences[supplemental_figures[i]]['line'],
+                        'context': first_occurrences[supplemental_figures[i]]['context'],
+                        'message': f"Figure {supplemental_figures[i]} appears after Figure {supplemental_figures[i-1]}"
+                    })
+            except (ValueError, IndexError):
+                # Skip if not a simple number
+                pass
+        
+        return violations
+
+    def validate_panel_order(self, references: List[Tuple[str, int, str, int, str]]) -> List[Dict[str, Any]]:
+        """
+        Validate that figure panels appear in correct alphabetical order.
+
+        Args:
+            references: List of figure references from extract_figure_references
+
+        Returns:
+            List of panel order violations with details
+        """
+        violations = []
+
+        # Track panels seen for each figure
+        figure_panels = {}  # figure_num -> {panel -> (line, context)}
+
+        for ref_text, fig_num, panels, line_num, context in references:
+            # Skip LaTeX references with labels for now
+            if '\\ref{' in str(fig_num):
+                # For LaTeX refs, extract base figure name without 'fig:' prefix
+                if fig_num.startswith('fig:'):
+                    fig_num = fig_num[4:]
+
+            # Skip if no panels
+            if not panels:
+                continue
+
+            # Initialize tracking for this figure if needed
+            if fig_num not in figure_panels:
+                figure_panels[fig_num] = {}
+
+            # Handle multi-panel references (e.g., "B-D")
+            if '-' in panels:
+                # Extract range (e.g., "B-D" -> ['B', 'C', 'D'])
+                start_panel = panels[0]
+                end_panel = panels[2] if len(panels) >= 3 else panels[0]
+                for p in range(ord(start_panel), ord(end_panel) + 1):
+                    panel = chr(p)
+                    if panel not in figure_panels[fig_num]:
+                        figure_panels[fig_num][panel] = (line_num, context)
+            else:
+                # Single panel or comma-separated panels
+                panel_list = panels.split(',') if ',' in panels else [panels]
+                for panel in panel_list:
+                    panel = panel.strip()
+                    if panel and panel not in figure_panels[fig_num]:
+                        figure_panels[fig_num][panel] = (line_num, context)
+
+        # Check each figure for panel order violations
+        for fig_num, panels_dict in figure_panels.items():
+            if not panels_dict:
+                continue
+
+            # Get sorted list of panels that were referenced
+            panels_seen = sorted(panels_dict.keys())
+
+            # Check if first panel is not 'A'
+            if panels_seen and panels_seen[0] != 'A':
+                first_panel = panels_seen[0]
+                line_num, context = panels_dict[first_panel]
+                violations.append({
+                    'type': 'missing_panel_A',
+                    'figure': fig_num,
+                    'first_panel': first_panel,
+                    'line': line_num,
+                    'context': context,
+                    'message': f"Figure {fig_num} starts with panel {first_panel}, but panel A was never referenced"
+                })
+
+            # Check for gaps in panel sequence
+            if len(panels_seen) > 1:
+                expected_panels = [chr(ord('A') + i) for i in range(ord(panels_seen[-1]) - ord('A') + 1)]
+                missing_panels = [p for p in expected_panels if p not in panels_seen]
+
+                if missing_panels:
+                    # Find the first referenced panel after the gap
+                    for missing in missing_panels:
+                        # Find panels that come after the missing one
+                        later_panels = [p for p in panels_seen if p > missing]
+                        if later_panels:
+                            first_later = later_panels[0]
+                            line_num, context = panels_dict[first_later]
+                            violations.append({
+                                'type': 'missing_panel',
+                                'figure': fig_num,
+                                'missing_panel': missing,
+                                'referenced_panel': first_later,
+                                'line': line_num,
+                                'context': context,
+                                'message': f"Figure {fig_num} panel {first_later} referenced, but panel {missing} was never referenced"
+                            })
+
+            # Check if panels appear in order by line number
+            panel_order_by_line = sorted(panels_dict.items(), key=lambda x: x[1][0])
+            prev_panel = None
+            for panel, (line_num, context) in panel_order_by_line:
+                if prev_panel and panel < prev_panel:
+                    violations.append({
+                        'type': 'panel_out_of_order',
+                        'figure': fig_num,
+                        'panel': panel,
+                        'expected_after': prev_panel,
+                        'line': line_num,
+                        'context': context,
+                        'message': f"Figure {fig_num} panel {panel} appears before panel {prev_panel}"
+                    })
+                prev_panel = panel
+
+        return violations
+
+    def detect_figure_warnings(self, references: List[Tuple[str, int, str, int, str]]) -> List[Dict[str, Any]]:
+        """
+        Detect potential issues with figure references.
+        
+        Args:
+            references: List of figure references
+            
+        Returns:
+            List of warnings with details
+        """
+        warnings = []
+        
+        # Check for non-parenthetic references that might need parentheses
+        for ref_text, fig_num, panels, line_num, context in references:
+            # Skip if it's in a figure caption (starts with **)
+            if context.startswith('**'):
+                continue
+                
+            # Warning for references not in parentheses (unless in specific contexts)
+            if not ref_text.startswith('('):
+                # Check if the reference text itself contains acceptable context phrases
+                # These are typically part of the match when using our combined pattern
+                acceptable_starts = [
+                    'as shown in',
+                    'see fig',
+                    'shown in fig',
+                    'described in fig',
+                    'illustrated in fig'
+                ]
+                
+                ref_lower = ref_text.lower()
+                if not any(ref_lower.startswith(ctx) for ctx in acceptable_starts):
+                    # For standalone "Figure X" references, check context
+                    if ref_lower.startswith('fig'):
+                        # This is a standalone figure reference - warn about it
+                        warnings.append({
+                            'type': 'no_parentheses',
+                            'figure': fig_num,
+                            'line': line_num,
+                            'text': ref_text,
+                            'context': context,
+                            'message': f"Figure reference '{ref_text}' is not in parentheses"
+                        })
+        
+        return warnings
+    
+    def generate_figure_analysis_report(self, markdown_content: str) -> str:
+        """
+        Generate a comprehensive figure reference analysis report.
+
+        Args:
+            markdown_content: The markdown content to analyze
+
+        Returns:
+            Formatted report string
+        """
+        # Extract references
+        references = self.extract_figure_references(markdown_content)
+
+        if not references:
+            return ""
+
+        # Validate figure order
+        figure_violations = self.validate_figure_order(references)
+
+        # Validate panel order
+        panel_violations = self.validate_panel_order(references)
+
+        # Detect warnings
+        warnings = self.detect_figure_warnings(references)
+
+        # Check for prefix consistency
+        prefix_warnings = self.check_prefix_consistency(references)
+
+        # Build report
+        report_lines = []
+
+        # Summary
+        report_lines.append("")
+        report_lines.append("=" * 70)
+        report_lines.append("📊 FIGURE REFERENCE ANALYSIS")
+        report_lines.append("=" * 70)
+        report_lines.append("")
+        report_lines.append(f"Total figure references found: {len(references)}")
+
+        # Count unique figures (including all panels)
+        unique_figures = set()
+        unique_figure_bases = set()  # Just the figure numbers without panels
+        for _, fig_num, panels, _, _ in references:
+            if not '\\ref{' in str(fig_num):
+                # Add the full figure+panel combination
+                if panels:
+                    unique_figures.add(f"{fig_num}{panels}")
+                else:
+                    unique_figures.add(fig_num)
+                # Also track just the base figure number
+                unique_figure_bases.add(fig_num)
+
+        report_lines.append(f"Unique figures referenced: {len(unique_figure_bases)}")
+        report_lines.append("")
+
+        # List first occurrences - SORTED BY LINE NUMBER
+        first_occurrences = {}
+        for ref_text, fig_num, panels, line_num, context in references:
+            # Create a unique key for each figure+panel combination
+            if panels:
+                key = f"{fig_num}_{panels}"
+                display_text = f"Fig. {fig_num}{panels}"  # Normalized display
+            else:
+                key = fig_num
+                display_text = f"Fig. {fig_num}"  # Normalized display
+
+            if key not in first_occurrences:
+                first_occurrences[key] = {
+                    'line': line_num,
+                    'text': display_text,  # Use normalized text for cleaner display
+                    'panels': panels,
+                    'fig_num': fig_num,
+                    'original_text': ref_text  # Keep original for reference
+                }
+
+        if first_occurrences:
+            report_lines.append("First occurrence of each figure (ordered by appearance):")
+            # Sort by line number (order of appearance)
+            for key in sorted(first_occurrences.keys(),
+                            key=lambda x: first_occurrences[x]['line']):
+                info = first_occurrences[key]
+                # No need for panel_info since it's in the normalized text
+                report_lines.append(f"  Line {info['line']:4d}: {info['text']}")
+            report_lines.append("")
+
+        # Report figure order violations
+        if figure_violations:
+            report_lines.append("⚠️  FIGURE ORDER VIOLATIONS:")
+            report_lines.append("")
+            for violation in figure_violations:
+                report_lines.append(f"  - {violation['message']}")
+                report_lines.append(f"    Line {violation['line']}: {violation['context']}")
+                report_lines.append("")
+
+        # Report panel order violations
+        if panel_violations:
+            report_lines.append("❌ PANEL ORDER VIOLATIONS:")
+            report_lines.append("")
+            for violation in panel_violations:
+                report_lines.append(f"  - {violation['message']}")
+                if violation['line'] > 0:  # Some violations may not have a specific line
+                    report_lines.append(f"    Line {violation['line']}: {violation['context']}")
+                report_lines.append("")
+
+        # Report prefix consistency warnings
+        if prefix_warnings:
+            report_lines.append("⚠️  FIGURE PREFIX INCONSISTENCIES:")
+            report_lines.append("")
+            for warning in prefix_warnings:
+                report_lines.append(f"  - {warning['message']}")
+                if warning['line'] > 0:
+                    report_lines.append(f"    Line {warning['line']}: {warning['context']}")
+                report_lines.append("")
+
+        # Report other warnings
+        if warnings:
+            report_lines.append("⚠️  FIGURE REFERENCE WARNINGS:")
+            report_lines.append("")
+            for warning in warnings:
+                report_lines.append(f"  - {warning['message']}")
+                report_lines.append(f"    Line {warning['line']}: {warning['context']}")
+                report_lines.append("")
+
+        if not figure_violations and not panel_violations and not warnings and not prefix_warnings:
+            report_lines.append("✅ All figure references appear to be in order!")
+            report_lines.append("")
+
+        report_lines.append("=" * 70)
+        report_lines.append("")
+
+        return '\n'.join(report_lines)
+    
+    def check_prefix_consistency(self, references: List[Tuple[str, int, str, int, str]]) -> List[Dict[str, Any]]:
+        """
+        Check for inconsistent use of "Fig." vs "Figure" prefixes.
+        
+        Args:
+            references: List of figure references
+            
+        Returns:
+            List of warnings about prefix inconsistencies
+        """
+        warnings = []
+        
+        # Count the usage of different prefixes
+        prefix_counts = {
+            'Fig.': 0,
+            'Figure': 0,
+            'Fig': 0  # Without period
+        }
+        
+        prefix_examples = {
+            'Fig.': [],
+            'Figure': [],
+            'Fig': []
+        }
+        
+        for ref_text, fig_num, panels, line_num, context in references:
+            # Skip LaTeX references as they might have different patterns
+            if '\\ref{' in ref_text:
+                continue
+                
+            # Determine which prefix is used
+            ref_lower = ref_text.lower()
+            if 'fig.' in ref_lower:
+                prefix_counts['Fig.'] += 1
+                prefix_examples['Fig.'].append((ref_text, line_num, context))
+            elif 'figure' in ref_lower:
+                prefix_counts['Figure'] += 1
+                prefix_examples['Figure'].append((ref_text, line_num, context))
+            elif 'fig' in ref_lower:
+                prefix_counts['Fig'] += 1
+                prefix_examples['Fig'].append((ref_text, line_num, context))
+        
+        # Determine the dominant prefix
+        total_refs = sum(prefix_counts.values())
+        if total_refs == 0:
+            return warnings
+            
+        dominant_prefix = max(prefix_counts, key=prefix_counts.get)
+        dominant_count = prefix_counts[dominant_prefix]
+        
+        # If one prefix is used >80% of the time, warn about the minority uses
+        if dominant_count > 0.8 * total_refs:
+            for prefix, count in prefix_counts.items():
+                if prefix != dominant_prefix and count > 0:
+                    # Add warnings for the minority prefix usage
+                    for ref_text, line_num, context in prefix_examples[prefix][:3]:  # Show first 3 examples
+                        warnings.append({
+                            'type': 'prefix_inconsistency',
+                            'prefix': prefix,
+                            'dominant_prefix': dominant_prefix,
+                            'line': line_num,
+                            'text': ref_text,
+                            'context': context,
+                            'message': f"Inconsistent prefix: '{prefix}' used here, but '{dominant_prefix}' is used in {dominant_count}/{total_refs} references"
+                        })
+                    
+                    # If there are more than 3, add a summary
+                    if len(prefix_examples[prefix]) > 3:
+                        remaining = len(prefix_examples[prefix]) - 3
+                        warnings.append({
+                            'type': 'prefix_inconsistency_summary',
+                            'prefix': prefix,
+                            'dominant_prefix': dominant_prefix,
+                            'line': 0,
+                            'text': '',
+                            'context': '',
+                            'message': f"... and {remaining} more instances of '{prefix}' instead of '{dominant_prefix}'"
+                        })
+        
+        return warnings
