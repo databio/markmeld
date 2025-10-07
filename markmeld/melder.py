@@ -307,6 +307,10 @@ def process_data(data_block, filepath):
 
     # vars_raw = yaml.dump(vars_temp)
 
+    # Make frontmatter variables available at top level
+    # This allows templates to access variables like {{ author }} instead of {{ _global_vars.author }}
+    data.update(vars_temp)
+
     # Global vars behaves exactly like global frontmatter, except:
     # 1. It's all variables, not just those marked with frontmatter_*.
     # It's like what's in a main data array, except it includes metadata,
@@ -410,6 +414,8 @@ class Target(object):
         # Initialize some local variables
         self.messages = []  # A list of messages
         self.returncode = None
+        self.stdout = ""  # Capture stdout from subprocess
+        self.stderr = ""  # Capture stderr from subprocess
 
         meta = {}
         # Old way would update based on root config:
@@ -737,11 +743,26 @@ class MarkdownMelder(object):
     def run_command_for_target(self, tgt, print_only, vardump=False):
         _LOGGER.info(f"Defined path for this target: {tgt.meta['_defpath']}")
         _LOGGER.info(f"Working path for this target: {tgt.meta['_workpath']}")
+
+        # Create output folder if it doesn't exist (before any processing)
+        if "output_file" in tgt.meta and tgt.meta["output_file"]:
+            output_dir = os.path.dirname(tgt.meta["output_file"])
+            if output_dir:
+                # Build absolute path relative to working directory
+                workpath = tgt.meta.get("_workpath", ".")
+                abs_output_dir = os.path.join(workpath, output_dir) if not os.path.isabs(output_dir) else output_dir
+
+                if not os.path.exists(abs_output_dir):
+                    _LOGGER.warning(
+                        f"Missing output folder. Creating output folder: '{abs_output_dir}' for file '{tgt.meta['output_file']}'"
+                    )
+                    os.makedirs(abs_output_dir, exist_ok=True)
+
         if "type" in tgt.meta and tgt.meta["type"] == "raw":
             # Raw = No subprocess stdin printing. (so, it doesn't render anything)
             cmd_fmt = format_command(tgt)
             tgt.melded_output = None
-            tgt.returncode = run_cmd(cmd_fmt, None, tgt.meta["_workpath"])
+            tgt.returncode, tgt.stdout, tgt.stderr = run_cmd(cmd_fmt, None, tgt.meta["_workpath"])
         elif "type" in tgt.meta and tgt.meta["type"] == "meta":
             # Meta = No command, it's a meta-target used for prebuilds or something else
             tgt.melded_output = None
@@ -787,7 +808,7 @@ class MarkdownMelder(object):
                         f"Missing output folder. Creating output folder: '{os.path.dirname(tgt.meta['output_file'])}' for file '{tgt.meta['output_file']}'"
                     )
                     os.makedirs(os.path.dirname(tgt.meta["output_file"]))
-                tgt.returncode = run_cmd(
+                tgt.returncode, tgt.stdout, tgt.stderr = run_cmd(
                     cmd_fmt, tgt.melded_output.encode(), tgt.meta["_workpath"]
                 )
         return tgt

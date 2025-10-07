@@ -108,9 +108,14 @@ def format_command(tgt):
 
 
 def run_cmd(cmd, stdin=None, workdir=None):
-    """Runs a command from a given workdir"""
+    """
+    Runs a command from a given workdir
+
+    Returns:
+        tuple: (returncode, stdout, stderr) where stdout and stderr are strings
+    """
     _LOGGER.info(f"MM | Command: {cmd}; CWD: {workdir}")
-    
+
     # Determine the actual working directory
     if workdir:
         if os.path.isdir(workdir):
@@ -121,20 +126,22 @@ def run_cmd(cmd, stdin=None, workdir=None):
             cwd = os.path.dirname(workdir)
     else:
         cwd = None
-    
+
     _LOGGER.debug(f"MM | Actual CWD: {cwd}")
-    
+
     if stdin:
         # Call command (default: pandoc), passing the rendered template to stdin
         p = subprocess.Popen(
-            cmd, shell=True, stdin=subprocess.PIPE, cwd=cwd
+            cmd, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, cwd=cwd
         )
-        p.communicate(input=stdin)
-        return p.returncode
+        stdout, stderr = p.communicate(input=stdin)
+        return p.returncode, stdout.decode('utf-8', errors='replace'), stderr.decode('utf-8', errors='replace')
     else:
-        p = subprocess.Popen(cmd, shell=True, cwd=cwd)
-        p.communicate()
-        return p.returncode
+        p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE,
+                           stderr=subprocess.PIPE, cwd=cwd)
+        stdout, stderr = p.communicate()
+        return p.returncode, stdout.decode('utf-8', errors='replace'), stderr.decode('utf-8', errors='replace')
 
 
 # ====================
