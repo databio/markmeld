@@ -460,12 +460,42 @@ class Target(object):
             # Generally, user should provide a `command`, but for simple default cases,
             # we can just route through pandoc as a default command.
             options_array = []
+
             if "latex_template" in meta:
                 options_array.append('--template "{latex_template}"')
+
+            if "bibdb" in meta:
+                options_array.append('--bibliography "{bibdb}"')
+
+            if "csl" in meta:
+                options_array.append('--csl "{csl}"')
+
+            # Add Lua filters in user-specified order
+            if "lua_filters" in meta and meta["lua_filters"]:
+                filters_list = meta["lua_filters"]
+                # Support both list and single string
+                if isinstance(filters_list, str):
+                    filters_list = [filters_list]
+                for filter_ref in filters_list:
+                    options_array.append(f'--lua-filter "{filter_ref}"')
+
+            # Add citeproc if explicitly requested
+            if "citeproc" in meta and meta["citeproc"]:
+                options_array.append('--citeproc')
+
             if "output_file" in meta:
-                options_array.append('--output "{output_file}"')
+                options_array.append('-o "{output_file}"')
+
             options = " ".join(options_array)
             meta["command"] = f"pandoc {options}"
+
+        # DEBUG: Log what is being used to generate the command
+        _LOGGER.debug(f"DEBUG: Target init - meta keys: {list(meta.keys())}")
+        _LOGGER.debug(f"DEBUG: citeproc value: {meta.get('citeproc', 'NOT PRESENT')}")
+        _LOGGER.debug(f"DEBUG: lua_filters value: {meta.get('lua_filters', 'NOT PRESENT')}")
+        _LOGGER.debug(f"DEBUG: csl value: {meta.get('csl', 'NOT PRESENT')}")
+        _LOGGER.debug(f"DEBUG: bibdb value: {meta.get('bibdb', 'NOT PRESENT')}")
+        _LOGGER.debug(f"DEBUG: Generated command: {meta.get('command', 'NO COMMAND')}")
 
         # Inject embedded resource variables (filters, templates, CSL files)
         from .resource_manager import inject_resource_variables
@@ -569,6 +599,17 @@ class MarkdownMelder(object):
         self.cfg = cfg
         self.target_objects = {}
 
+    def get_cache_root(self) -> str:
+        """
+        Get the cache root directory from configuration.
+
+        Returns:
+            Path to cache root directory (defaults to ".cache" if not configured)
+        """
+        cache_root = self.cfg.get("_cache_root", ".cache")
+        _LOGGER.debug(f"get_cache_root() returning: {cache_root} (found in config: {'_cache_root' in self.cfg})")
+        return cache_root
+
     def open_target(self, target_name):
         tgt = Target(self.cfg, target_name)
 
@@ -613,11 +654,14 @@ class MarkdownMelder(object):
                 return None
             
             force_refresh = tgt.meta.get("force_refresh", False)
-            
-            # Initialize Google Drive processor (uses cached credentials)
+
+            # Initialize Google Drive processor with cache root
             from .google_drive import GoogleDriveProcessor
-            gdp = GoogleDriveProcessor()
-            
+            cache_root = self.get_cache_root()
+            _LOGGER.info(f"MM | Using cache root from config: {cache_root}")
+            _LOGGER.debug(f"MM | Initializing GoogleDriveProcessor with cache_root: {cache_root}")
+            gdp = GoogleDriveProcessor(cache_root=cache_root)
+
             md_content = {}
             
             # Process each Google Doc

@@ -49,13 +49,15 @@ class CloudCacheManager:
     def __init__(self, cache_root: Union[str, Path] = ".cache", create_dirs: bool = True):
         """
         Initialize the CloudCacheManager.
-        
+
         Args:
             cache_root: Path to the cache root directory (default: ".cache")
             create_dirs: Whether to auto-create directories (default: True)
         """
-        self.cache_root = Path(cache_root)
+        # Ensure cache_root is resolved to absolute path
+        self.cache_root = Path(cache_root).resolve()
         self.create_dirs = create_dirs
+        logger.info(f"CloudCacheManager initialized with cache_root: {self.cache_root}")
         
         if self.create_dirs:
             self.cache_root.mkdir(parents=True, exist_ok=True, mode=0o755)
@@ -92,26 +94,27 @@ class CloudCacheManager:
     def get_cache_path(self, doc_id: str, subdir_type: str, filename: Union[str, Path]) -> Path:
         """
         Get the full cache path for a specific file.
-        
+
         Args:
             doc_id: The document ID
             subdir_type: Type of subdirectory (from CACHE_SUBDIRS keys)
             filename: Name of the file (can include subdirectories)
-            
+
         Returns:
             Full path to the cached file
-            
+
         Examples:
             get_cache_path('doc123', 'docs', 'manuscript.md')
             get_cache_path('doc123', 'converted', 'fig/image.pdf')
         """
         cache_dir = self.get_cache_dir(doc_id, subdir_type)
         file_path = cache_dir / filename
-        
+
         # Ensure parent directory exists if we're creating nested paths
         if self.create_dirs and '/' in str(filename):
             file_path.parent.mkdir(parents=True, exist_ok=True)
-        
+
+        logger.debug(f"get_cache_path() returning: {file_path} (is_absolute: {file_path.is_absolute()})")
         return file_path
     
     def save_metadata(self, doc_id: str, metadata: Dict[str, Any]):

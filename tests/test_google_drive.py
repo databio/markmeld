@@ -125,10 +125,12 @@ class TestGoogleDriveProcessorFunctionality:
             credentials_dict=test_creds,
             cache_root="test_cache"
         )
-        
+
         # Verify initialization
         assert processor.credentials_path is None  # No path when using dict
-        assert str(processor.cache_manager.cache_root) == "test_cache"
+        # Cache root should be resolved to absolute path
+        assert processor.cache_manager.cache_root.is_absolute()
+        assert processor.cache_manager.cache_root.name == "test_cache"
         assert processor.service_account_email == "test@example.com"
     
     def test_clean_markdown_functionality(self):

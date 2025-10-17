@@ -88,6 +88,7 @@ class FigureConverter:
         # Check if conversion is needed
         if not self.needs_conversion(digest_path, doc_id, output_path, file_info, params):
             logger.info(f"  Using cached: {output_path}")
+            logger.debug(f"  Cache path is absolute: {output_path.is_absolute()}, resolved: {output_path.resolve()}")
             return str(output_path)
         
         # Route to appropriate converter

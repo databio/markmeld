@@ -1005,7 +1005,8 @@ class GoogleDriveProcessor:
                 # Save digest for original path
                 if file_info and 'md5Checksum' in file_info:
                     self.figure_converter.save_digest(fig_path, file_info['md5Checksum'], doc_id, 'file')
-                return str(output_path)
+                # Return absolute path
+                return str(output_path.resolve() if hasattr(output_path, 'resolve') else output_path)
             else:
                 logger.warning(f"⚠️  PDF CONVERSION FAILED for {fig_path}")
                 logger.warning(f"    SVG file exists at: {source_file}")
@@ -1102,8 +1103,10 @@ class GoogleDriveProcessor:
                 if not self.figure_converter.needs_conversion(fig_path, doc_id, output_path, file_info, params):
                     logger.info(f"  Using cached: {output_path}")
                     results['skipped'].append(fig_path)
-                    results['mapping'][fig_path] = str(output_path)
-                    logger.info(f"  Added to mapping: {fig_path} -> {str(output_path)}")
+                    # Ensure path is absolute before storing in mapping
+                    absolute_path = str(output_path.resolve() if hasattr(output_path, 'resolve') else output_path)
+                    results['mapping'][fig_path] = absolute_path
+                    logger.info(f"  Added to mapping: {fig_path} -> {absolute_path}")
                     continue
                 
                 # Get source file (cached or download)

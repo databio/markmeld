@@ -198,3 +198,68 @@ def test_meta_target():
     test_path = "tests/test_data/prebuild_test/prebuild_test_file"
     assert os.path.isfile(test_path)
     os.remove(test_path)
+
+
+def test_default_command_with_lua_filters():
+    """Test that lua_filters array generates correct pandoc command"""
+    from markmeld.melder import Target
+
+    cfg = {
+        "_cfg_file_path": "/tmp/test.yaml",
+        "targets": {
+            "test": {
+                "_workpath": "/tmp",
+                "_defpath": "/tmp",
+                "latex_template": "article.tex",
+                "bibdb": "refs.bib",
+                "csl": "biomed.csl",
+                "lua_filters": [
+                    "{resource:filter:figczar}",
+                    "{resource:filter:change-marker}",
+                    "{resource:filter:multi-refs}"
+                ],
+                "citeproc": False,  # multi-refs handles it
+                "output_file": "output.pdf"
+            }
+        }
+    }
+
+    tgt = Target(cfg, "test")
+
+    # Verify command structure
+    assert "--lua-filter" in tgt.meta["command"]
+    assert "figczar" in tgt.meta["command"]
+    assert "change-marker" in tgt.meta["command"]
+    assert "multi-refs" in tgt.meta["command"]
+    assert "--citeproc" not in tgt.meta["command"]  # Should NOT be present
+
+    # Verify order (filters should appear in specified order)
+    cmd = tgt.meta["command"]
+    figczar_pos = cmd.find("figczar")
+    marker_pos = cmd.find("change-marker")
+    multirefs_pos = cmd.find("multi-refs")
+    assert figczar_pos < marker_pos < multirefs_pos
+
+
+def test_default_command_with_citeproc():
+    """Test that citeproc boolean adds --citeproc flag"""
+    from markmeld.melder import Target
+
+    cfg = {
+        "_cfg_file_path": "/tmp/test.yaml",
+        "targets": {
+            "test": {
+                "_workpath": "/tmp",
+                "_defpath": "/tmp",
+                "latex_template": "article.tex",
+                "bibdb": "refs.bib",
+                "csl": "biomed.csl",
+                "lua_filters": ["{resource:filter:figczar}"],
+                "citeproc": True,
+                "output_file": "output.pdf"
+            }
+        }
+    }
+
+    tgt = Target(cfg, "test")
+    assert "--citeproc" in tgt.meta["command"]

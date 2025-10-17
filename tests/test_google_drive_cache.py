@@ -6,10 +6,12 @@ import pytest
 from unittest.mock import MagicMock, patch
 from datetime import datetime
 from pathlib import Path
+import tempfile
 
 # Try to import Google Drive dependencies
 try:
     from markmeld.google_drive import GoogleDriveProcessor
+    from markmeld.cloud_cache_manager import CloudCacheManager
     GOOGLE_DEPS_AVAILABLE = True
 except ImportError:
     GOOGLE_DEPS_AVAILABLE = False
@@ -28,11 +30,13 @@ class TestGoogleDriveDiskCache:
         mock_build.return_value = MagicMock()
         
         processor = GoogleDriveProcessor(credentials_dict={'type': 'service_account', 'project_id': 'test', 'client_email': 'test@example.com'})
-        
+
         # Check that cache manager is initialized
         assert hasattr(processor, 'cache_manager')
         assert processor.cache_manager is not None
-        assert processor.cache_manager.cache_root == Path('.cache')
+        # Cache root should be resolved to absolute path
+        assert processor.cache_manager.cache_root.is_absolute()
+        assert processor.cache_manager.cache_root.name == '.cache'
     
     @patch('markmeld.google_drive.service_account.Credentials.from_service_account_info')
     @patch('markmeld.google_drive.build')
@@ -153,8 +157,28 @@ class TestGoogleDriveDiskCache:
             mock_file.read.return_value = b"# Modified\n\nContent"
             mock_file.seek = MagicMock()
             mock_bytesio.return_value = mock_file
-            
+
             content2 = processor._download_raw_markdown('test_doc_id')
-        
+
         # Content should be different after modification
         assert "Modified" in content2
+
+
+def test_cache_manager_resolves_absolute_path():
+    """Test that CloudCacheManager resolves cache_root to absolute path."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Test with relative path
+        relative_cache = Path("relative/.cache")
+        manager = CloudCacheManager(cache_root=relative_cache, create_dirs=False)
+        assert manager.cache_root.is_absolute(), "Cache root should be resolved to absolute path"
+
+        # Test with absolute path
+        absolute_cache = Path(tmpdir) / ".cache"
+        manager = CloudCacheManager(cache_root=str(absolute_cache), create_dirs=False)
+        assert manager.cache_root.is_absolute(), "Cache root should remain absolute"
+        assert manager.cache_root == absolute_cache.resolve()
+
+        # Test with string path
+        string_cache = "test/.cache"
+        manager = CloudCacheManager(cache_root=string_cache, create_dirs=False)
+        assert manager.cache_root.is_absolute(), "Cache root from string should be resolved to absolute path"
