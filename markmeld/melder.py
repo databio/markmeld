@@ -823,7 +823,7 @@ class MarkdownMelder(object):
             cmd_fmt = format_command(tgt)
             _LOGGER.debug(f"Running regular command: '{cmd_fmt}'")
             tgt.melded_output = self.render_template(tgt.melded_input, tgt)
-            _LOGGER.debug(f"melded_output: '{tgt.melded_output}'")
+            _LOGGER.debug(f"melded_output length: {len(tgt.melded_output) if tgt.melded_output else 0} characters")
             if tgt.melded_output == "" or tgt.melded_output == None:
                 _LOGGER.error("No input detected. Check variable names")
                 tgt.returncode = 2

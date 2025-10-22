@@ -814,21 +814,36 @@ class GoogleDriveProcessor:
                 
                 # Get current change token
                 change_token = self.get_current_change_token()
-                
-                # Save all metadata to metadata.json
-                metadata = {
+
+                # Load existing metadata or create new v3.0 structure
+                metadata = self.cache_manager.load_metadata(doc_id)
+                if not metadata:
+                    metadata = {
+                        'document': self.cache_manager._init_document_metadata(),
+                        'figures': [],
+                        'csvs': [],
+                        'cache_stats': self.cache_manager._init_cache_stats(),
+                        'cache_version': '3.0'
+                    }
+
+                # Update document metadata
+                parents = doc_metadata.get('parents', [])
+                metadata['document'].update({
                     'doc_id': doc_id,
                     'doc_name': doc_metadata.get('name', 'Unknown'),
                     'change_token': change_token,
                     'cleaned_state': 'cleaned' if is_cleaned else 'raw',
-                    'modified_time': doc_metadata.get('modifiedTime', '')
-                }
-                
-                # Also try to get folder_id if available
-                parents = doc_metadata.get('parents', [])
-                if parents:
-                    metadata['folder_id'] = parents[0]
-                
+                    'modified_time': doc_metadata.get('modifiedTime', ''),
+                    'folder_id': parents[0] if parents else None,
+                    'filename': doc_path.name,
+                    'source_path': f"docs/{doc_path.name}",
+                    'size': doc_path.stat().st_size,
+                    'downloaded_at': datetime.now().isoformat(),
+                    'digest': self.cache_manager.compute_md5(doc_path)
+                })
+
+                # Update stats and save
+                self.cache_manager._update_cache_stats(metadata)
                 self.cache_manager.save_metadata(doc_id, metadata)
                 
                 if change_token:
@@ -994,10 +1009,29 @@ class GoogleDriveProcessor:
         # Need to download
         logger.info(f"  Downloading {figure_type.upper()}: {fig_path}")
         self.download_file(file_info['id'], str(cached_path))
+
+        # Record the cached file in metadata
+        if cached_path.exists():
+            self.cache_manager.record_cached_file(
+                doc_id=doc_id,
+                filename=cached_path.name,
+                source_path=fig_path,
+                size=cached_path.stat().st_size,
+                drive_file_id=file_info['id'],
+                digest=file_info.get('md5Checksum')
+            )
+
         return cached_path
     
     def _convert_file(self, fig_path: str, source_file: Path, file_info: dict, params: dict, doc_id: str, figure_type: str, output_path: Path) -> str:
         """Convert file and return converted path, or None if failed."""
+        # Determine the relative path for the output
+        relative_output_path = f"converted/{fig_path.replace('fig/', '').replace('csv/', '')}"
+        if figure_type == 'svg':
+            relative_output_path = relative_output_path.replace('.svg', '.pdf')
+        elif figure_type == 'csv':
+            relative_output_path = relative_output_path.replace('.csv', '.pdf')
+
         if figure_type == 'svg':
             # For SVG, convert directly
             success = self.figure_converter.convert_svg(str(source_file), output_path)
@@ -1005,6 +1039,16 @@ class GoogleDriveProcessor:
                 # Save digest for original path
                 if file_info and 'md5Checksum' in file_info:
                     self.figure_converter.save_digest(fig_path, file_info['md5Checksum'], doc_id, 'file')
+
+                # Record successful conversion in metadata
+                self.cache_manager.record_conversion(
+                    doc_id=doc_id,
+                    filename=source_file.name,
+                    output_path=relative_output_path,
+                    output_size=output_path.stat().st_size if output_path.exists() else None,
+                    status='success'
+                )
+
                 # Return absolute path
                 return str(output_path.resolve() if hasattr(output_path, 'resolve') else output_path)
             else:
@@ -1012,19 +1056,46 @@ class GoogleDriveProcessor:
                 logger.warning(f"    SVG file exists at: {source_file}")
                 logger.warning(f"    Expected PDF output: {output_path}")
                 logger.warning(f"    Check inkscape installation and SVG file validity")
+
+                # Record failed conversion in metadata
+                self.cache_manager.record_conversion(
+                    doc_id=doc_id,
+                    filename=source_file.name,
+                    status='failed',
+                    error="Inkscape conversion failed"
+                )
                 return None
-        
+
         elif figure_type == 'csv':
             # For CSV, use convert_figure which handles digest saving properly
             converted_path = self.figure_converter.convert_figure(
                 str(source_file), params, doc_id, file_info, original_path=fig_path
             )
-            if not converted_path:
+            if converted_path:
+                # Record successful conversion in metadata
+                output_file = Path(converted_path)
+                self.cache_manager.record_conversion(
+                    doc_id=doc_id,
+                    filename=source_file.name,
+                    output_path=relative_output_path,
+                    output_size=output_file.stat().st_size if output_file.exists() else None,
+                    status='success'
+                )
+            else:
                 logger.warning(f"⚠️  PDF CONVERSION FAILED for {fig_path}")
                 logger.warning(f"    CSV file exists at: {source_file}")
                 logger.warning(f"    Check table_pdf_builder installation")
+
+                # Record failed conversion in metadata
+                self.cache_manager.record_conversion(
+                    doc_id=doc_id,
+                    filename=source_file.name,
+                    status='failed',
+                    error="table_pdf_builder conversion failed"
+                )
+
             return converted_path
-        
+
         else:
             # Clean up temp files for other types
             if source_file.name.startswith('.temp_') and source_file.exists():
