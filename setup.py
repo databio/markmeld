@@ -36,6 +36,7 @@ setup(
     name=PACKAGE_NAME,
     packages=[PACKAGE_NAME],
     version=version,
+    python_requires='>=3.10',
     long_description=long_description,
     long_description_content_type="text/markdown",
     description="Markmeld is a markup melder that combines structured yaml or "
@@ -43,10 +44,9 @@ setup(
     classifiers=[
         "Development Status :: 4 - Beta",
         "License :: OSI Approved :: BSD License",
-        "Programming Language :: Python :: 3.8",
-        "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
+        "Programming Language :: Python :: 3.12",
         "Topic :: Scientific/Engineering :: Bio-Informatics",
     ],
     license="BSD2",

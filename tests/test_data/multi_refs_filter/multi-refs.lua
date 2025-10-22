@@ -241,7 +241,6 @@ end
 --- Final cleanup: prevent external --citeproc from running after this filter
 --- This makes the filter work correctly even if --citeproc is called after it
 --- We clear the bibliography and references metadata so external citeproc has nothing to process
---- Set multiref_keep_bibliography: true in metadata to disable this behavior
 local function final_cleanup(doc)
   -- Remove top-level refs div if present
   local cleaned_blocks = pandoc.List()
@@ -256,15 +255,9 @@ local function final_cleanup(doc)
 
   -- Clear bibliography metadata to prevent external citeproc from re-processing
   -- Our refs are already embedded in multi-refs divs, so we don't need citeproc anymore
-  -- Users can set multiref_keep_bibliography: true to disable this clearing
-  if not (meta['multiref_keep_bibliography'] and meta['multiref_keep_bibliography']) then
-    doc.meta.bibliography = nil
-    doc.meta.references = nil
-    print("Cleared bibliography metadata to prevent external --citeproc from re-processing")
-    print("(Set multiref_keep_bibliography: true to disable this behavior)")
-  else
-    print("Keeping bibliography metadata (multiref_keep_bibliography is set)")
-  end
+  doc.meta.bibliography = nil
+  doc.meta.references = nil
+  print("Cleared bibliography metadata to prevent external --citeproc from re-processing")
 
   return doc
 end

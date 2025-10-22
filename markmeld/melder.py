@@ -470,6 +470,10 @@ class Target(object):
             if "csl" in meta:
                 options_array.append('--csl "{csl}"')
 
+            # Add citeproc if explicitly requested
+            if "citeproc" in meta and meta["citeproc"]:
+                options_array.append('--citeproc')
+
             # Add Lua filters in user-specified order
             if "lua_filters" in meta and meta["lua_filters"]:
                 filters_list = meta["lua_filters"]
@@ -478,10 +482,6 @@ class Target(object):
                     filters_list = [filters_list]
                 for filter_ref in filters_list:
                     options_array.append(f'--lua-filter "{filter_ref}"')
-
-            # Add citeproc if explicitly requested
-            if "citeproc" in meta and meta["citeproc"]:
-                options_array.append('--citeproc')
 
             if "output_file" in meta:
                 options_array.append('-o "{output_file}"')
