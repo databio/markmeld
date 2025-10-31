@@ -670,7 +670,12 @@ class MarkdownMelder(object):
                     _LOGGER.warning(f"Skipping empty doc_id for variable '{var_name}'")
                     md_content[var_name] = ""
                     continue
-                
+
+                # Ensure doc_id is a string (handle tuple/list configurations)
+                if not isinstance(doc_id, str):
+                    _LOGGER.error(f"Document ID for '{var_name}' must be a string, got {type(doc_id)}: {doc_id}")
+                    raise ValueError(f"Document ID for '{var_name}' must be a string, got {type(doc_id)}: {doc_id}")
+
                 _LOGGER.info(f"MM | Fetching Google Doc '{var_name}': {doc_id}")
                 
                 # Process document and figures

@@ -219,7 +219,7 @@ def load_config_data(
             if workpath:
                 higher_cfg["targets"][tgt]["_workpath"] = workpath
             else:
-                higher_cfg["targets"][tgt]["_workpath"] = filepath
+                higher_cfg["targets"][tgt]["_workpath"] = os.path.dirname(filepath)
 
     # Imports
     if "imports" in higher_cfg and higher_cfg["imports"]:
@@ -232,7 +232,7 @@ def load_config_data(
                 _LOGGER.info(f"Specified config file to import: {import_file_abspath}")
             deep_update(
                 lower_cfg,
-                load_config_file(import_file_abspath, expandpath(filepath)),
+                load_config_file(import_file_abspath, os.path.dirname(expandpath(filepath))),
                 warn_override=not autocomplete,
             )
             imported_list[import_file_abspath] = True
@@ -268,7 +268,7 @@ def load_config_data(
             func = plugins[fac_name]
             factory_targets = func(fac_vals, lower_cfg)
             for k, v in factory_targets.items():
-                factory_targets[k]["_workpath"] = filepath
+                factory_targets[k]["_workpath"] = os.path.dirname(filepath)
                 factory_targets[k]["_defpath"] = filepath
             deep_update(
                 lower_cfg, {"targets": factory_targets}, warn_override=not autocomplete

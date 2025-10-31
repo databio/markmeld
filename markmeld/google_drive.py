@@ -727,29 +727,36 @@ class GoogleDriveProcessor:
     
     def _get_doc_filename(self, doc_id: str) -> str:
         """Generate a filename for saving a document to disk."""
+        logger.debug(f"_get_doc_filename called with doc_id type={type(doc_id)}, value={doc_id}")
+
         try:
             metadata = self.get_metadata(doc_id)
             doc_name = metadata.get('name', doc_id)
-            
+            logger.debug(f"Got doc_name type={type(doc_name)}, value={doc_name}")
+
             # Ensure doc_name is a string before passing to sanitize_filename
             if not isinstance(doc_name, str):
                 logger.warning(f"Document name is not a string: {type(doc_name)} - {doc_name}")
                 doc_name = str(doc_name) if doc_name else doc_id
-            
+
             safe_name = sanitize_filename(doc_name)
+            logger.debug(f"After sanitize_filename: type={type(safe_name)}, value={safe_name}")
         except Exception as e:
             logger.warning(f"Could not get metadata for doc {doc_id}: {e}")
             # Ensure doc_id is a string
             safe_name = str(doc_id) if not isinstance(doc_id, str) else doc_id
-        
+            logger.debug(f"Exception path - safe_name type={type(safe_name)}, value={safe_name}")
+
         # Ensure safe_name is a string before calling endswith
         if not isinstance(safe_name, str):
             logger.error(f"safe_name is not a string: {type(safe_name)} - {safe_name}")
             safe_name = str(safe_name)
-        
+
+        logger.debug(f"Before endswith check: type={type(safe_name)}, value={repr(safe_name)}")
         if not safe_name.endswith('.md'):
             safe_name += '.md'
-        
+
+        logger.debug(f"_get_doc_filename returning: {safe_name}")
         return safe_name
     
     def _get_doc_path(self, doc_id: str) -> Path:
@@ -1000,17 +1007,19 @@ class GoogleDriveProcessor:
             cached_path = temp_dir / f".temp_{Path(fig_path).stem}_{os.getpid()}"
         
         # Check if cached file exists and is current
+        use_cached = False
         if cached_path.exists() and file_info and 'md5Checksum' in file_info:
             stored_digest = self.figure_converter._load_digest(fig_path, doc_id, 'file')
             if stored_digest == file_info['md5Checksum']:
                 logger.info(f"  Using cached {figure_type.upper()}: {cached_path}")
-                return cached_path
-        
-        # Need to download
-        logger.info(f"  Downloading {figure_type.upper()}: {fig_path}")
-        self.download_file(file_info['id'], str(cached_path))
+                use_cached = True
 
-        # Record the cached file in metadata
+        if not use_cached:
+            # Need to download
+            logger.info(f"  Downloading {figure_type.upper()}: {fig_path}")
+            self.download_file(file_info['id'], str(cached_path))
+
+        # Record the cached file in metadata (whether newly downloaded or already cached)
         if cached_path.exists():
             self.cache_manager.record_cached_file(
                 doc_id=doc_id,
@@ -1025,8 +1034,8 @@ class GoogleDriveProcessor:
     
     def _convert_file(self, fig_path: str, source_file: Path, file_info: dict, params: dict, doc_id: str, figure_type: str, output_path: Path) -> str:
         """Convert file and return converted path, or None if failed."""
-        # Determine the relative path for the output
-        relative_output_path = f"converted/{fig_path.replace('fig/', '').replace('csv/', '')}"
+        # Determine the relative path for the output, preserving directory structure
+        relative_output_path = f"converted/{fig_path}"
         if figure_type == 'svg':
             relative_output_path = relative_output_path.replace('.svg', '.pdf')
         elif figure_type == 'csv':
@@ -1178,6 +1187,36 @@ class GoogleDriveProcessor:
                     absolute_path = str(output_path.resolve() if hasattr(output_path, 'resolve') else output_path)
                     results['mapping'][fig_path] = absolute_path
                     logger.info(f"  Added to mapping: {fig_path} -> {absolute_path}")
+
+                    # Ensure cached figures are recorded in metadata
+                    # Record source file if it exists
+                    source_file_path = self.cache_manager.cache_root / doc_id / fig_path
+                    if source_file_path.exists():
+                        self.cache_manager.record_cached_file(
+                            doc_id=doc_id,
+                            filename=source_file_path.name,
+                            source_path=fig_path,
+                            size=source_file_path.stat().st_size,
+                            drive_file_id=file_info.get('id') if file_info else None,
+                            digest=file_info.get('md5Checksum') if file_info else None
+                        )
+
+                    # Record conversion if it exists
+                    if output_path.exists():
+                        relative_output_path = f"converted/{fig_path}"
+                        if figure_type == 'svg':
+                            relative_output_path = relative_output_path.replace('.svg', '.pdf')
+                        elif figure_type == 'csv':
+                            relative_output_path = relative_output_path.replace('.csv', '.pdf')
+
+                        self.cache_manager.record_conversion(
+                            doc_id=doc_id,
+                            filename=source_file_path.name if source_file_path.exists() else output_path.name,
+                            output_path=relative_output_path,
+                            output_size=output_path.stat().st_size,
+                            status='success'
+                        )
+
                     continue
                 
                 # Get source file (cached or download)
@@ -1503,27 +1542,34 @@ class GoogleDriveProcessor:
         
         return updated
     
-    def _create_figure_path_mapping(self, figure_paths: List[str]) -> Dict[str, str]:
+    def _create_figure_path_mapping(self, figure_paths: List[Tuple[str, Dict[str, Any]]]) -> Dict[str, str]:
         """
         Create a mapping of figure paths for SVG to PDF conversions.
         This just creates the mapping without doing any actual processing.
-        
+
         Args:
-            figure_paths: List of figure paths extracted from the document
-            
+            figure_paths: List of (path, params) tuples extracted from the document
+
         Returns:
             Dictionary mapping original paths to converted paths
         """
         mapping = {}
         converted_dir = Path('converted')
-        
-        for fig_path in figure_paths:
+
+        for fig_item in figure_paths:
+            # Extract path from tuple (path, params)
+            if isinstance(fig_item, tuple):
+                fig_path = fig_item[0]
+            else:
+                # Backward compatibility if called with plain strings
+                fig_path = fig_item
+
             # Only map SVG files to their PDF equivalents
             if fig_path.endswith('.svg'):
                 pdf_path = fig_path.replace('.svg', '.pdf')
                 output_path = converted_dir / pdf_path
                 mapping[fig_path] = str(output_path)
-        
+
         return mapping
     
     def _update_document_figure_paths(self, markdown_content: str, doc_id: str, 
