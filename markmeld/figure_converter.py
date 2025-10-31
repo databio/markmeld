@@ -71,7 +71,8 @@ class FigureConverter:
             original_path: Original path from markdown (for digest keys)
             
         Returns:
-            Path to the converted PDF file, or None if conversion failed
+            Relative path to the converted PDF file (e.g., "fig/overview.pdf"),
+            or None if conversion failed
         """
         # Use original_path for digest operations if provided
         digest_path = original_path if original_path else source_path
@@ -89,7 +90,8 @@ class FigureConverter:
         if not self.needs_conversion(digest_path, doc_id, output_path, file_info, params):
             logger.info(f"  Using cached: {output_path}")
             logger.debug(f"  Cache path is absolute: {output_path.is_absolute()}, resolved: {output_path.resolve()}")
-            return str(output_path)
+            # Return relative path matching the original structure
+            return self._get_relative_output_path(digest_path, figure_type)
         
         # Route to appropriate converter
         try:
@@ -116,8 +118,9 @@ class FigureConverter:
                     logger.info(f"  Saving params digest for {digest_path}: {params_digest}")
                     logger.info(f"  Params being saved: {params_to_save}")
                     self.save_digest(digest_path, params_digest, doc_id, 'params')
-                
-                return str(output_path)
+
+                # Return relative path matching the original structure
+                return self._get_relative_output_path(digest_path, figure_type)
             else:
                 return None
                 
@@ -630,7 +633,37 @@ class FigureConverter:
             return self.cache_manager.get_cache_path(doc_id, 'converted', f'sheets/{sheet_id}.pdf')
         else:
             return Path(source_path)
-    
+
+    def _get_relative_output_path(self, source_path: str, figure_type: str) -> str:
+        """
+        Get the relative output path for a converted figure.
+
+        Preserves the directory structure from the source path, just changes extension.
+        This ensures the output path matches LaTeX conventions and makes documents portable.
+
+        Examples:
+            "fig/overview.svg" -> "fig/overview.pdf"
+            "images/diagram.csv" -> "images/diagram.pdf"
+            "overview.svg" -> "overview.pdf"
+
+        Args:
+            source_path: Original path from markdown (e.g., "fig/overview.svg")
+            figure_type: Type of figure ('svg', 'csv', 'sheet')
+
+        Returns:
+            Relative path string with PDF extension
+        """
+        if figure_type == 'svg':
+            return source_path.replace('.svg', '.pdf')
+        elif figure_type == 'csv':
+            return source_path.replace('.csv', '.pdf')
+        elif figure_type == 'sheet':
+            # For Google Sheets, create a unique filename
+            sheet_id = source_path.split("/d/")[1].split("/")[0] if "docs.google.com" in source_path else source_path
+            return f'sheets/{sheet_id}.pdf'
+        else:
+            return source_path
+
     def compute_params_digest(self, params: Dict[str, Any]) -> str:
         """
         Compute a digest for a parameter dictionary.

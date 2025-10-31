@@ -1058,8 +1058,8 @@ class GoogleDriveProcessor:
                     status='success'
                 )
 
-                # Return absolute path
-                return str(output_path.resolve() if hasattr(output_path, 'resolve') else output_path)
+                # Return relative path (preserving directory structure from fig_path)
+                return fig_path.replace('.svg', '.pdf')
             else:
                 logger.warning(f"⚠️  PDF CONVERSION FAILED for {fig_path}")
                 logger.warning(f"    SVG file exists at: {source_file}")
@@ -1183,10 +1183,10 @@ class GoogleDriveProcessor:
                 if not self.figure_converter.needs_conversion(fig_path, doc_id, output_path, file_info, params):
                     logger.info(f"  Using cached: {output_path}")
                     results['skipped'].append(fig_path)
-                    # Ensure path is absolute before storing in mapping
-                    absolute_path = str(output_path.resolve() if hasattr(output_path, 'resolve') else output_path)
-                    results['mapping'][fig_path] = absolute_path
-                    logger.info(f"  Added to mapping: {fig_path} -> {absolute_path}")
+                    # Use relative path (preserving directory structure from fig_path)
+                    relative_path = fig_path.replace('.svg', '.pdf').replace('.csv', '.pdf')
+                    results['mapping'][fig_path] = relative_path
+                    logger.info(f"  Added to mapping: {fig_path} -> {relative_path}")
 
                     # Ensure cached figures are recorded in metadata
                     # Record source file if it exists
