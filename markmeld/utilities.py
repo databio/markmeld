@@ -197,7 +197,14 @@ def load_config_file(filepath, workpath=None, autocomplete=True, imported_list={
 def make_abspath(relpath, filepath, root=None):
     if root:
         return os.path.join(root, relpath)
-    return os.path.abspath(os.path.join(os.path.dirname(filepath), relpath))
+
+    # Handle both directory paths and file paths
+    if os.path.isdir(filepath):
+        base_path = filepath
+    else:
+        base_path = os.path.dirname(filepath)
+
+    return os.path.abspath(os.path.join(base_path, relpath))
 
 
 def load_config_data(
@@ -349,13 +356,20 @@ def globs_to_dict(globs, cfg_path):
     dict that is keyed by the base file name, without extension or parent folders.
 
     @param globs Iterable[str] List of globs to convert to files.
-    @param cfg_path str Path to configuration file
+    @param cfg_path str Path to configuration file or directory
     """
     return_items = {}
     if not globs:
         return return_items
+
+    # Handle both directory paths and file paths
+    if os.path.isdir(cfg_path):
+        base_path = cfg_path
+    else:
+        base_path = os.path.dirname(cfg_path)
+
     for item in globs:
-        path = os.path.join(os.path.dirname(cfg_path), item)
+        path = os.path.join(base_path, item)
         _LOGGER.info(f"MM | Glob path: {path}")
         files = glob.glob(path)
         for file in files:
