@@ -424,6 +424,7 @@ class Target(object):
         meta["_today"] = date.today().strftime("%Y-%m-%d")
         meta["today"] = meta["_today"]  # TODO: Remove this
         meta["now"] = meta["_now"]  # TODO: Remove this
+        meta["target_name"] = target_name
 
         # Since a target has available to it all the variables in the _markmeld.yaml
         # config file, we start from there, then make a few changes:

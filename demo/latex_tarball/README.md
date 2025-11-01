@@ -95,7 +95,6 @@ The target builds the PDF and creates the tarball in a single command:
 ```yaml
 latex-package:
   output_file: "out/manuscript-latex.tar.gz"
-  tex_output: true  # Generate .tex file
   jinja_template: "template.jinja"
   data:
     md_files:
@@ -103,7 +102,8 @@ latex-package:
     variables:
       title: "Example Manuscript"
   command: |
-    pandoc {input_file} -o out/manuscript.pdf --pdf-engine=pdflatex && \
+    pandoc {input_file} -o out/manuscript.pdf --pdf-engine=pdflatex \
+      --output=out/manuscript.tex && \
     cd out && \
     tar czf manuscript-latex.tar.gz \
       --dereference \
@@ -134,8 +134,12 @@ Use a separate PDF target and prebuild hook:
 ```yaml
 targets:
   manuscript-pdf:
-    tex_output: true  # CRITICAL: Must generate .tex file
-    # ... normal PDF build configuration ...
+    # Build PDF and generate .tex file with pandoc --output flag
+    output_file: "out/manuscript.pdf"
+    command: |
+      pandoc {input_file} -o out/manuscript.pdf --pdf-engine=pdflatex \
+        --output=out/manuscript.tex
+    # ... other configuration ...
 
   latex-package:
     output_file: "out/manuscript-latex.tar.gz"
@@ -228,9 +232,9 @@ The generated `.tex` file already has the bibliography embedded as `\bibitem` en
 ## Troubleshooting
 
 ### Tarball is empty
-- Ensure `tex_output: true` is set in the PDF build target
-- Verify the PDF target actually generates a `.tex` file
-- Check that the output filename matches the tar command
+- Ensure the pandoc command includes `--output=manuscript.tex` to generate the .tex file
+- Verify the PDF target actually generates a `.tex` file in the out/ directory
+- Check that the .tex filename matches what the tar command expects
 
 ### Figures missing from tarball
 - Verify figures are in the cache (check `.cache/*/converted/fig/`)

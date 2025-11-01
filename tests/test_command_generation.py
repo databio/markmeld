@@ -294,3 +294,132 @@ class TestDefaultCommandGeneration:
             "When command field exists, citeproc setting is ignored"
         assert "--bibliography" not in command, \
             "When command field exists, bibdb setting is ignored"
+
+
+class TestSpecialVariables:
+    """Test cases for special variables available in target metadata"""
+
+    def test_target_name_in_metadata(self):
+        """Test that target_name is available as a special variable in metadata"""
+        config = {
+            "_cfg_file_path": "/tmp/test.yaml",
+            "targets": {
+                "my-test-target": {
+                    "_workpath": "/tmp",
+                    "_defpath": "/tmp",
+                    "output_file": "out/{target_name}.pdf",
+                    "data": {}
+                }
+            }
+        }
+
+        target = Target(config, "my-test-target")
+
+        print(f"\n=== Target Metadata ===")
+        print(f"target_name: {target.meta.get('target_name')}")
+
+        # Check that target_name is in metadata
+        assert "target_name" in target.meta, "target_name should be in target metadata"
+        assert target.meta["target_name"] == "my-test-target", \
+            f"target_name should be 'my-test-target', got: {target.meta['target_name']}"
+
+    def test_target_name_in_output_file(self):
+        """Test that target_name can be used in output_file paths"""
+        config = {
+            "_cfg_file_path": "/tmp/test.yaml",
+            "targets": {
+                "report": {
+                    "_workpath": "/tmp",
+                    "_defpath": "/tmp",
+                    "output_file": "out/{target_name}-{today}.pdf",
+                    "data": {}
+                }
+            }
+        }
+
+        target = Target(config, "report")
+        output_file = target.meta.get("output_file", "")
+
+        print(f"\n=== Output File with target_name ===")
+        print(f"Output file: {output_file}")
+
+        # The variable should be available for substitution
+        # (actual substitution happens in format_command, we're just checking it's in meta)
+        assert target.meta.get("target_name") == "report", \
+            "target_name should be 'report'"
+
+    def test_target_name_in_command(self):
+        """Test that target_name can be used in command templates"""
+        config = {
+            "_cfg_file_path": "/tmp/test.yaml",
+            "targets": {
+                "manuscript": {
+                    "_workpath": "/tmp",
+                    "_defpath": "/tmp",
+                    "output_file": "out/output.pdf",
+                    "command": "echo Building {target_name} && pandoc -o out/{target_name}.pdf",
+                    "data": {}
+                }
+            }
+        }
+
+        target = Target(config, "manuscript")
+        command = target.meta.get("command", "")
+
+        print(f"\n=== Command with target_name ===")
+        print(f"Command: {command}")
+        print(f"target_name in meta: {target.meta.get('target_name')}")
+
+        # The variable should be in metadata for later substitution
+        assert target.meta.get("target_name") == "manuscript", \
+            "target_name should be 'manuscript'"
+
+        # The command should contain the placeholder
+        assert "{target_name}" in command, \
+            f"Command should contain {{target_name}} placeholder: {command}"
+
+    def test_today_variable_in_metadata(self):
+        """Test that today variable is still available (existing functionality)"""
+        config = {
+            "_cfg_file_path": "/tmp/test.yaml",
+            "targets": {
+                "test": {
+                    "_workpath": "/tmp",
+                    "_defpath": "/tmp",
+                    "output_file": "out/test-{today}.pdf",
+                    "data": {}
+                }
+            }
+        }
+
+        target = Target(config, "test")
+
+        print(f"\n=== Today Variable ===")
+        print(f"today: {target.meta.get('today')}")
+
+        # Check that today is still available
+        assert "today" in target.meta, "today should be in target metadata"
+        assert target.meta["today"], "today should have a value"
+
+    def test_now_variable_in_metadata(self):
+        """Test that now variable is still available (existing functionality)"""
+        config = {
+            "_cfg_file_path": "/tmp/test.yaml",
+            "targets": {
+                "test": {
+                    "_workpath": "/tmp",
+                    "_defpath": "/tmp",
+                    "output_file": "out/test-{now}.pdf",
+                    "data": {}
+                }
+            }
+        }
+
+        target = Target(config, "test")
+
+        print(f"\n=== Now Variable ===")
+        print(f"now: {target.meta.get('now')}")
+
+        # Check that now is still available
+        assert "now" in target.meta, "now should be in target metadata"
+        assert target.meta["now"], "now should have a value"

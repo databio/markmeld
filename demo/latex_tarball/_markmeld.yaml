@@ -16,7 +16,6 @@ targets:
   # Regular PDF build target (separate)
   manuscript-pdf:
     output_file: "out/manuscript.pdf"
-    tex_output: true  # IMPORTANT: Must generate .tex file
     jinja_template: "template.jinja"
     data:
       md_files:
@@ -51,7 +50,6 @@ targets:
   # Self-contained LaTeX package target (builds PDF then creates tarball)
   latex-package:
     output_file: "out/manuscript-latex.tar.gz"
-    tex_output: true  # Generate .tex file
     jinja_template: "template.jinja"
     data:
       md_files:

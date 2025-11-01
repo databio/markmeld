@@ -80,6 +80,34 @@ Markmeld uses `_markmeld.yaml` files with this structure:
 - **Inheritance**: Targets can inherit configuration from others
 - **Variable variables**: Dynamic variable resolution in templates
 
+### Special Variables
+
+Markmeld provides several special variables that are automatically available in command templates and output file paths:
+
+**Always available**:
+- `{today}`: Current date in YYYY-MM-DD format (e.g., "2025-10-31")
+- `{now}`: Current timestamp in Unix epoch format
+- `{target_name}`: Name of the current target being built
+
+**Cloud/backend only** (when building via Sciquill web application):
+- `{project_slug}`: URL-friendly slug of the project
+- `{project_name}`: Human-readable name of the project
+
+**Usage examples**:
+```yaml
+targets:
+  my-target:
+    output_file: "out/{target_name}-{today}.pdf"
+    command: |
+      pandoc input.md -o out/{target_name}.pdf
+      echo "Built {target_name} on {today}"
+```
+
+Variables use Python's `string.Template.safe_substitute()`, which means:
+- Undefined variables are left as-is (no errors)
+- Variables can contain other variables (recursive expansion up to 5 levels)
+- Both `{variable}` syntax is supported
+
 ## Testing
 
 Tests are in `tests/` and use pytest. Key test files:
