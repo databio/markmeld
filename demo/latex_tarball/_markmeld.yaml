@@ -1,0 +1,122 @@
+# Example markmeld configuration demonstrating LaTeX tarball export
+#
+# This example shows how to create a downloadable LaTeX package (tarball)
+# containing the generated .tex file and all figures needed for compilation.
+#
+# USAGE:
+#   mm manuscript-pdf      # Build the PDF (generates .tex file)
+#   mm latex-package       # Create tarball with .tex + figures
+#
+# The tarball can be extracted and compiled anywhere:
+#   tar xzf manuscript-latex.tar.gz
+#   cd manuscript
+#   pdflatex manuscript.tex
+
+targets:
+  # Regular PDF build target (separate)
+  manuscript-pdf:
+    output_file: "out/manuscript.pdf"
+    tex_output: true  # IMPORTANT: Must generate .tex file
+    jinja_template: "template.jinja"
+    data:
+      md_files:
+        body: "manuscript.md"
+      variables:
+        title: "Example Manuscript"
+        author: "John Doe"
+    command: |
+      pandoc {input_file} -o {output_file} \
+        --pdf-engine=pdflatex
+
+  # LaTeX package target with prebuild (uses separate PDF target)
+  latex-package-prebuild:
+    output_file: "out/manuscript-latex-prebuild.tar.gz"
+    command: |
+      cd out && \
+      tar czf manuscript-latex-prebuild.tar.gz \
+        --dereference \
+        --transform 's,^,manuscript/,' \
+        manuscript.tex ../fig/ ../sheets/ 2>/dev/null || \
+      tar czf manuscript-latex-prebuild.tar.gz \
+        --dereference \
+        --transform 's,^,manuscript/,' \
+        manuscript.tex ../fig/ 2>/dev/null || \
+      tar czf manuscript-latex-prebuild.tar.gz \
+        --dereference \
+        --transform 's,^,manuscript/,' \
+        manuscript.tex
+    prebuild:
+      - manuscript-pdf  # Ensure PDF (and .tex) are built first
+
+  # Self-contained LaTeX package target (builds PDF then creates tarball)
+  latex-package:
+    output_file: "out/manuscript-latex.tar.gz"
+    tex_output: true  # Generate .tex file
+    jinja_template: "template.jinja"
+    data:
+      md_files:
+        body: "manuscript.md"
+      variables:
+        title: "Example Manuscript"
+        author: "John Doe"
+    command: |
+      pandoc {input_file} -o out/manuscript.pdf --pdf-engine=pdflatex && \
+      cd out && \
+      tar czf manuscript-latex.tar.gz \
+        --dereference \
+        --transform 's,^,manuscript/,' \
+        manuscript.tex ../fig/ ../sheets/ 2>/dev/null || \
+      tar czf manuscript-latex.tar.gz \
+        --dereference \
+        --transform 's,^,manuscript/,' \
+        manuscript.tex ../fig/ 2>/dev/null || \
+      tar czf manuscript-latex.tar.gz \
+        --dereference \
+        --transform 's,^,manuscript/,' \
+        manuscript.tex
+
+# HOW IT WORKS:
+#
+# 1. The manuscript-pdf target generates manuscript.tex with relative paths
+#    like \includegraphics{fig/overview.pdf}
+#
+# 2. The build system automatically creates symlinks in the build directory:
+#    - build_dir/fig/ -> ../../.cache/doc-id/converted/fig/
+#    - build_dir/sheets/ -> ../../.cache/doc-id/converted/sheets/
+#
+# 3. The tar command uses --dereference to follow symlinks and embed actual files
+#
+# 4. The --transform option creates a clean top-level directory in the tarball
+#
+# 5. Cascading fallbacks handle missing directories gracefully:
+#    - Try with ../fig/ and ../sheets/
+#    - Fall back to just ../fig/ if sheets/ missing
+#    - Fall back to just manuscript.tex if no figures
+#
+# TARBALL STRUCTURE:
+#
+#   manuscript/
+#   ├── manuscript.tex       # LaTeX source with embedded bibliography
+#   ├── fig/                 # Figures directory (if present)
+#   │   ├── figure1.pdf
+#   │   └── figure2.pdf
+#   └── sheets/              # Spreadsheet figures (if present)
+#       └── sheet1.pdf
+#
+# COMPILATION:
+#
+#   Users can compile the LaTeX locally with:
+#     cd manuscript
+#     pdflatex manuscript.tex
+#
+# NO BIBLIOGRAPHY FILE NEEDED:
+#
+#   The .tex file has the bibliography embedded as \bibitem entries,
+#   so no .bib file is needed. Just run pdflatex once or twice.
+#
+# CUSTOMIZATION:
+#
+#   - Change output_name in tar command to customize directory name
+#   - Add additional files to tar command (e.g., *.sty, *.cls)
+#   - Use 'zip' command instead of 'tar' for .zip format
+#   - Include README or compilation instructions
