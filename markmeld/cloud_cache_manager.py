@@ -38,7 +38,7 @@ class CloudCacheManager:
             └── ...
     """
 
-    CACHE_VERSION = "3.0"
+    CACHE_VERSION = "3.1"
 
     # File type categories
     FILE_CATEGORIES = {
@@ -175,6 +175,7 @@ class CloudCacheManager:
                 return category
         return None
 
+
     def compute_md5(self, file_path: Path) -> str:
         """Compute MD5 hash of a file."""
         hash_md5 = hashlib.md5()
@@ -254,9 +255,10 @@ class CloudCacheManager:
             logger.error(f"Cannot read metadata.json at {metadata_path}: {e}")
             return None
 
-        # REQUIRE v3.0 format - NO BACKWARD COMPATIBILITY
-        if metadata.get('cache_version') != '3.0':
-            logger.error(f"Unsupported metadata version for {doc_id}: {metadata.get('cache_version')}. Rebuild cache required.")
+        # Support v3.0 and v3.1 formats (soft backward compatibility)
+        cache_version = metadata.get('cache_version')
+        if cache_version not in ['3.0', '3.1']:
+            logger.error(f"Unsupported metadata version for {doc_id}: {cache_version}. Rebuild cache required.")
             return None
 
         # Validate required fields
@@ -307,7 +309,10 @@ class CloudCacheManager:
         source_path: str,
         size: int,
         drive_file_id: Optional[str] = None,
-        digest: Optional[str] = None
+        digest: Optional[str] = None,
+        reference_order: Optional[int] = None,
+        first_reference_line: Optional[int] = None,
+        reference_count: Optional[int] = None,
     ) -> None:
         """
         Record that a file was downloaded and cached.
@@ -319,6 +324,9 @@ class CloudCacheManager:
             size: File size in bytes
             drive_file_id: Google Drive file ID (if from Drive)
             digest: MD5 hash of file content
+            reference_order: Order of first appearance in text (NEW)
+            first_reference_line: Line number of first reference (NEW)
+            reference_count: Total number of references (NEW)
         """
         metadata = self.load_metadata(doc_id)
         if not metadata:
@@ -350,6 +358,12 @@ class CloudCacheManager:
             file_record['drive_file_id'] = drive_file_id
         if digest:
             file_record['digest'] = digest
+        if reference_order is not None:
+            file_record['reference_order'] = reference_order
+        if first_reference_line is not None:
+            file_record['first_reference_line'] = first_reference_line
+        if reference_count is not None:
+            file_record['reference_count'] = reference_count
 
         # Add format field for figures
         if category == 'figures':
@@ -379,8 +393,15 @@ class CloudCacheManager:
         existing = next((f for f in existing_files if f['filename'] == filename), None)
 
         if existing:
-            # Update existing record
+            # Update existing record, but preserve downloaded_at if digest unchanged
+            old_digest = existing.get('digest')
+            old_downloaded_at = existing.get('downloaded_at')
+
             existing.update(file_record)
+
+            # If digest unchanged, preserve original download timestamp
+            if digest and old_digest and digest == old_digest and old_downloaded_at:
+                existing['downloaded_at'] = old_downloaded_at
         else:
             # Append new record
             existing_files.append(file_record)
@@ -456,6 +477,7 @@ class CloudCacheManager:
             del self._metadata_cache[cache_key]
 
         logger.debug(f"Recorded conversion for {filename}: {status}")
+
 
     def get_cached_files_summary(self, doc_id: str) -> Dict[str, Any]:
         """

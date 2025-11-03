@@ -996,28 +996,114 @@ class FigureConverter:
 
         return None
     
-    def validate_figure_order(self, references: List[Tuple[str, int, str, int, str]]) -> List[Dict[str, Any]]:
+    def extract_figure_labels(self, markdown_content: str) -> Dict[str, Tuple[int, str]]:
+        r"""
+        Extract figure label definitions from figure captions in markdown.
+
+        Finds labels in patterns like:
+        - ![**\label{overview} Figure 1.** Caption text](path.svg)
+        - ![**\label{supp-data} Supplemental Figure 1.** Caption text](path.svg)
+
+        Args:
+            markdown_content: The full markdown document content
+
+        Returns:
+            Dict mapping label names to tuples of (line_number, figure_type)
+            where figure_type is either 'main' or 'supplemental'
+        """
+        labels = {}
+        lines = markdown_content.split('\n')
+
+        # Pattern to match: ![**\label{name} Supplemental Figure ...
+        # or: ![**\label{name} Figure ...
+        pattern = r'!\[\*\*\\label\{([^}]+)\}\s*(Supplemental\s+)?Figure'
+
+        for line_num, line in enumerate(lines, 1):
+            # Only look at lines that start image definitions
+            if not line.strip().startswith('!['):
+                continue
+
+            match = re.search(pattern, line)
+            if match:
+                label_name = match.group(1)
+                is_supplemental = match.group(2) is not None
+                figure_type = 'supplemental' if is_supplemental else 'main'
+
+                labels[label_name] = (line_num, figure_type)
+
+        return labels
+
+    def build_label_order_map(self, label_definitions: Dict[str, Tuple[int, str]]) -> Dict[str, int]:
+        """
+        Build a mapping from label names to their sequential order within each figure type.
+
+        Args:
+            label_definitions: Dict from extract_figure_labels() with label -> (line_num, type)
+
+        Returns:
+            Dict mapping label names to their order number (1, 2, 3, etc.)
+            Main and supplemental figures are numbered separately.
+        """
+        # Separate main and supplemental figures
+        main_labels = [(label, line_num) for label, (line_num, fig_type) in label_definitions.items()
+                       if fig_type == 'main']
+        supp_labels = [(label, line_num) for label, (line_num, fig_type) in label_definitions.items()
+                       if fig_type == 'supplemental']
+
+        # Sort by line number (definition order)
+        main_labels.sort(key=lambda x: x[1])
+        supp_labels.sort(key=lambda x: x[1])
+
+        # Assign order numbers
+        label_order = {}
+        for i, (label, _) in enumerate(main_labels, 1):
+            label_order[label] = i
+        for i, (label, _) in enumerate(supp_labels, 1):
+            label_order[label] = i
+
+        return label_order
+
+    def validate_figure_order(self, references: List[Tuple[str, int, str, int, str]], markdown_content: str = None) -> List[Dict[str, Any]]:
         """
         Validate that figure references appear in logical order.
-        
+
+        Checks both numeric references (Fig. 3, Fig S2) and LaTeX label references
+        (Fig. \ref{overview}, Supplemental Figure \ref{suppfig1}).
+
+        For numeric references:
+        - Main figures should appear in order: 1, 2, 3, ...
+        - Supplemental figures should appear in order: S1, S2, S3, ...
+        - Detects out-of-order citations (e.g., Fig 5 before Fig 3)
+        - Detects gaps (e.g., Fig 1, then Fig 5, missing 2-4)
+
+        For label-based references:
+        - Builds mapping from labels to appearance order in supplement section
+        - Validates references cite figures in the order they appear
+        - Detects out-of-order citations (e.g., citing 3rd supp fig before 1st)
+        - Detects gaps (e.g., citing supp figs 1 and 3, but not 2)
+
         Args:
             references: List of figure references from extract_figure_references
-            
+            markdown_content: Optional markdown content for label extraction
+
         Returns:
             List of order violations with details
         """
         violations = []
-        
-        # Track first occurrence of each figure
+
+        # Track first occurrence of each figure (both numeric and label-based)
         first_occurrences = {}
         figure_order = []
-        
+        label_references = []  # Track label-based references separately
+
         for ref_text, fig_num, panels, line_num, context in references:
-            # Skip LaTeX references for now (they use labels not numbers)
-            if '\\ref{' in str(fig_num):
+            # Handle LaTeX label references
+            if '\\ref{' in str(ref_text):
+                # Store label references for later processing
+                label_references.append((fig_num, line_num, ref_text, context))
                 continue
-                
-            # Track first occurrence
+
+            # Track first occurrence of numeric references
             if fig_num not in first_occurrences:
                 first_occurrences[fig_num] = {
                     'line': line_num,
@@ -1054,7 +1140,7 @@ class FigureConverter:
             try:
                 curr_num = int(supplemental_figures[i][1:])  # Remove 'S' prefix
                 prev_num = int(supplemental_figures[i-1][1:])
-                
+
                 if curr_num < prev_num:
                     violations.append({
                         'type': 'out_of_order',
@@ -1067,7 +1153,137 @@ class FigureConverter:
             except (ValueError, IndexError):
                 # Skip if not a simple number
                 pass
-        
+
+        # Check for gaps in main figure sequence
+        if len(main_figures) > 1:
+            try:
+                main_nums = [int(f) for f in main_figures]
+                expected_figures = list(range(min(main_nums), max(main_nums) + 1))
+                missing_figures = [f for f in expected_figures if str(f) not in main_figures]
+
+                for missing in missing_figures:
+                    # Find the first figure after the gap
+                    later_figures = [f for f in main_nums if f > missing]
+                    if later_figures:
+                        first_later = str(later_figures[0])
+                        violations.append({
+                            'type': 'missing_figure',
+                            'figure': str(missing),
+                            'referenced_after': first_later,
+                            'line': first_occurrences[first_later]['line'],
+                            'context': first_occurrences[first_later]['context'],
+                            'message': f"Figure {first_later} referenced, but Figure {missing} was never referenced"
+                        })
+            except (ValueError, TypeError):
+                pass
+
+        # Check for gaps in supplemental figure sequence
+        if len(supplemental_figures) > 1:
+            try:
+                # Extract numeric parts
+                supp_nums = [int(f[1:]) for f in supplemental_figures]
+                expected_supps = list(range(min(supp_nums), max(supp_nums) + 1))
+                missing_supps = [f for f in expected_supps if f'S{f}' not in supplemental_figures]
+
+                for missing in missing_supps:
+                    # Find the first figure after the gap
+                    later_supps = [f for f in supp_nums if f > missing]
+                    if later_supps:
+                        first_later = f'S{later_supps[0]}'
+                        violations.append({
+                            'type': 'missing_figure',
+                            'figure': f'S{missing}',
+                            'referenced_after': first_later,
+                            'line': first_occurrences[first_later]['line'],
+                            'context': first_occurrences[first_later]['context'],
+                            'message': f"Figure {first_later} referenced, but Figure S{missing} was never referenced"
+                        })
+            except (ValueError, TypeError, IndexError):
+                pass
+
+        # Validate LaTeX label-based figures if markdown_content provided
+        if markdown_content and label_references:
+            try:
+                # Extract label definitions from markdown
+                label_definitions = self.extract_figure_labels(markdown_content)
+
+                if label_definitions:
+                    # Build label-to-order mapping
+                    label_order_map = self.build_label_order_map(label_definitions)
+
+                    # Track label references by type
+                    label_ref_order = []  # List of (label, line_num, text, context, fig_type)
+
+                    for label, line_num, ref_text, context in label_references:
+                        if label in label_definitions:
+                            _, fig_type = label_definitions[label]
+                            label_ref_order.append((label, line_num, ref_text, context, fig_type))
+
+                    # Separate main and supplemental label references
+                    main_label_refs = [r for r in label_ref_order if r[4] == 'main']
+                    supp_label_refs = [r for r in label_ref_order if r[4] == 'supplemental']
+
+                    # Check supplemental label order
+                    for i in range(1, len(supp_label_refs)):
+                        curr_label, curr_line, curr_text, curr_context, _ = supp_label_refs[i]
+                        prev_label, prev_line, prev_text, prev_context, _ = supp_label_refs[i-1]
+
+                        curr_order = label_order_map.get(curr_label, 0)
+                        prev_order = label_order_map.get(prev_label, 0)
+
+                        if curr_order > 0 and prev_order > 0 and curr_order < prev_order:
+                            violations.append({
+                                'type': 'label_out_of_order',
+                                'figure': curr_label,
+                                'expected_after': prev_label,
+                                'line': curr_line,
+                                'context': curr_context,
+                                'message': f"Supplemental figure '{curr_label}' (appears {curr_order} in supplement) "
+                                          f"is referenced before '{prev_label}' (appears {prev_order} in supplement)"
+                            })
+
+                    # Check for gaps in supplemental label references
+                    if len(supp_label_refs) > 1:
+                        referenced_orders = sorted([label_order_map[label] for label, _, _, _, _ in supp_label_refs
+                                                   if label in label_order_map])
+
+                        if referenced_orders:
+                            expected_range = list(range(min(referenced_orders), max(referenced_orders) + 1))
+                            missing_orders = [o for o in expected_range if o not in referenced_orders]
+
+                            if missing_orders:
+                                # Find which labels correspond to missing orders
+                                for missing_order in missing_orders:
+                                    missing_labels = [label for label, order in label_order_map.items()
+                                                     if order == missing_order and label_definitions.get(label, (0, ''))[1] == 'supplemental']
+
+                                    for missing_label in missing_labels:
+                                        violations.append({
+                                            'type': 'missing_supplemental_label',
+                                            'figure': missing_label,
+                                            'message': f"Supplemental figure '{missing_label}' (position {missing_order}) "
+                                                      f"is never referenced in text"
+                                        })
+
+                    # Check for mixed referencing style (warning only)
+                    numeric_supps = [f for f in supplemental_figures if f.startswith('S') and f[1:].isdigit()]
+                    label_supps = [label for label, (_, fig_type) in label_definitions.items()
+                                  if fig_type == 'supplemental']
+
+                    if numeric_supps and label_supps:
+                        violations.append({
+                            'type': 'mixed_reference_style',
+                            'message': f"Document uses both numeric ({len(numeric_supps)} refs) and "
+                                      f"label-based ({len(label_supps)} refs) for supplemental figures. "
+                                      f"Consider using one consistent style."
+                        })
+
+            except Exception as e:
+                # Don't fail validation if label processing has issues
+                import logging
+                logger = logging.getLogger("markmeld")
+                logger.debug(f"Label validation error: {e}")
+
         return violations
 
     def validate_panel_order(self, references: List[Tuple[str, int, str, int, str]]) -> List[Dict[str, Any]]:
@@ -1242,7 +1458,7 @@ class FigureConverter:
             return ""
 
         # Validate figure order
-        figure_violations = self.validate_figure_order(references)
+        figure_violations = self.validate_figure_order(references, markdown_content)
 
         # Validate panel order
         panel_violations = self.validate_panel_order(references)
@@ -1310,13 +1526,28 @@ class FigureConverter:
                 report_lines.append(f"  Line {info['line']:4d}: {info['text']}")
             report_lines.append("")
 
-        # Report figure order violations
-        if figure_violations:
-            report_lines.append("⚠️  FIGURE ORDER VIOLATIONS:")
+        # Report figure order violations (separate numeric and label-based)
+        numeric_violations = [v for v in figure_violations
+                             if v['type'] in ['out_of_order', 'missing_figure']]
+        label_violations = [v for v in figure_violations
+                           if v['type'] in ['label_out_of_order', 'missing_supplemental_label', 'mixed_reference_style']]
+
+        if numeric_violations:
+            report_lines.append("⚠️  NUMERIC FIGURE ORDER VIOLATIONS:")
             report_lines.append("")
-            for violation in figure_violations:
+            for violation in numeric_violations:
                 report_lines.append(f"  - {violation['message']}")
-                report_lines.append(f"    Line {violation['line']}: {violation['context']}")
+                if 'line' in violation and violation['line'] > 0:
+                    report_lines.append(f"    Line {violation['line']}: {violation.get('context', '')}")
+                report_lines.append("")
+
+        if label_violations:
+            report_lines.append("⚠️  LABEL-BASED FIGURE ORDER VIOLATIONS:")
+            report_lines.append("")
+            for violation in label_violations:
+                report_lines.append(f"  - {violation['message']}")
+                if 'line' in violation and violation['line'] > 0:
+                    report_lines.append(f"    Line {violation['line']}: {violation.get('context', '')}")
                 report_lines.append("")
 
         # Report panel order violations
@@ -1348,7 +1579,7 @@ class FigureConverter:
                 report_lines.append(f"    Line {warning['line']}: {warning['context']}")
                 report_lines.append("")
 
-        if not figure_violations and not panel_violations and not warnings and not prefix_warnings:
+        if not numeric_violations and not label_violations and not panel_violations and not warnings and not prefix_warnings:
             report_lines.append("✅ All figure references appear to be in order!")
             report_lines.append("")
 

@@ -991,7 +991,7 @@ class GoogleDriveProcessor:
                 logger.warning(f"   - {failed_file}")
             logger.warning(f"   Check the error messages above for details on each failure.")
     
-    def _get_cached_file_or_download(self, fig_path: str, file_info: dict, doc_id: str, figure_type: str) -> Path:
+    def _get_cached_file_or_download(self, fig_path: str, file_info: dict, doc_id: str, figure_type: str, reference_order: int) -> Path:
         """Get cached file or download if needed. Returns Path to source file."""
         if figure_type == 'csv':
             # Remove 'csv/' prefix from path since we're already in csv subdirectory
@@ -1027,7 +1027,8 @@ class GoogleDriveProcessor:
                 source_path=fig_path,
                 size=cached_path.stat().st_size,
                 drive_file_id=file_info['id'],
-                digest=file_info.get('md5Checksum')
+                digest=file_info.get('md5Checksum'),
+                reference_order=reference_order
             )
 
         return cached_path
@@ -1133,8 +1134,9 @@ class GoogleDriveProcessor:
         
         # Process each figure
         results = {'processed': [], 'skipped': [], 'failed': [], 'mapping': {}}
-        
-        for fig_path, params in figure_data:
+
+        # Enumerate to track order of appearance (1-indexed)
+        for reference_order, (fig_path, params) in enumerate(figure_data, start=1):
             logger.info(f"Processing: {fig_path}")
             
             # Determine figure type and skip unknown
@@ -1198,7 +1200,8 @@ class GoogleDriveProcessor:
                             source_path=fig_path,
                             size=source_file_path.stat().st_size,
                             drive_file_id=file_info.get('id') if file_info else None,
-                            digest=file_info.get('md5Checksum') if file_info else None
+                            digest=file_info.get('md5Checksum') if file_info else None,
+                            reference_order=reference_order
                         )
 
                     # Record conversion if it exists
@@ -1220,7 +1223,7 @@ class GoogleDriveProcessor:
                     continue
                 
                 # Get source file (cached or download)
-                source_file = self._get_cached_file_or_download(fig_path, file_info, doc_id, figure_type)
+                source_file = self._get_cached_file_or_download(fig_path, file_info, doc_id, figure_type, reference_order)
                 
                 # Convert file
                 converted_path = self._convert_file(fig_path, source_file, file_info, params, doc_id, figure_type, output_path)
@@ -1242,17 +1245,42 @@ class GoogleDriveProcessor:
         for old_p, new_p in results['mapping'].items():
             logger.info(f"  {old_p} -> {new_p}")
         updated_content = self._update_figure_paths(doc_content, results['mapping'])
-        
+
         import re
-        remaining_svgs = re.findall(r'[^)]+\.svg\)', updated_content)
+        # Match markdown image syntax: ![alt](path.svg) or ![alt](path.svg){params}
+        # This captures only actual image paths, not parameter blocks
+        remaining_svgs = re.findall(r'!\[[^\]]*\]\(([^)]+\.svg)\)', updated_content)
         if remaining_svgs:
-            logger.warning(f"WARNING: {len(remaining_svgs)} SVG paths remain after replacement!")
-            for svg in remaining_svgs[:5]:  # Show first 5
-                logger.warning(f"  Still has: {svg}")
+            # Check which are from known failures vs unknown
+            failed_set = set(results['failed'])
+            unreplaced_from_failures = [svg for svg in remaining_svgs if svg in failed_set]
+            unreplaced_unknown = [svg for svg in remaining_svgs if svg not in failed_set]
+
+            if unreplaced_from_failures:
+                logger.warning(f"WARNING: {len(unreplaced_from_failures)} SVG path(s) not replaced due to conversion failures:")
+                for svg in unreplaced_from_failures[:5]:
+                    logger.warning(f"  Failed: {svg}")
+                if len(unreplaced_from_failures) > 5:
+                    logger.warning(f"  ... and {len(unreplaced_from_failures) - 5} more")
+
+            if unreplaced_unknown:
+                logger.warning(f"WARNING: {len(unreplaced_unknown)} SVG path(s) not replaced for unknown reasons:")
+                for svg in unreplaced_unknown[:5]:
+                    logger.warning(f"  Unknown: {svg}")
+                if len(unreplaced_unknown) > 5:
+                    logger.warning(f"  ... and {len(unreplaced_unknown) - 5} more")
         
         # Log processing summary
         self._log_figure_processing_summary(results)
-        
+
+        # Enrich metadata with figure reference order
+        try:
+            doc_path = self._get_doc_path(doc_id)
+            if doc_path.exists():
+                self.cache_manager.enrich_with_figure_references(doc_id, doc_path)
+        except Exception as e:
+            logger.warning(f"Failed to enrich metadata with figure references: {e}")
+
         return {
             'document': updated_content,
             'results': results
