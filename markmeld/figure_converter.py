@@ -832,19 +832,22 @@ class FigureConverter:
             matched_positions = set()
 
             # Simplified patterns - handle each type separately for better control
+            # Order matters! More specific patterns should come first to avoid being masked by general ones
             patterns = [
+                # Context phrases (including "shown in") - MUST come first to capture the full phrase
+                r'(?:as\s+shown\s+in\s+|see\s+|shown\s+in\s+|described\s+in\s+|illustrated\s+in\s+)Fig(?:ure)?\.?\s*(?:\\ref\{[^}]+\}|S?\d+)[A-Z]?(?:-[A-Z])?',
                 # LaTeX ref style with panel - NO space allowed before panel letter
-                r'\(?\s*Fig(?:ure)?\.?\s*\\ref\{[^}]+\}[A-Z]?(?:-[A-Z])?(?:[,;]\s*[^)]*)?[)]?',
+                # Include optional parentheses in capture
+                r'\(?\s*Fig(?:ure)?\.?\s*\\ref\{[^}]+\}[A-Z]?(?:-[A-Z])?\)?',
                 # LaTeX ref style WITHOUT panel but potentially with space (error case)
                 r'\(\s*Fig(?:ure)?\.?\s*\\ref\{[^}]+\}\s+[A-Z]?\)',
-                # Parenthetic simple figures - improved to handle commas/semicolons after panels
-                r'\(\s*(?:Supplemental\s+)?Fig(?:ure)?\.?\s*S?\d+[A-Z]?(?:-[A-Z])?(?:[,;]\s*[^)]*)?[)]?',
-                # Multiple panels in parentheses (e.g., "Fig. 3A, 3B")
-                r'\(\s*Fig(?:ure)?\.?\s*S?\d+[A-Z]?(?:\s*,\s*S?\d*[A-Z])+(?:[,;]\s*[^)]*)?[)]?',
-                # Context phrases (including "shown in")
-                r'(?:as\s+shown\s+in\s+|see\s+|shown\s+in\s+|described\s+in\s+|illustrated\s+in\s+)Fig(?:ure)?\.?\s*(?:\\ref\{[^}]+\}|S?\d+)[A-Z]?(?:-[A-Z])?',
-                # Standalone references (but not after "in" to avoid duplicates)
-                r'(?<![(\w])(?<!in\s)Fig(?:ure)?\.?\s*(?:\\ref\{[^}]+\}|S?\d+)[A-Z]?(?:-[A-Z])?(?![)\w])'
+                # Multi-panel references in parentheses - MUST come before simple pattern
+                # Matches "(Fig. 3A, 3B)" or "(Fig. S3, S4)" etc.
+                r'\(\s*Fig(?:ure)?\.?\s*S?\d+[A-Z]?(?:-[A-Z])?(?:\s*,\s*(?:Fig(?:ure)?\.?\s*)?[S\d]+[A-Z]?(?:-[A-Z])?)*\s*\)',
+                # Simple figure references (parenthetic or not) - catches figures anywhere including inside parentheses
+                # This will match Fig. 2C even when preceded by other text like "AUC >98%; Fig. 2C"
+                # Include optional parentheses in capture
+                r'\(?\s*(?:Supplemental\s+)?Fig(?:ure)?\.?\s*S?\d+[A-Z]?(?:-[A-Z])?\)?',
             ]
 
             for pattern in patterns:
@@ -904,27 +907,41 @@ class FigureConverter:
     
     def parse_multi_figure_reference(self, ref_text: str) -> Optional[List[Tuple[str, str]]]:
         """
-        Parse multi-figure references like "(Fig. 3A, 3B)" or "(Fig. S3, S4)".
-        
+        Parse multi-figure references like "(Fig. 3A, 3B)" or "(Fig. S3, S4)" or "(Fig. 2C, Fig. S2)".
+
         Args:
             ref_text: Reference text that might contain multiple figures
-            
+
         Returns:
             List of tuples (figure_number, panel_letters) or None if not multi-ref
         """
-        # Check for patterns like "(Fig. 3A, 3B)" or "(Fig. S3, S4)"
+        # First try to find all complete figure references with "Fig." prefix
+        # Pattern to match "Fig. X" or "Figure X" with optional panel
+        complete_fig_pattern = r'Fig(?:ure)?\.?\s*(S?\d+)([A-Z](?:-[A-Z])?)?'
+        complete_matches = list(re.finditer(complete_fig_pattern, ref_text, re.IGNORECASE))
+
+        if len(complete_matches) > 1:
+            # Multiple complete figure references like "(Fig. 2C, Fig. S2)"
+            refs = []
+            for match in complete_matches:
+                fig_num = match.group(1)
+                panel = match.group(2) or ''
+                refs.append((fig_num, panel))
+            return refs
+
+        # Fall back to original abbreviated format handling: "(Fig. 3A, 3B)" or "(Fig. S3, S4)"
         # Pattern: Fig. followed by figure number, then comma-separated additional refs
         pattern = r'\(?\s*Fig(?:ure)?\.?\s*(S?\d+)([A-Z](?:-[A-Z])?)?(?:\s*,\s*([S\d]+[A-Z]?(?:-[A-Z])?(?:\s*,\s*[S\d]+[A-Z]?(?:-[A-Z])?)*))?\)?'
-        
+
         match = re.match(pattern, ref_text, re.IGNORECASE)
         if match and match.group(3):  # Has comma-separated parts
             refs = []
-            
+
             # First figure
             fig_num = match.group(1)
             panel = match.group(2) or ''
             refs.append((fig_num, panel))
-            
+
             # Additional figures
             additional = match.group(3)
             if additional:
@@ -940,9 +957,9 @@ class FigureConverter:
                         num_match = re.match(r'^(S?\d+)([A-Z](?:-[A-Z])?)?$', part)
                         if num_match:
                             refs.append((num_match.group(1), num_match.group(2) or ''))
-            
+
             return refs if len(refs) > 1 else None
-        
+
         return None
     
     def parse_figure_reference(self, ref_text: str) -> Optional[Tuple[str, str]]:
@@ -1377,7 +1394,8 @@ class FigureConverter:
                                 'message': f"Figure {fig_num} panel {first_later} referenced, but panel {missing} was never referenced"
                             })
 
-            # Check if panels appear in order by line number
+            # Check if panels appear in correct alphabetical order
+            # Sort by line number to get the order panels were first mentioned
             panel_order_by_line = sorted(panels_dict.items(), key=lambda x: x[1][0])
             prev_panel = None
             for panel, (line_num, context) in panel_order_by_line:
@@ -1389,7 +1407,7 @@ class FigureConverter:
                         'expected_after': prev_panel,
                         'line': line_num,
                         'context': context,
-                        'message': f"Figure {fig_num} panel {panel} appears before panel {prev_panel}"
+                        'message': f"Figure {fig_num} panel {panel} appears before panel {prev_panel} (expected alphabetical order)"
                     })
                 prev_panel = panel
 
@@ -1398,23 +1416,40 @@ class FigureConverter:
     def detect_figure_warnings(self, references: List[Tuple[str, int, str, int, str]]) -> List[Dict[str, Any]]:
         """
         Detect potential issues with figure references.
-        
+
         Args:
             references: List of figure references
-            
+
         Returns:
             List of warnings with details
         """
         warnings = []
-        
+
         # Check for non-parenthetic references that might need parentheses
         for ref_text, fig_num, panels, line_num, context in references:
             # Skip if it's in a figure caption (starts with **)
             if context.startswith('**'):
                 continue
-                
+
+            # Check if ref_text starts with '(' or if it's within parentheses in the context
+            in_parentheses = ref_text.startswith('(')
+
+            # If ref_text doesn't start with '(', check if it appears within parentheses in context
+            if not in_parentheses and context:
+                # Find where the reference appears in the context
+                # Strip the leading/trailing parts of ref_text that might include closing parens
+                ref_core = ref_text.rstrip(')')
+                ref_pos = context.find(ref_core)
+                if ref_pos > 0:
+                    # Check if there's an opening paren before the reference
+                    text_before = context[:ref_pos]
+                    # Count parens - if there's an unmatched '(' before us, we're in parentheses
+                    open_count = text_before.count('(')
+                    close_count = text_before.count(')')
+                    in_parentheses = open_count > close_count
+
             # Warning for references not in parentheses (unless in specific contexts)
-            if not ref_text.startswith('('):
+            if not in_parentheses:
                 # Check if the reference text itself contains acceptable context phrases
                 # These are typically part of the match when using our combined pattern
                 acceptable_starts = [
@@ -1424,7 +1459,7 @@ class FigureConverter:
                     'described in fig',
                     'illustrated in fig'
                 ]
-                
+
                 ref_lower = ref_text.lower()
                 if not any(ref_lower.startswith(ctx) for ctx in acceptable_starts):
                     # For standalone "Figure X" references, check context
@@ -1438,7 +1473,7 @@ class FigureConverter:
                             'context': context,
                             'message': f"Figure reference '{ref_text}' is not in parentheses"
                         })
-        
+
         return warnings
     
     def generate_figure_analysis_report(self, markdown_content: str) -> str:

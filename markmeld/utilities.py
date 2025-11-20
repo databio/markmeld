@@ -473,6 +473,8 @@ def clean_escape_characters(markdown_content: str) -> str:
     content = content.replace('\\*', '*')
     content = content.replace('\\=', '=')
     content = content.replace('\\+', '+')
+    content = content.replace('\\<', '<')
+    content = content.replace('\\>', '>')
     
     # Handle LaTeX-specific fixes: convert double backslashes before LaTeX commands to single
     # This fixes Google Docs converting \{ to \\{ while preserving the LaTeX command

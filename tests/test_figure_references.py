@@ -601,3 +601,171 @@ As shown in Figure 3, our results are significant.
         fig2_missing_c = [v for v in panel_violations
                          if v['figure'] == '2' and v['type'] == 'missing_panel' and v['missing_panel'] == 'C']
         assert len(fig2_missing_c) == 1
+
+    def test_references_in_parentheses_with_other_text(self):
+        """Test extraction of references in parentheses that contain other text."""
+        markdown = """
+        Results were specific (Fig. 2C, Fig. S2), and the analysis confirmed this.
+        The AUC was high (AUC >98%; Fig. 4C) as expected.
+        Another example (see Fig. 3B for details).
+        """
+
+        fc = FigureConverter(None)
+        refs = fc.extract_figure_references(markdown)
+
+        # Extract just the figure numbers and panels
+        found = [(ref[1], ref[2]) for ref in refs]
+
+        # Should find all these figures
+        assert ('2', 'C') in found, f"Fig. 2C not found. Found: {found}"
+        assert ('S2', '') in found, f"Fig. S2 not found. Found: {found}"
+        assert ('4', 'C') in found, f"Fig. 4C not found. Found: {found}"
+        assert ('3', 'B') in found, f"Fig. 3B not found. Found: {found}"
+
+    def test_figure_order_with_parenthetical_context(self):
+        """Test that figure order validation works correctly with figures in complex parentheticals."""
+        markdown = """
+        The results were specific (Fig. 2C, Fig. S2), and we confirmed this.
+        Earlier work showed (AUC >98%; Fig. 4C) that the method was effective.
+        Figure 4 panel D referenced (Fig. 4D) after some other text.
+        """
+
+        fc = FigureConverter(None)
+        refs = fc.extract_figure_references(markdown)
+
+        # Validate figure order - should NOT report S2 as missing
+        violations = fc.validate_figure_order(refs)
+
+        # Should not have missing figure violations for S2
+        missing_s2 = [v for v in violations
+                     if v['type'] == 'missing_figure' and v['figure'] == 'S2']
+        assert len(missing_s2) == 0, f"Incorrectly reported S2 as missing. Violations: {violations}"
+
+    def test_panel_order_with_parenthetical_context(self):
+        """Test that panel order validation works correctly with panels in complex parentheticals."""
+        markdown = """
+        Initial analysis (AUC >98%; Fig. 4A) showed promising results.
+        Further work (precision >95%; Fig. 4B) confirmed this.
+        The final results (sensitivity >90%; Fig. 4C) were conclusive.
+        Additional data (specificity >92%; Fig. 4D) supported the findings.
+        """
+
+        fc = FigureConverter(None)
+        refs = fc.extract_figure_references(markdown)
+
+        # Validate panel order - should NOT report missing panels
+        panel_violations = fc.validate_panel_order(refs)
+
+        # Should not have any violations for Figure 4
+        fig4_violations = [v for v in panel_violations if v['figure'] == '4']
+        assert len(fig4_violations) == 0, f"Incorrectly reported panel violations for Fig 4: {fig4_violations}"
+
+    def test_multiple_figures_in_same_parentheses(self):
+        """Test extraction when multiple figures appear in the same set of parentheses."""
+        markdown = """
+        Results shown (Fig. 1A, Fig. 1B, Fig. 2) are significant.
+        Both methods work (see Fig. 3 and Fig. 4).
+        Compare results (Fig. 5A vs Fig. 5B).
+        """
+
+        fc = FigureConverter(None)
+        refs = fc.extract_figure_references(markdown)
+
+        # Extract figure numbers
+        found_figs = [ref[1] for ref in refs]
+
+        # Should find all figures
+        assert '1' in found_figs
+        assert '2' in found_figs
+        assert '3' in found_figs
+        assert '4' in found_figs
+        assert '5' in found_figs
+
+        # Check panels for Fig 1
+        fig1_refs = [(ref[1], ref[2]) for ref in refs if ref[1] == '1']
+        assert ('1', 'A') in fig1_refs
+        assert ('1', 'B') in fig1_refs
+
+    def test_figure_with_text_before_it_in_parentheses(self):
+        """Test extraction when figure reference is not at start of parentheses."""
+        markdown = """
+        The AUC was high (AUC >98%; Fig. 4C) as expected.
+        The specificity was good (specificity >95%, Fig. 5A) in tests.
+        Results were significant (p<0.05; see Fig. 6B).
+        """
+
+        fc = FigureConverter(None)
+        refs = fc.extract_figure_references(markdown)
+
+        # Extract figure numbers
+        found = [(ref[1], ref[2]) for ref in refs]
+
+        # Should find all figures even when they're not at the start of parentheses
+        assert ('4', 'C') in found, f"Fig. 4C not found. Found: {found}"
+        assert ('5', 'A') in found, f"Fig. 5A not found. Found: {found}"
+        assert ('6', 'B') in found, f"Fig. 6B not found. Found: {found}"
+
+    def test_multi_panel_same_figure_in_parentheses(self):
+        """
+        Test that multi-panel references like (Fig. 3A, 3B) are correctly parsed.
+
+        This is a regression test for a bug where (Fig. 3A, 3B) was being split
+        into separate matches, causing only panel A to be recorded, and panel B
+        to be recorded at a later line when it appeared standalone. This caused
+        false positive panel order violations.
+        """
+        markdown = """
+        De novo motif analysis across region subgroups highlighted MADS box (MEF2 family)
+        and C4 zinc-finger classes in primary WT samples and bZIP (ATF/AP-1) class in
+        Tumoral samples (Fig. 3A, 3B), consistent with prior studies. We observed similar
+        patterns in other pairwise combinations. Single-cell RNA-seq from JG cells supported
+        candidate factors within motif families (e.g., Mef2d, Mafg; Fig. 3C). Interestingly,
+        in the recruited group, the top motifs were a mix of the top motifs found in the
+        WT and tumoral groups.
+
+        Later in the document:
+        We conducted de novo motif enrichment analyses for the core renin-specific regions.
+        In the core renin-specific regions, the top enriched motifs were the MADS box class,
+        bZip class, and C4 zinc finger class (Fig. 3A). For the other combination sets, we
+        found notable differences in the top enriched TF motifs among the 3 groups (Fig. 3B).
+        """
+
+        fc = FigureConverter(None)
+        refs = fc.extract_figure_references(markdown)
+
+        # Find all Fig 3 references
+        fig3_refs = [(ref[2], ref[3]) for ref in refs if ref[1] == '3']  # (panel, line_num)
+
+        # Panel A should first appear on line 4 (in "Fig. 3A, 3B")
+        panel_a_lines = [line for panel, line in fig3_refs if panel == 'A']
+        assert len(panel_a_lines) >= 1, "Panel A should be found"
+        first_a_line = min(panel_a_lines)
+
+        # Panel B should ALSO first appear on line 4 (in "Fig. 3A, 3B"), NOT later
+        panel_b_lines = [line for panel, line in fig3_refs if panel == 'B']
+        assert len(panel_b_lines) >= 1, "Panel B should be found"
+        first_b_line = min(panel_b_lines)
+
+        # Panel C should first appear on line 4 or 5 (in "Fig. 3C")
+        panel_c_lines = [line for panel, line in fig3_refs if panel == 'C']
+        assert len(panel_c_lines) >= 1, "Panel C should be found"
+        first_c_line = min(panel_c_lines)
+
+        # Critical assertion: B should be recorded at the same line as A (from "Fig. 3A, 3B")
+        assert first_a_line == first_b_line, \
+            f"Panel A and B should both be first recorded on the same line (from 'Fig. 3A, 3B'), but A was on line {first_a_line} and B on {first_b_line}"
+
+        # Now test panel order validation - should have NO violations
+        panel_violations = fc.validate_panel_order(refs)
+
+        # Should not have panel order violations for Figure 3
+        fig3_order_violations = [v for v in panel_violations
+                                if v['figure'] == '3' and v['type'] == 'panel_out_of_order']
+        assert len(fig3_order_violations) == 0, \
+            f"Should have no panel order violations for Fig 3, but found: {fig3_order_violations}"
+
+        # Should not have missing panel violations
+        fig3_missing_violations = [v for v in panel_violations
+                                  if v['figure'] == '3' and v['type'] in ['missing_panel_A', 'missing_panel']]
+        assert len(fig3_missing_violations) == 0, \
+            f"Should have no missing panel violations for Fig 3, but found: {fig3_missing_violations}"

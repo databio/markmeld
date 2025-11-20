@@ -8,6 +8,7 @@ import time
 import yaml
 
 from copy import deepcopy
+from typing import Union, List
 
 from datetime import date
 from jinja2 import Template
@@ -611,6 +612,31 @@ class MarkdownMelder(object):
         _LOGGER.debug(f"get_cache_root() returning: {cache_root} (found in config: {'_cache_root' in self.cfg})")
         return cache_root
 
+    def _update_bibliography_path(self, content: str, cached_bib_path: Union[str, List[str]]) -> str:
+        """
+        Update the bibliography path in the document's frontmatter to point to the cached file.
+
+        Args:
+            content: The markdown content with frontmatter
+            cached_bib_path: The path to the cached bibliography file(s)
+
+        Returns:
+            Updated markdown content with bibliography path pointing to cached file
+        """
+        import frontmatter
+        import re
+
+        # Parse the content to extract frontmatter
+        post = frontmatter.loads(content)
+
+        # Update the bibliography field to point to the cached file
+        if cached_bib_path:
+            post.metadata['bibliography'] = cached_bib_path
+            _LOGGER.debug(f"Updated bibliography path to: {cached_bib_path}")
+
+        # Convert back to string with frontmatter
+        return frontmatter.dumps(post)
+
     def open_target(self, target_name):
         tgt = Target(self.cfg, target_name)
 
@@ -678,19 +704,19 @@ class MarkdownMelder(object):
                     raise ValueError(f"Document ID for '{var_name}' must be a string, got {type(doc_id)}: {doc_id}")
 
                 _LOGGER.info(f"MM | Fetching Google Doc '{var_name}': {doc_id}")
-                
-                # Process document and figures
-                _LOGGER.info(f"MM | Processing document '{var_name}' and all associated figures/CSVs...")
+
+                # Process document, figures, and bibliography in one pass
+                _LOGGER.info(f"MM | Processing document '{var_name}' and all associated figures/CSVs/bibliography...")
                 result = gdp.process_document_figures(
-                    doc_id, 
+                    doc_id,
                     None,  # No folder_id needed - method will find parent folder automatically
                     skip_unchanged=(not force_refresh)
                 )
-                
+
                 # Store content using the variable name as the key
                 md_content[var_name] = result['document']
-                
-                # Log processing results
+
+                # Log figure processing results
                 if 'results' in result:
                     results = result['results']
                     if results.get('processed'):
@@ -699,7 +725,25 @@ class MarkdownMelder(object):
                         _LOGGER.info(f"MM | Skipped {len(results['skipped'])} unchanged figures/CSVs for '{var_name}'")
                     if results.get('failed'):
                         _LOGGER.warning(f"MM | Failed to process {len(results['failed'])} figures/CSVs for '{var_name}'")
-            
+
+                # Extract bibliography info (processed during same document download)
+                bib_result = result.get('bibliography_info', {})
+
+                if bib_result and bib_result.get('bibliography_path'):
+                    # Update the frontmatter to point to the cached bibliography
+                    _LOGGER.info(f"MM | Updating bibliography path to cached location...")
+                    md_content[var_name] = self._update_bibliography_path(md_content[var_name], bib_result['bibliography_path'])
+
+                    # Log bibliography processing results
+                    if 'results' in bib_result:
+                        bib_results = bib_result['results']
+                        if bib_results.get('processed'):
+                            _LOGGER.info(f"MM | Downloaded {len(bib_results['processed'])} bibliography files for '{var_name}'")
+                        if bib_results.get('skipped'):
+                            _LOGGER.info(f"MM | Used cached {len(bib_results['skipped'])} bibliography files for '{var_name}'")
+                        if bib_results.get('failed'):
+                            _LOGGER.warning(f"MM | Failed to download {len(bib_results['failed'])} bibliography files for '{var_name}'")
+
             # Transform target data to use the fetched content
             tgt.meta["data"] = {
                 "md_content": md_content

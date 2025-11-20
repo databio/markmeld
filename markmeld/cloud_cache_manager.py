@@ -38,12 +38,13 @@ class CloudCacheManager:
             └── ...
     """
 
-    CACHE_VERSION = "3.1"
+    CACHE_VERSION = "3.2"
 
     # File type categories
     FILE_CATEGORIES = {
         'figures': ['svg', 'png', 'jpg', 'jpeg', 'gif'],
-        'csvs': ['csv']
+        'csvs': ['csv'],
+        'bibliographies': ['bib']
     }
 
     # Conversion mappings
@@ -60,7 +61,8 @@ class CloudCacheManager:
         'pdf': 'pdf',             # Legacy: bulk SVG folder processing
         'digest': 'digest',       # MD5 checksums for tracking changes
         'csv': 'csv',             # CSV data files
-        'fig': 'fig'              # Cached figure source files (SVG, etc.)
+        'fig': 'fig',             # Cached figure source files (SVG, etc.)
+        'bib': 'bib'              # Bibliography files
     }
     
     def __init__(self, cache_root: Union[str, Path] = ".cache", create_dirs: bool = True):
@@ -161,6 +163,7 @@ class CloudCacheManager:
             'total_size': 0,
             'figures_count': 0,
             'csvs_count': 0,
+            'bibliographies_count': 0,
             'conversions_successful': 0,
             'conversions_failed': 0,
             'conversions_pending': 0,
@@ -185,8 +188,8 @@ class CloudCacheManager:
         return hash_md5.hexdigest()
 
     def _update_cache_stats(self, metadata: Dict[str, Any]) -> None:
-        """Update the cache_stats section based on figures and csvs."""
-        all_files = metadata.get('figures', []) + metadata.get('csvs', [])
+        """Update the cache_stats section based on figures, csvs, and bibliographies."""
+        all_files = metadata.get('figures', []) + metadata.get('csvs', []) + metadata.get('bibliographies', [])
 
         # Include document in total if it has size info
         if 'document' in metadata and metadata['document'].get('size'):
@@ -222,6 +225,7 @@ class CloudCacheManager:
             'total_size': total_size,
             'figures_count': len(metadata.get('figures', [])),
             'csvs_count': len(metadata.get('csvs', [])),
+            'bibliographies_count': len(metadata.get('bibliographies', [])),
             'conversions_successful': conversions_successful,
             'conversions_failed': conversions_failed,
             'conversions_pending': conversions_pending,
@@ -255,9 +259,9 @@ class CloudCacheManager:
             logger.error(f"Cannot read metadata.json at {metadata_path}: {e}")
             return None
 
-        # Support v3.0 and v3.1 formats (soft backward compatibility)
+        # Support v3.0, v3.1, and v3.2 formats (soft backward compatibility)
         cache_version = metadata.get('cache_version')
-        if cache_version not in ['3.0', '3.1']:
+        if cache_version not in ['3.0', '3.1', '3.2']:
             logger.error(f"Unsupported metadata version for {doc_id}: {cache_version}. Rebuild cache required.")
             return None
 
@@ -273,7 +277,7 @@ class CloudCacheManager:
         return metadata
 
     def save_metadata(self, doc_id: str, metadata: Dict[str, Any]):
-        """Save document metadata to cache. Always saves as v3.0 format."""
+        """Save document metadata to cache. Always saves as v3.2 format."""
         # Ensure required structure exists
         if 'document' not in metadata:
             metadata['document'] = self._init_document_metadata()
@@ -281,10 +285,12 @@ class CloudCacheManager:
             metadata['figures'] = []
         if 'csvs' not in metadata:
             metadata['csvs'] = []
+        if 'bibliographies' not in metadata:
+            metadata['bibliographies'] = []
         if 'cache_stats' not in metadata:
             metadata['cache_stats'] = self._init_cache_stats()
 
-        # Always save as v3.0
+        # Always save as v3.2
         metadata['cache_version'] = self.CACHE_VERSION
 
         # Write to file
@@ -301,6 +307,126 @@ class CloudCacheManager:
         # Update in-memory cache
         cache_key = f"metadata_{doc_id}"
         self._metadata_cache[cache_key] = (time.time(), metadata)
+
+    def update_cached_file(
+        self,
+        file_path: Path,
+        content: Union[str, bytes],
+        drive_metadata: Optional[Dict[str, Any]] = None
+    ) -> None:
+        """
+        Update a cached file with new content and metadata.
+
+        This method:
+        1. Writes the new content to the cache file
+        2. Updates the metadata.json with new timestamp, MD5, and size
+        3. Preserves drive_file_id and source_path for tracking
+
+        Args:
+            file_path: Full path to the cache file (e.g., cache_root/doc_id/bib/references.bib)
+            content: New file content (string or bytes)
+            drive_metadata: Optional metadata from Google Drive (id, name, modifiedTime, md5Checksum, size)
+
+        Example:
+            cache_manager.update_cached_file(
+                Path("builds/proj/.cache/doc123/bib/refs.bib"),
+                "New bibliography content",
+                {"id": "file123", "name": "refs.bib", "modifiedTime": "2025-11-07T12:00:00Z"}
+            )
+        """
+        # Write content to file
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+
+        if isinstance(content, str):
+            content_bytes = content.encode('utf-8')
+        else:
+            content_bytes = content
+
+        file_path.write_bytes(content_bytes)
+
+        # Calculate new MD5
+        new_md5 = hashlib.md5(content_bytes).hexdigest()
+        new_size = len(content_bytes)
+
+        logger.info(f"Updated cache file: {file_path}")
+        logger.info(f"  Size: {new_size} bytes")
+        logger.info(f"  MD5: {new_md5}")
+
+        # Parse cache path to extract doc_id and relative path
+        # Expected structure: cache_root/doc_id/subdir/filename
+        try:
+            relative_to_cache = file_path.relative_to(self.cache_root)
+            parts = relative_to_cache.parts
+
+            if len(parts) < 2:
+                logger.warning(f"Cannot update metadata: invalid cache path structure {file_path}")
+                return
+
+            doc_id = parts[0]
+            source_path = str(Path(*parts[1:]))  # e.g., "bib/references.bib"
+            filename = file_path.name
+
+        except ValueError:
+            logger.warning(f"File {file_path} is not in cache root {self.cache_root}")
+            return
+
+        # Update metadata
+        metadata = self.load_metadata(doc_id)
+        if not metadata:
+            logger.warning(f"No metadata found for {doc_id}, cannot update file metadata")
+            return
+
+        # Determine file category
+        category = self._get_file_category(filename)
+        if not category:
+            logger.warning(f"Unknown file type for {filename}, skipping metadata update")
+            return
+
+        # Find and update existing file record
+        files_list = metadata[category]
+        existing = next((f for f in files_list if f['filename'] == filename), None)
+
+        if existing:
+            # Update existing record
+            existing['size'] = new_size
+            existing['digest'] = new_md5
+            existing['downloaded_at'] = datetime.now().isoformat()
+
+            # Update Drive metadata if provided
+            if drive_metadata:
+                if 'id' in drive_metadata:
+                    existing['drive_file_id'] = drive_metadata['id']
+                if 'modifiedTime' in drive_metadata:
+                    existing['modified_time'] = drive_metadata['modifiedTime']
+
+            logger.info(f"Updated metadata for existing file: {filename}")
+        else:
+            # Create new record
+            file_record = {
+                'filename': filename,
+                'source_path': source_path,
+                'size': new_size,
+                'digest': new_md5,
+                'downloaded_at': datetime.now().isoformat(),
+            }
+
+            # Add Drive metadata if provided
+            if drive_metadata:
+                if 'id' in drive_metadata:
+                    file_record['drive_file_id'] = drive_metadata['id']
+                if 'modifiedTime' in drive_metadata:
+                    file_record['modified_time'] = drive_metadata['modifiedTime']
+
+            files_list.append(file_record)
+            logger.info(f"Added new file record to metadata: {filename}")
+
+        # Update cache stats
+        self._update_cache_stats(metadata)
+
+        # Save updated metadata
+        self.save_metadata(doc_id, metadata)
+
+        logger.info(f"Cache metadata updated for {doc_id}")
 
     def record_cached_file(
         self,
@@ -335,6 +461,7 @@ class CloudCacheManager:
                 'document': self._init_document_metadata(),
                 'figures': [],
                 'csvs': [],
+                'bibliographies': [],
                 'cache_stats': self._init_cache_stats(),
                 'cache_version': self.CACHE_VERSION
             }
@@ -444,9 +571,9 @@ class CloudCacheManager:
             logger.error(f"Cannot record conversion for {filename}: no metadata found")
             return
 
-        # Find the file in metadata - check both figures and csvs
+        # Find the file in metadata - check figures, csvs, and bibliographies
         file_record = None
-        for category in ['figures', 'csvs']:
+        for category in ['figures', 'csvs', 'bibliographies']:
             if category in metadata:
                 file_record = next((f for f in metadata[category] if f['filename'] == filename), None)
                 if file_record:
@@ -484,7 +611,7 @@ class CloudCacheManager:
         Get summary of all cached files for a document.
 
         Returns:
-            Dictionary with document, figures, csvs, and cache_stats, or empty dict if no metadata
+            Dictionary with document, figures, csvs, bibliographies, and cache_stats, or empty dict if no metadata
         """
         metadata = self.load_metadata(doc_id)
         if not metadata:
@@ -494,6 +621,7 @@ class CloudCacheManager:
             'document': metadata.get('document', {}),
             'figures': metadata.get('figures', []),
             'csvs': metadata.get('csvs', []),
+            'bibliographies': metadata.get('bibliographies', []),
             'cache_stats': metadata.get('cache_stats', self._init_cache_stats())
         }
 

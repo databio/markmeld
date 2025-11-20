@@ -203,7 +203,7 @@ class TestCloudCacheManagerMetadataV3:
 
             metadata = ccm.load_metadata('test_doc')
             assert metadata is not None
-            assert metadata['cache_version'] == '3.0'
+            assert metadata['cache_version'] == '3.2'
             assert 'figures' in metadata
             assert len(metadata['figures']) == 1
 
