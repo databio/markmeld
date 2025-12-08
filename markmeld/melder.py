@@ -537,7 +537,16 @@ class Target(object):
             _LOGGER.info(
                 f"{color_code}{item['status']}: {item['message']}{color_reset}"
             )
-        
+
+        # Print captured stdout/stderr from subprocess commands
+        if hasattr(self, 'stdout') and self.stdout and self.stdout.strip():
+            _LOGGER.info("Command output (stdout):")
+            print(self.stdout)
+
+        if hasattr(self, 'stderr') and self.stderr and self.stderr.strip():
+            _LOGGER.info("Command errors (stderr):")
+            print(self.stderr)
+
         # Report success/failure
         if self.returncode != 0:
             _LOGGER.error(f"{color_red}Building target '{self.target_name}' failed.{color_reset}")
