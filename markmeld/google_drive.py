@@ -162,7 +162,7 @@ class GoogleDriveProcessor:
         self.cache_manager = CloudCacheManager(cache_root)
         
         # Initialize drive service
-        self.drive_service = build('drive', 'v3', credentials=self.credentials)
+        self.drive_service = build('drive', 'v3', credentials=self.credentials, cache_discovery=False)
         
         # Initialize figure converter
         self.figure_converter = FigureConverter(self.cache_manager, self.drive_service)
@@ -189,14 +189,7 @@ class GoogleDriveProcessor:
     
     def _log_credentials_info(self):
         """Log information about the credentials being used."""
-        logger.info("=" * 60)
-        logger.info("Google Drive Processor initialized")
-        logger.info("-" * 60)
-        logger.info(f"Credentials source: {self._credentials_source}")
-        logger.info(f"Service account type: {self._credentials_info.get('type', 'unknown')}")
-        logger.info(f"Project ID: {self._credentials_info.get('project_id', 'unknown')}")
-        logger.info(f"Client email: {self._credentials_info.get('client_email', 'unknown')}")
-        logger.info("=" * 60)
+        logger.info(f"Google Drive Processor initialized: {self._credentials_info.get('client_email', 'unknown')} ({self._credentials_info.get('project_id', 'unknown')})")
     
     def __repr__(self) -> str:
         """Return string representation of the GoogleDriveProcessor."""
@@ -285,7 +278,7 @@ class GoogleDriveProcessor:
             # Build temporary drive service with OAuth token
             from google.oauth2.credentials import Credentials
             user_credentials = Credentials(token=access_token)
-            user_drive_service = build('drive', 'v3', credentials=user_credentials)
+            user_drive_service = build('drive', 'v3', credentials=user_credentials, cache_discovery=False)
             drive_service = user_drive_service
             logger.info(f"Updating file {file_id} using user OAuth token")
         else:
@@ -433,7 +426,7 @@ class GoogleDriveProcessor:
         try:
             # Build Google Docs service if not already available
             if not hasattr(self, 'docs_service'):
-                self.docs_service = build('docs', 'v1', credentials=self.credentials)
+                self.docs_service = build('docs', 'v1', credentials=self.credentials, cache_discovery=False)
             
             # Fetch document with suggestions inline
             doc = self.docs_service.documents().get(
@@ -709,7 +702,8 @@ class GoogleDriveProcessor:
         try:
             # Load metadata to get stored change token
             metadata = self.cache_manager.load_metadata(doc_id)
-            stored_token = metadata.get('change_token') if metadata else None
+            # v3.x format with nested structure
+            stored_token = metadata.get('document', {}).get('change_token') if metadata else None
             
             if not stored_token:
                 # No token means first run or cache was cleared
@@ -753,11 +747,15 @@ class GoogleDriveProcessor:
                 
                 # Update the token to the latest (for next check)
                 if remote_token and remote_token != stored_token:
-                    # Save the new token for next time
-                    self.cache_manager.save_metadata(doc_id, {
-                        'doc_id': doc_id,
-                        'change_token': remote_token
-                    })
+                    # Save the new token for next time (update in place to preserve metadata)
+                    if 'document' in metadata:
+                        metadata['document']['change_token'] = remote_token
+                    else:
+                        # Create minimal v3.x structure if missing
+                        metadata['document'] = self.cache_manager._init_document_metadata()
+                        metadata['document']['doc_id'] = doc_id
+                        metadata['document']['change_token'] = remote_token
+                    self.cache_manager.save_metadata(doc_id, metadata)
                 
                 return False
                 

@@ -119,10 +119,16 @@ end
 
 
 local function run_citeproc (doc)
-  if PANDOC_VERSION >= '2.11' then
+  -- Use in-process citeproc to avoid spawning subprocess that inherits filter chain
+  if PANDOC_VERSION >= {2,19,1} then
+    -- pandoc.utils.citeproc runs in-process (no subprocess, no filter chain inheritance)
+    return pandoc.utils.citeproc(doc)
+  elseif PANDOC_VERSION >= '2.11' then
+    -- Fallback for older pandoc versions (spawns subprocess)
     local args = {'--from=json', '--to=json', '--citeproc'}
     return run_json_filter(doc, 'pandoc', args)
   else
+    -- Legacy pandoc-citeproc for very old versions
     return run_json_filter(doc, 'pandoc-citeproc', {FORMAT, '-q'})
   end
 end

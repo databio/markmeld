@@ -622,13 +622,8 @@ def check_and_fix_latex_incompatible_chars(markdown_content: str) -> str:
     
     # Log warnings if any problematic characters were found
     if issues_found:
-        _LOGGER.warning("=" * 70)
-        _LOGGER.warning("⚠️  LATEX-INCOMPATIBLE CHARACTERS DETECTED AND FIXED")
-        _LOGGER.warning("=" * 70)
-        _LOGGER.warning("")
-        _LOGGER.warning("The following characters were found that would cause LaTeX errors:")
-        _LOGGER.warning("")
-        
+        _LOGGER.warning("⚠️  LaTeX-incompatible characters detected and auto-replaced:")
+
         # Group by character for cleaner output
         char_groups = {}
         for issue in issues_found:
@@ -636,23 +631,18 @@ def check_and_fix_latex_incompatible_chars(markdown_content: str) -> str:
             if char_key not in char_groups:
                 char_groups[char_key] = []
             char_groups[char_key].append(issue['context'])
-        
+
         for (char, char_code, replacement), contexts in char_groups.items():
-            _LOGGER.warning(f"  Character: '{char}' ({char_code})")
-            _LOGGER.warning(f"  Replaced with: '{replacement}'")
-            _LOGGER.warning(f"  Found {len(contexts)} occurrence(s):")
-            # Show up to 3 context examples
-            for i, context in enumerate(contexts[:3]):
-                _LOGGER.warning(f"    - {context}")
-            if len(contexts) > 3:
-                _LOGGER.warning(f"    ... and {len(contexts) - 3} more")
-            _LOGGER.warning("")
-        
-        _LOGGER.warning("These characters have been automatically replaced with LaTeX-compatible")
-        _LOGGER.warning("alternatives. Please review the document to ensure the replacements")
-        _LOGGER.warning("are appropriate for your content.")
-        _LOGGER.warning("=" * 70)
-        _LOGGER.warning("")
+            # Format as table: 'char' (code) → 'replacement'   N occ: context
+            count = len(contexts)
+            plural = "s" if count > 1 else ""
+            # Take first context, truncate if too long
+            context = contexts[0]
+            if len(context) > 60:
+                context = context[:57] + "..."
+            _LOGGER.warning(f"  '{char}' ({char_code}) → '{replacement}'   {count} occurrence{plural}: {context}")
+
+        _LOGGER.warning("Note: Review document to ensure replacements are appropriate.")
     
     # Also check for any other non-ASCII characters that might cause issues
     # but aren't in our replacement list

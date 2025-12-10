@@ -458,6 +458,26 @@ class Target(object):
         else:
             cli_vars = {}
 
+        # Inject embedded resource variables EARLY (before command generation)
+        # This allows user variables containing resource references to be expanded
+        from .resource_manager import inject_resource_variables
+        meta = inject_resource_variables(meta)
+
+        # Expand any template variables in meta values that reference resources
+        # This allows user variables like bibdb: "{mm-resource-bibdb}" to be fully expanded
+        # BEFORE the pandoc command is generated
+        from .utilities import MyTemplate
+        for key, value in list(meta.items()):
+            if isinstance(value, str) and '{' in value:
+                # Try to expand template variables up to 3 times for nested references
+                expanded = value
+                for _ in range(3):
+                    new_expanded = MyTemplate(expanded).safe_substitute(**meta)
+                    if new_expanded == expanded:
+                        break
+                    expanded = new_expanded
+                meta[key] = expanded
+
         if not "command" in meta:
             # Generally, user should provide a `command`, but for simple default cases,
             # we can just route through pandoc as a default command.
@@ -488,6 +508,15 @@ class Target(object):
             if "output_file" in meta:
                 options_array.append('-o "{output_file}"')
 
+            # Add any extra pandoc arguments from config
+            if "pandoc_extra_args" in meta and meta["pandoc_extra_args"]:
+                extra_args = meta["pandoc_extra_args"]
+                # Support both string and list formats
+                if isinstance(extra_args, list):
+                    options_array.extend(extra_args)
+                else:
+                    options_array.append(extra_args)
+
             options = " ".join(options_array)
             meta["command"] = f"pandoc {options}"
 
@@ -498,10 +527,6 @@ class Target(object):
         _LOGGER.debug(f"DEBUG: csl value: {meta.get('csl', 'NOT PRESENT')}")
         _LOGGER.debug(f"DEBUG: bibdb value: {meta.get('bibdb', 'NOT PRESENT')}")
         _LOGGER.debug(f"DEBUG: Generated command: {meta.get('command', 'NO COMMAND')}")
-
-        # Inject embedded resource variables (filters, templates, CSL files)
-        from .resource_manager import inject_resource_variables
-        meta = inject_resource_variables(meta)
 
         _LOGGER.debug(f"meta: {meta}")
         self.meta = meta
@@ -974,14 +999,28 @@ class MarkdownMelder(object):
         _LOGGER.debug("processed_data_block:", processed_data_block)
         data_copy.update(processed_data_block)
 
+        # Expand any template variables in data_copy values (e.g., user variables that reference resources)
+        # This allows user variables like bibdb: "{mm-csl-nature}" to be expanded
+        from .utilities import MyTemplate
+        for key, value in list(data_copy.items()):
+            if isinstance(value, str) and '{' in value:
+                # Try to expand template variables up to 3 times for nested references
+                expanded = value
+                for _ in range(3):
+                    new_expanded = MyTemplate(expanded).safe_substitute(**data_copy)
+                    if new_expanded == expanded:
+                        break
+                    expanded = new_expanded
+                data_copy[key] = expanded
+
         k = list(data_copy.keys())
-        _LOGGER.info(f"MM | Available keys: {k}")
+        _LOGGER.debug(f"MM | Available keys: {k}")
         if MD_FILES_KEY in data_copy:
-            _LOGGER.info(
+            _LOGGER.debug(
                 f"MM | Available keys [{MD_FILES_KEY}]: {list(data_copy[MD_FILES_KEY].keys())}"
             )
         if YAML_FILES_KEY in data_copy:
-            _LOGGER.info(
+            _LOGGER.debug(
                 f"MM | Available keys [{YAML_FILES_KEY}]: {list(data_copy[YAML_FILES_KEY].keys())}"
             )
         return data_copy

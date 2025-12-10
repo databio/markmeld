@@ -221,3 +221,66 @@ def test_multiref_no_duplicates_option(test_dir, sample_files, tmp_path):
     # It should appear exactly once (in the first section where it's cited)
     assert dames_count == 1, \
         f"Dames reference should appear once with multiref_no_duplicates: true, found {dames_count}"
+
+
+@pytest.mark.skipif(not PANDOC_AVAILABLE, reason="Pandoc not available")
+def test_no_duplicate_stderr_output(test_dir, sample_files, tmp_path):
+    """
+    CRITICAL REGRESSION TEST: Verify filter output is not duplicated in stderr.
+
+    This test catches the bug where backend was appending both python_stdout
+    and result.stdout, causing all filter debug output to appear twice.
+
+    The filter prints diagnostic messages like:
+    - "Total citations: N"
+    - "Found a multi-refs div. Ref count: N"
+    - "Populating bibliography for multi-refs div, number: N"
+    - "Cleared bibliography metadata..."
+
+    These should each appear exactly once, not duplicated.
+    """
+    output = tmp_path / "output.html"
+
+    cmd = [
+        PANDOC_PATH,
+        str(sample_files["sample"]),
+        "--bibliography", str(sample_files["bib"]),
+        "--citeproc",
+        "--lua-filter", str(sample_files["filter"]),
+        "-o", str(output)
+    ]
+
+    result = subprocess.run(cmd, capture_output=True, text=True, cwd=test_dir)
+
+    assert result.returncode == 0, f"Pandoc failed: {result.stderr}"
+
+    # The filter outputs debug info to stderr
+    stderr = result.stderr
+
+    # Check critical markers for duplication
+    if "Total citations:" in stderr:
+        total_count = stderr.count("Total citations:")
+        assert total_count == 1, \
+            f"DUPLICATE OUTPUT BUG: 'Total citations:' appears {total_count} times in stderr"
+
+    if "Populating bibliography for multi-refs div" in stderr:
+        # Count how many times each unique line appears
+        lines = stderr.split("\n")
+        populating_lines = [l.strip() for l in lines if "Populating bibliography" in l]
+
+        # Each div should have one "Populating" message
+        # If we see the same exact line twice, that's duplication
+        from collections import Counter
+        line_counts = Counter(populating_lines)
+
+        duplicates = {line: count for line, count in line_counts.items() if count > 1}
+        assert not duplicates, \
+            f"DUPLICATE OUTPUT BUG: These lines appear multiple times: {duplicates}"
+
+    if "Cleared bibliography metadata" in stderr:
+        cleared_count = stderr.count("Cleared bibliography metadata")
+        assert cleared_count == 1, \
+            f"DUPLICATE OUTPUT BUG: 'Cleared bibliography metadata' appears {cleared_count} times"
+
+    # Success - output is not duplicated
+    print("✓ No duplicate output detected in stderr")

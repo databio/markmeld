@@ -259,16 +259,16 @@ class CloudCacheManager:
             logger.error(f"Cannot read metadata.json at {metadata_path}: {e}")
             return None
 
-        # Support v3.0, v3.1, and v3.2 formats (soft backward compatibility)
+        # Only support v3.0, v3.1, and v3.2 formats
         cache_version = metadata.get('cache_version')
         if cache_version not in ['3.0', '3.1', '3.2']:
-            logger.error(f"Unsupported metadata version for {doc_id}: {cache_version}. Rebuild cache required.")
+            logger.warning(f"  Old cache format (v{cache_version}) detected - will rebuild cache with fresh download")
             return None
 
         # Validate required fields
         required = ['document', 'figures', 'csvs', 'cache_stats', 'cache_version']
         if not all(k in metadata for k in required):
-            logger.error(f"Invalid metadata structure at {metadata_path}: missing required fields")
+            logger.warning(f"  Invalid metadata structure - will rebuild cache")
             return None
 
         # Cache the result in memory
