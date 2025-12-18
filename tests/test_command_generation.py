@@ -349,7 +349,7 @@ class TestSpecialVariables:
             "target_name should be 'report'"
 
     def test_target_name_in_command(self):
-        """Test that target_name can be used in command templates"""
+        """Test that target_name is substituted in command templates"""
         config = {
             "_cfg_file_path": "/tmp/test.yaml",
             "targets": {
@@ -370,13 +370,15 @@ class TestSpecialVariables:
         print(f"Command: {command}")
         print(f"target_name in meta: {target.meta.get('target_name')}")
 
-        # The variable should be in metadata for later substitution
+        # The variable should be in metadata
         assert target.meta.get("target_name") == "manuscript", \
             "target_name should be 'manuscript'"
 
-        # The command should contain the placeholder
-        assert "{target_name}" in command, \
-            f"Command should contain {{target_name}} placeholder: {command}"
+        # The command should have {target_name} substituted
+        assert "manuscript" in command, \
+            f"Command should have target_name substituted: {command}"
+        assert "Building manuscript" in command, \
+            f"Command should contain 'Building manuscript': {command}"
 
     def test_today_variable_in_metadata(self):
         """Test that today variable is still available (existing functionality)"""

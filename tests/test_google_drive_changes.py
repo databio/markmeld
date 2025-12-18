@@ -18,34 +18,34 @@ class TestActiveChangesDetection:
         mock_drive_service = MagicMock()
         mock_docs_service = MagicMock()
         
-        def build_side_effect(service_name, version, credentials=None):
+        def build_side_effect(service_name, version, credentials=None, **kwargs):
             if service_name == 'drive':
                 return mock_drive_service
             elif service_name == 'docs':
                 return mock_docs_service
             return MagicMock()
-        
+
         mock_build.side_effect = build_side_effect
-        
+
         # Mock credentials
         mock_creds_instance = MagicMock()
         mock_creds_instance.service_account_email = "test@example.com"
         mock_creds.from_service_account_info.return_value = mock_creds_instance
-        
+
         # Create processor
         test_creds = {'type': 'service_account', 'project_id': 'test', 'client_email': 'test@example.com'}
         processor = GoogleDriveProcessor(
             credentials_dict=test_creds,
             save_to_disk=False
         )
-        
+
         # Mock metadata response
         mock_drive_service.files().get().execute.return_value = {
             'id': 'test_doc_id',
             'name': 'Test Document',
             'modifiedTime': '2024-01-01T00:00:00Z'
         }
-        
+
         # Mock document with suggestions
         mock_docs_service.documents().get().execute.return_value = {
             'body': {
@@ -65,7 +65,7 @@ class TestActiveChangesDetection:
                 ]
             }
         }
-        
+
         # Mock comments (none in this case)
         mock_drive_service.comments().list().execute.return_value = {'comments': []}
         
@@ -87,7 +87,7 @@ class TestActiveChangesDetection:
         mock_drive_service = MagicMock()
         mock_docs_service = MagicMock()
         
-        def build_side_effect(service_name, version, credentials=None):
+        def build_side_effect(service_name, version, credentials=None, **kwargs):
             if service_name == 'drive':
                 return mock_drive_service
             elif service_name == 'docs':
@@ -161,7 +161,7 @@ class TestActiveChangesDetection:
         mock_drive_service = MagicMock()
         mock_docs_service = MagicMock()
         
-        def build_side_effect(service_name, version, credentials=None):
+        def build_side_effect(service_name, version, credentials=None, **kwargs):
             if service_name == 'drive':
                 return mock_drive_service
             elif service_name == 'docs':
@@ -262,7 +262,7 @@ class TestActiveChangesDetection:
         mock_drive_service = MagicMock()
         mock_docs_service = MagicMock()
         
-        def build_side_effect(service_name, version, credentials=None):
+        def build_side_effect(service_name, version, credentials=None, **kwargs):
             if service_name == 'drive':
                 return mock_drive_service
             elif service_name == 'docs':

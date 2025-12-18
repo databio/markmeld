@@ -1,9 +1,11 @@
-"""
-Google Drive Processor - Unified class for processing Google Drive files
+"""Google Drive Processor for markmeld.
 
-This module provides a single interface for:
+This module provides the GoogleDriveProcessor class for unified Google Drive
+file operations, including:
 - Downloading and cleaning Google Docs as markdown
-- Processing SVG files and converting them to PDFs
+- Processing SVG and CSV files with PDF conversion
+- Managing disk cache for efficient re-downloads
+- Detecting document changes via the Google Drive Changes API
 """
 
 import frontmatter
@@ -34,7 +36,10 @@ from .utilities import (
     clean_escape_characters,
     remove_embedded_images,
     strip_bold_from_headings,
-    replace_svg_extensions
+    replace_svg_extensions,
+    extract_csv_paths,
+    update_figure_paths,
+    create_figure_path_mapping,
 )
 
 # Import cache manager and figure converter
@@ -46,8 +51,17 @@ logging.basicConfig(level=logging.INFO, format='%(message)s')
 logger = logging.getLogger(__name__)
 
 
-def handle_drive_errors(func):
-    """Decorator for common Google Drive API error handling."""
+def handle_drive_errors(func: Any) -> Any:
+    """Decorator for common Google Drive API error handling.
+
+    Wraps functions that make Drive API calls to log errors before re-raising.
+
+    Args:
+        func: The function to wrap.
+
+    Returns:
+        Wrapped function with error handling.
+    """
     @wraps(func)
     def wrapper(*args, **kwargs):
         try:
@@ -59,35 +73,50 @@ def handle_drive_errors(func):
 
 
 class GoogleDriveProcessor:
-    """
-    Processor for Google Drive documents and SVG files.
-    
-    Provides functionality for:
+    """Processor for Google Drive documents and figure files.
+
+    Provides unified functionality for:
     - Downloading Google Docs and converting them to clean markdown
-    - Processing SVG files from Google Drive and converting them to PDFs
-    - Disk caching of Google Docs to avoid redundant downloads
+    - Processing SVG/CSV files from Google Drive and converting them to PDFs
+    - Disk caching of documents to avoid redundant downloads
+    - Change detection via the Google Drive Changes API
+
+    Attributes:
+        credentials: Google service account credentials.
+        credentials_path: Path to credentials file (if file-based).
+        scopes: List of Google API scopes.
+        save_to_disk: Whether to save downloaded documents to disk.
+        cache_manager: CloudCacheManager instance for cache operations.
+        drive_service: Google Drive API service instance.
+        figure_converter: FigureConverter instance for figure processing.
+        service_account_email: Email of the service account.
+        inkscape_command: Command to run inkscape for SVG conversion.
     """
-    
-    def __init__(self, 
-                 credentials_path: Optional[str] = None,
-                 credentials_dict: Optional[Dict[str, Any]] = None,
-                 cache_root: Union[str, Path] = ".cache",
-                 scopes: Optional[List[str]] = None,
-                 save_to_disk: bool = True):
-        """
-        Initialize the Google Drive Processor.
-        
+
+    def __init__(
+        self,
+        credentials_path: Optional[str] = None,
+        credentials_dict: Optional[Dict[str, Any]] = None,
+        cache_root: Union[str, Path] = ".cache",
+        scopes: Optional[List[str]] = None,
+        save_to_disk: bool = True
+    ) -> None:
+        """Initialize the Google Drive Processor.
+
         Args:
-            credentials_path: Path to the service account credentials JSON file
-            credentials_dict: Dictionary containing service account credentials
-            cache_root: Root directory for the centralized cache (default: ".cache")
-            scopes: List of Google API scopes
-            save_to_disk: Whether to save downloaded documents to disk
-            
+            credentials_path: Path to the service account credentials JSON file.
+            credentials_dict: Dictionary containing service account credentials.
+            cache_root: Root directory for the centralized cache.
+            scopes: List of Google API scopes.
+            save_to_disk: Whether to save downloaded documents to disk.
+
+        Raises:
+            ValueError: If no credentials are provided.
+
         Note:
             Credentials can be provided in three ways (in order of precedence):
             1. credentials_dict parameter
-            2. MM_GOOGLE_DRIVE_CREDENTIALS environment variable (can be JSON string or file path)
+            2. MM_GOOGLE_DRIVE_CREDENTIALS environment variable (JSON string or file path)
             3. credentials_path parameter
         """
         # Set default scopes
@@ -166,7 +195,7 @@ class GoogleDriveProcessor:
         
         # Initialize figure converter
         self.figure_converter = FigureConverter(self.cache_manager, self.drive_service)
-        
+
         # Get service account email
         try:
             self.service_account_email = self.credentials.service_account_email
@@ -180,17 +209,24 @@ class GoogleDriveProcessor:
         self._log_credentials_info()
     
     def _extract_credentials_info(self, creds_dict: Dict[str, Any]) -> Dict[str, str]:
-        """Extract key information from credentials dictionary."""
+        """Extract key information from credentials dictionary.
+
+        Args:
+            creds_dict: Service account credentials dictionary.
+
+        Returns:
+            Dict with 'type', 'project_id', and 'client_email' keys.
+        """
         return {
             'type': creds_dict.get('type', 'unknown'),
             'project_id': creds_dict.get('project_id', 'unknown'),
             'client_email': creds_dict.get('client_email', 'unknown')
         }
-    
-    def _log_credentials_info(self):
+
+    def _log_credentials_info(self) -> None:
         """Log information about the credentials being used."""
         logger.info(f"Google Drive Processor initialized: {self._credentials_info.get('client_email', 'unknown')} ({self._credentials_info.get('project_id', 'unknown')})")
-    
+
     def __repr__(self) -> str:
         """Return string representation of the GoogleDriveProcessor."""
         return (
@@ -209,8 +245,13 @@ class GoogleDriveProcessor:
     # ====================
     
     @handle_drive_errors
-    def download_file(self, file_id: str, destination_path: str):
-        """Download any file from Google Drive to local path."""
+    def download_file(self, file_id: str, destination_path: str) -> None:
+        """Download any file from Google Drive to a local path.
+
+        Args:
+            file_id: The Google Drive file ID.
+            destination_path: Local path to save the file.
+        """
         request = self.drive_service.files().get_media(fileId=file_id)
         
         with io.FileIO(destination_path, 'wb') as fh:
@@ -221,7 +262,15 @@ class GoogleDriveProcessor:
     
     @handle_drive_errors
     def get_metadata(self, file_id: str) -> Dict[str, Any]:
-        """Get metadata about any Google Drive file."""
+        """Get metadata about any Google Drive file.
+
+        Args:
+            file_id: The Google Drive file ID.
+
+        Returns:
+            Dict containing file metadata (id, name, mimeType, size, modifiedTime,
+            createdTime, owners, md5Checksum, parents).
+        """
         file_metadata = self.drive_service.files().get(
             fileId=file_id,
             fields='id, name, mimeType, size, modifiedTime, createdTime, owners, md5Checksum, parents'
@@ -229,36 +278,29 @@ class GoogleDriveProcessor:
         return file_metadata
 
     @handle_drive_errors
-    def update_file(self,
-                    file_id: str,
-                    content: Union[str, bytes],
-                    mime_type: str = "text/plain",
-                    access_token: Optional[str] = None) -> Dict[str, Any]:
-        """
-        Update a file on Google Drive with new content.
+    def update_file(
+        self,
+        file_id: str,
+        content: Union[str, bytes],
+        mime_type: str = "text/plain",
+        access_token: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Update a file on Google Drive with new content.
 
-        This method can use either:
-        1. Service account credentials (default - uses self.drive_service)
-        2. User OAuth token (when access_token is provided)
+        This method can use either service account credentials (default) or
+        a user OAuth token when access_token is provided.
 
         Args:
-            file_id: The ID of the file to update
-            content: The new content (string or bytes)
-            mime_type: MIME type of the content (default: "text/plain")
-            access_token: Optional OAuth access token for user-based updates
+            file_id: The ID of the file to update.
+            content: The new content (string or bytes).
+            mime_type: MIME type of the content.
+            access_token: Optional OAuth access token for user-based updates.
 
         Returns:
-            Dict containing updated file metadata (id, name, modifiedTime, md5Checksum)
+            Dict containing updated file metadata (id, name, modifiedTime, md5Checksum).
 
         Raises:
-            Exception: If update fails due to auth, network, or permission issues
-
-        Example:
-            # Using service account (default)
-            metadata = processor.update_file(file_id, "New content")
-
-            # Using user OAuth token
-            metadata = processor.update_file(file_id, "New content", access_token="ya29...")
+            Exception: If update fails due to auth, network, or permission issues.
         """
         # Convert string content to bytes if needed
         if isinstance(content, str):
@@ -300,27 +342,28 @@ class GoogleDriveProcessor:
 
         return updated_file
 
-    def download_doc(self,
-                     doc_id: str,
-                     clean: bool = True,
-                     output_path: Optional[Union[str, Path]] = None,
-                     parse_frontmatter: bool = True,
-                     update_figure_paths: bool = True,
-                     folder_id: Optional[str] = None) -> Any:
-        """
-        Download a Google Doc and optionally clean it and save to disk.
-        
+    def download_doc(
+        self,
+        doc_id: str,
+        clean: bool = True,
+        output_path: Optional[Union[str, Path]] = None,
+        parse_frontmatter: bool = True,
+        update_figure_paths: bool = True,
+        folder_id: Optional[str] = None
+    ) -> Any:
+        """Download a Google Doc and optionally clean it and save to disk.
+
         Args:
-            doc_id: The ID of the Google Doc to download
-            clean: Whether to apply all cleaning operations (default: True)
-            output_path: Optional path to save the markdown file
-            parse_frontmatter: Whether to parse frontmatter (default: True)
-            update_figure_paths: Whether to update SVG paths to converted PDFs (default: True)
-            folder_id: Optional folder ID to search for figures (if not provided, uses doc's parent)
-            
+            doc_id: The ID of the Google Doc to download.
+            clean: Whether to apply all cleaning operations.
+            output_path: Optional path to save the markdown file.
+            parse_frontmatter: Whether to parse frontmatter.
+            update_figure_paths: Whether to update SVG paths to converted PDFs.
+            folder_id: Optional folder ID to search for figures (uses doc's parent if not provided).
+
         Returns:
-            If parse_frontmatter is True: frontmatter.Post object
-            If parse_frontmatter is False: cleaned markdown string
+            frontmatter.Post object if parse_frontmatter is True,
+            cleaned markdown string otherwise.
         """
         # Download the markdown (cleaned by default if clean=True)
         markdown_content = self._download_raw_markdown(doc_id, apply_cleaning=clean)
@@ -342,11 +385,21 @@ class GoogleDriveProcessor:
         else:
             return markdown_content
     
-    def _download_raw_markdown(self, doc_id: str, skip_disk_save: bool = False, apply_cleaning: bool = True) -> str:
-        """
-        Internal method to download markdown from Google Drive.
-        Includes disk caching support.
-        Caches cleaned content by default instead of raw content.
+    def _download_raw_markdown(
+        self, doc_id: str, skip_disk_save: bool = False, apply_cleaning: bool = True
+    ) -> str:
+        """Download markdown from Google Drive with disk caching.
+
+        Internal method that handles caching logic. Caches cleaned content
+        by default instead of raw content.
+
+        Args:
+            doc_id: The Google Doc ID.
+            skip_disk_save: Whether to skip saving to disk.
+            apply_cleaning: Whether to apply cleaning before caching.
+
+        Returns:
+            Markdown content as string.
         """
         # Check disk cache if enabled
         disk_content = self._load_from_disk(doc_id)
@@ -395,7 +448,18 @@ class GoogleDriveProcessor:
         return content
     
     def _remove_auto_title(self, content: str, doc_id: str) -> str:
-        """Remove auto-added document title if present."""
+        """Remove auto-added document title if present.
+
+        Google Docs export sometimes adds the document title as an H1 heading.
+        This method removes it if it matches the document name.
+
+        Args:
+            content: The markdown content.
+            doc_id: The Google Doc ID for fetching metadata.
+
+        Returns:
+            Markdown content with auto-title removed if applicable.
+        """
         lines = content.split('\n') if content else []
         if len(lines) >= 2 and lines[0].startswith('# '):
             if lines[1].strip() in ['---', '']:
@@ -417,11 +481,16 @@ class GoogleDriveProcessor:
     
     
     def _document_has_suggestions(self, doc_id: str) -> bool:
-        """
-        Check if a Google Doc has any suggested edits.
-        
+        """Check if a Google Doc has any suggested edits.
+
         Uses the Google Docs API to fetch the document with suggestions inline
         and checks for suggestion markers in the content.
+
+        Args:
+            doc_id: The Google Doc ID.
+
+        Returns:
+            True if document has suggestions, False otherwise.
         """
         try:
             # Build Google Docs service if not already available
@@ -459,11 +528,14 @@ class GoogleDriveProcessor:
             # Fall back to false if we can't check
             return False
     
-    def _check_element_for_suggestions(self, element: dict) -> bool:
-        """
-        Recursively check a document element for suggestion markers.
-        
-        Returns True if any suggestions are found.
+    def _check_element_for_suggestions(self, element: Dict[str, Any]) -> bool:
+        """Recursively check a document element for suggestion markers.
+
+        Args:
+            element: A Google Docs API element dict.
+
+        Returns:
+            True if any suggestions are found.
         """
         if not element:
             return False
@@ -542,12 +614,14 @@ class GoogleDriveProcessor:
         
         return False
     
-    def _check_for_active_changes(self, doc_id: str):
-        """
-        Check if a document has active suggestions and warn the user.
-        
-        This uses the Google Docs API to check if the document contains
-        suggested edits that haven't been accepted or rejected.
+    def _check_for_active_changes(self, doc_id: str) -> None:
+        """Check for active suggestions and unresolved comments, warning the user.
+
+        Uses the Google Docs API to check if the document contains suggested edits
+        that haven't been accepted or rejected. Also checks for unresolved comments.
+
+        Args:
+            doc_id: The Google Doc ID to check.
         """
         try:
             # Get document metadata first
@@ -690,21 +764,23 @@ class GoogleDriveProcessor:
     # ====================
     
     def check_for_changes_via_changes_api(self, doc_id: str) -> bool:
-        """
-        Check if a document has changed using the Google Drive Changes API.
-        
+        """Check if a document has changed using the Google Drive Changes API.
+
+        Uses stored change tokens to efficiently detect changes without
+        re-downloading the entire document.
+
         Args:
-            doc_id: The ID of the document to check
-            
+            doc_id: The ID of the document to check.
+
         Returns:
-            True if the document has changed, False if not
+            True if the document has changed, False if not.
         """
         try:
             # Load metadata to get stored change token
             metadata = self.cache_manager.load_metadata(doc_id)
             # v3.x format with nested structure
             stored_token = metadata.get('document', {}).get('change_token') if metadata else None
-            
+
             if not stored_token:
                 # No token means first run or cache was cleared
                 logger.info("  No change token found - first time caching this document")
@@ -776,11 +852,10 @@ class GoogleDriveProcessor:
             return True
     
     def get_current_change_token(self) -> Optional[str]:
-        """
-        Get a fresh change token for the current state of the drive.
-        
+        """Get a fresh change token for the current state of the drive.
+
         Returns:
-            The current change token or None if error
+            The current change token, or None if an error occurs.
         """
         try:
             response = self.drive_service.changes().getStartPageToken(
@@ -796,7 +871,14 @@ class GoogleDriveProcessor:
     # ====================
     
     def _get_doc_filename(self, doc_id: str) -> str:
-        """Generate a filename for saving a document to disk."""
+        """Generate a filename for saving a document to disk.
+
+        Args:
+            doc_id: The Google Doc ID.
+
+        Returns:
+            Sanitized filename with .md extension.
+        """
         logger.debug(f"_get_doc_filename called with doc_id type={type(doc_id)}, value={doc_id}")
 
         try:
@@ -830,11 +912,27 @@ class GoogleDriveProcessor:
         return safe_name
     
     def _get_doc_path(self, doc_id: str) -> Path:
-        """Get the full path where a document would be saved on disk."""
+        """Get the full path where a document would be saved on disk.
+
+        Args:
+            doc_id: The Google Doc ID.
+
+        Returns:
+            Full Path to the document cache location.
+        """
         return self.cache_manager.get_cache_path(doc_id, 'docs', self._get_doc_filename(doc_id))
-    
+
     def _load_from_disk(self, doc_id: str) -> Optional[str]:
-        """Try to load a document from disk cache."""
+        """Try to load a document from disk cache.
+
+        Checks if the cached version is still valid using the Changes API.
+
+        Args:
+            doc_id: The Google Doc ID.
+
+        Returns:
+            Cached content if valid, None if cache miss or document changed.
+        """
         if not self.save_to_disk:
             return None
         
@@ -871,8 +969,14 @@ class GoogleDriveProcessor:
             logger.info("  Document has changed - will download fresh copy")
             return None
     
-    def _save_to_disk(self, doc_id: str, content: str, is_cleaned: bool = False):
-        """Save document content to disk and update metadata."""
+    def _save_to_disk(self, doc_id: str, content: str, is_cleaned: bool = False) -> None:
+        """Save document content to disk and update metadata.
+
+        Args:
+            doc_id: The Google Doc ID.
+            content: The markdown content to save.
+            is_cleaned: Whether the content has been cleaned.
+        """
         if not self.save_to_disk:
             return
         
@@ -925,9 +1029,11 @@ class GoogleDriveProcessor:
                 
                 if change_token:
                     logger.info(f"  Saved change token: {change_token[:20]}...")
+                else:
+                    logger.warning(f"  Failed to get change token from Google Drive API - caching may not work correctly")
                 
             except Exception as e:
-                logger.debug(f"Error saving metadata: {e}")
+                logger.warning(f"Error saving metadata (change_token may be lost): {e}")
                 
         except Exception as e:
             logger.error(f"Error saving to disk: {e}")
@@ -943,25 +1049,28 @@ class GoogleDriveProcessor:
     # ====================
     
     def load_local_digest(self, file_identifier: str, doc_id: str) -> Optional[str]:
-        """
-        Load stored digest from local filesystem.
+        """Load stored digest from local filesystem.
+
         Delegates to CloudCacheManager.
-        
+
         Args:
-            file_identifier: The file identifier/path
-            doc_id: Document ID for cache context
+            file_identifier: The file identifier/path.
+            doc_id: Document ID for cache context.
+
+        Returns:
+            The stored digest, or None if not found.
         """
         return self.cache_manager.load_digest(doc_id, file_identifier)
-    
-    def save_local_digest(self, file_identifier: str, digest: str, doc_id: str):
-        """
-        Save digest to local filesystem.
+
+    def save_local_digest(self, file_identifier: str, digest: str, doc_id: str) -> None:
+        """Save digest to local filesystem.
+
         Delegates to CloudCacheManager.
-        
+
         Args:
-            file_identifier: The file identifier/path
-            digest: The digest to save
-            doc_id: Document ID for cache context
+            file_identifier: The file identifier/path.
+            digest: The digest to save.
+            doc_id: Document ID for cache context.
         """
         self.cache_manager.save_digest(doc_id, file_identifier, digest)
     
@@ -969,39 +1078,61 @@ class GoogleDriveProcessor:
     # Document-Driven Figure Processing
     # ====================
     
-    def parse_figure_parameters(self, param_string: str) -> dict:
-        """
-        Parse figure parameters from markdown syntax.
-        Delegates to FigureConverter.
-        """
-        return self.figure_converter.parse_figure_parameters(param_string)
-    
     def extract_figure_paths(self, markdown_content: str) -> List[Tuple[str, Dict[str, Any]]]:
-        """
-        Extract all figure paths and their parameters from markdown content.
+        """Extract all figure paths and their parameters from markdown content.
+
         Delegates to FigureConverter.
+
+        Args:
+            markdown_content: The markdown content to parse.
+
+        Returns:
+            List of (path, params) tuples for each figure reference.
         """
         return self.figure_converter.extract_figure_paths(markdown_content)
-    
-    def extract_csv_paths(self, markdown_content: str) -> List[str]:
-        """Extract all CSV file paths from markdown content using {csv/...} syntax."""
-        # Pattern to match {csv/path/to/file.csv} syntax
-        csv_pattern = r'\{(csv/[^}]+\.csv)\}'
-        
-        paths = re.findall(csv_pattern, markdown_content)
-        
-        # Remove duplicates while preserving order
-        seen = set()
-        unique_paths = []
-        for path in paths:
-            if path not in seen:
-                seen.add(path)
-                unique_paths.append(path)
-        
-        return unique_paths
-    
+
+    def _resolve_folder_id(self, doc_id: str, folder_id: Optional[str] = None) -> Optional[str]:
+        """Get folder ID from parameter, cache, or document parents.
+
+        Args:
+            doc_id: The document ID to resolve folder for.
+            folder_id: Optional folder ID if already known.
+
+        Returns:
+            The resolved folder ID, or None if not found.
+        """
+        if folder_id:
+            return folder_id
+
+        # Check cached metadata first
+        folder_id = self.cache_manager.get_folder_id(doc_id)
+        if folder_id:
+            return folder_id
+
+        # Fall back to looking up from document parents
+        try:
+            doc_metadata = self.get_metadata(doc_id)
+            parents = doc_metadata.get('parents', [])
+            if parents:
+                logger.info(f"Using document's parent folder: {parents[0]}")
+                return parents[0]
+            else:
+                logger.warning("No parent folder found for document")
+        except Exception as e:
+            logger.error(f"Error getting document parent folder: {e}")
+
+        return None
+
     def find_file_in_drive(self, file_path: str, folder_id: str) -> Optional[Dict[str, Any]]:
-        """Find a file by path in Google Drive folder."""
+        """Find a file by path in a Google Drive folder.
+
+        Args:
+            file_path: The file path/name to search for.
+            folder_id: The Google Drive folder ID to search in.
+
+        Returns:
+            File metadata dict if found, None otherwise.
+        """
         filename = Path(file_path).name
         
         try:
@@ -1016,11 +1147,17 @@ class GoogleDriveProcessor:
             logger.error(f"Error searching for file {filename}: {e}")
             return None
     
-    def _prepare_document_and_folder(self, doc_id: str, folder_id: Optional[str]) -> tuple[str, list, str, dict]:
+    def _prepare_document_and_folder(
+        self, doc_id: str, folder_id: Optional[str]
+    ) -> Tuple[str, List, str, Dict]:
         """Prepare document content, determine folder ID, and process bibliography.
 
+        Args:
+            doc_id: The Google Doc ID.
+            folder_id: Optional folder ID (resolved from doc parents if not provided).
+
         Returns:
-            tuple: (doc_content, figure_data, folder_id, bibliography_info)
+            Tuple of (doc_content, figure_data, folder_id, bibliography_info).
         """
         # Download and read the document (with cleaning to remove embedded images)
         doc_content = self.download_doc(doc_id, clean=True, parse_frontmatter=False, update_figure_paths=False)
@@ -1029,25 +1166,8 @@ class GoogleDriveProcessor:
         figure_data = self.extract_figure_paths(doc_content)
         logger.info(f"Found {len(figure_data)} figure references in document")
 
-        # If no folder_id provided, try to find the parent folder of the document
-        if not folder_id:
-            try:
-                doc_metadata = self.get_metadata(doc_id)
-                parents = doc_metadata.get('parents', [])
-                if parents:
-                    folder_id = parents[0]
-                    logger.info(f"Using document's parent folder: {folder_id}")
-
-                    # Save folder_id to document metadata for future use
-                    self.cache_manager.save_metadata(doc_id, {
-                        'doc_id': doc_id,
-                        'folder_id': folder_id,
-                        'doc_name': doc_metadata.get('name', 'Unknown')
-                    })
-                else:
-                    logger.warning("No parent folder found for document")
-            except Exception as e:
-                logger.error(f"Error getting document parent folder: {e}")
+        # Resolve folder ID
+        folder_id = self._resolve_folder_id(doc_id, folder_id)
 
         # Extract bibliography from frontmatter (already unescaped by clean=True)
         bibliography_info = {'bibliography_path': None, 'results': {'processed': [], 'skipped': [], 'failed': []}}
@@ -1062,8 +1182,12 @@ class GoogleDriveProcessor:
 
         return doc_content, figure_data, folder_id, bibliography_info
     
-    def _log_figure_processing_summary(self, results: dict):
-        """Log summary of figure processing results."""
+    def _log_figure_processing_summary(self, results: Dict[str, Any]) -> None:
+        """Log summary of figure processing results.
+
+        Args:
+            results: Dict with 'processed', 'skipped', and 'failed' lists.
+        """
         logger.info(f"\n=== Figure Processing Complete ===")
         logger.info(f"✓ Processed: {len(results['processed'])} figures")
         logger.info(f"⏭ Skipped: {len(results['skipped'])} unchanged figures")
@@ -1076,8 +1200,26 @@ class GoogleDriveProcessor:
                 logger.warning(f"   - {failed_file}")
             logger.warning(f"   Check the error messages above for details on each failure.")
     
-    def _get_cached_file_or_download(self, fig_path: str, file_info: dict, doc_id: str, figure_type: str, reference_order: int) -> Path:
-        """Get cached file or download if needed. Returns Path to source file."""
+    def _get_cached_file_or_download(
+        self,
+        fig_path: str,
+        file_info: Dict[str, Any],
+        doc_id: str,
+        figure_type: str,
+        reference_order: int
+    ) -> Path:
+        """Get cached file or download if needed.
+
+        Args:
+            fig_path: The figure path from the document.
+            file_info: File metadata from Google Drive.
+            doc_id: The document ID for cache context.
+            figure_type: Type of figure ('svg', 'csv', etc.).
+            reference_order: Order of appearance in document.
+
+        Returns:
+            Path to the source file (cached or newly downloaded).
+        """
         if figure_type == 'csv':
             # Remove 'csv/' prefix from path since we're already in csv subdirectory
             filename = fig_path.replace('csv/', '') if fig_path.startswith('csv/') else fig_path
@@ -1118,8 +1260,30 @@ class GoogleDriveProcessor:
 
         return cached_path
     
-    def _convert_file(self, fig_path: str, source_file: Path, file_info: dict, params: dict, doc_id: str, figure_type: str, output_path: Path) -> str:
-        """Convert file and return converted path, or None if failed."""
+    def _convert_file(
+        self,
+        fig_path: str,
+        source_file: Path,
+        file_info: Dict[str, Any],
+        params: Dict[str, Any],
+        doc_id: str,
+        figure_type: str,
+        output_path: Path
+    ) -> Optional[str]:
+        """Convert a file and return the converted path.
+
+        Args:
+            fig_path: Original figure path from document.
+            source_file: Path to the source file.
+            file_info: File metadata from Google Drive.
+            params: Conversion parameters from document.
+            doc_id: The document ID for cache context.
+            figure_type: Type of figure ('svg', 'csv', etc.).
+            output_path: Destination path for converted file.
+
+        Returns:
+            Path to converted file, or None if conversion failed.
+        """
         # Determine the relative path for the output, preserving directory structure
         relative_output_path = f"converted/{fig_path}"
         if figure_type == 'svg':
@@ -1197,10 +1361,13 @@ class GoogleDriveProcessor:
                 source_file.unlink()
             return None
 
-    def process_document_figures(self, doc_id: str, folder_id: Optional[str] = None,
-                                skip_unchanged: bool = True) -> Dict[str, Any]:
-        """
-        Process all figures and bibliography referenced in the document.
+    def process_document_figures(
+        self,
+        doc_id: str,
+        folder_id: Optional[str] = None,
+        skip_unchanged: bool = True
+    ) -> Dict[str, Any]:
+        """Process all figures and bibliography referenced in the document.
 
         This method processes:
         - SVG files -> PDF conversion
@@ -1208,6 +1375,15 @@ class GoogleDriveProcessor:
         - Google Sheets -> PDF table conversion
         - PDF files -> direct download
         - Bibliography files (.bib) -> cache for citation processing
+
+        Args:
+            doc_id: The Google Doc ID.
+            folder_id: Optional folder ID (uses doc's parent if not provided).
+            skip_unchanged: Whether to skip unchanged files based on MD5 checksum.
+
+        Returns:
+            Dict with 'document' (updated content), 'results' (processing summary),
+            and 'bibliography_info' (bibliography path and results).
         """
         logger.info(f"Processing figures for document: {doc_id}")
 
@@ -1223,7 +1399,6 @@ class GoogleDriveProcessor:
 
         # Enumerate to track order of appearance (1-indexed)
         for reference_order, (fig_path, params) in enumerate(figure_data, start=1):
-            logger.info(f"Processing: {fig_path}")
             
             # Determine figure type and skip unknown
             figure_type = self.figure_converter.get_figure_type(fig_path)
@@ -1235,7 +1410,7 @@ class GoogleDriveProcessor:
             if figure_type == 'sheet':
                 converted_path = self.figure_converter.convert_figure(fig_path, params, doc_id, None)
                 if converted_path:
-                    logger.info(f"  Converted: {fig_path} -> {converted_path}")
+                    logger.info(f"Converted: {fig_path} -> {converted_path}")
                     results['processed'].append(fig_path)
                     results['mapping'][fig_path] = converted_path
                 else:
@@ -1269,16 +1444,16 @@ class GoogleDriveProcessor:
                 
                 # Check if conversion needed (skip if cached)
                 if not self.figure_converter.needs_conversion(fig_path, doc_id, output_path, file_info, params):
-                    logger.info(f"  Using cached: {output_path}")
-                    results['skipped'].append(fig_path)
                     # Use relative path (preserving directory structure from fig_path)
                     relative_path = fig_path.replace('.svg', '.pdf').replace('.csv', '.pdf')
+                    logger.info(f"Cached: {fig_path} -> {relative_path}")
+                    results['skipped'].append(fig_path)
                     results['mapping'][fig_path] = relative_path
-                    logger.info(f"  Added to mapping: {fig_path} -> {relative_path}")
 
                     # Ensure cached figures are recorded in metadata
                     # Record source file if it exists
                     source_file_path = self.cache_manager.cache_root / doc_id / fig_path
+                    logger.info(f"  Checking source file: {source_file_path} exists={source_file_path.exists()}")
                     if source_file_path.exists():
                         self.cache_manager.record_cached_file(
                             doc_id=doc_id,
@@ -1315,7 +1490,7 @@ class GoogleDriveProcessor:
                 converted_path = self._convert_file(fig_path, source_file, file_info, params, doc_id, figure_type, output_path)
                 
                 if converted_path:
-                    logger.info(f"  Converted: {fig_path} -> {converted_path}")
+                    logger.info(f"Converted: {fig_path} -> {converted_path}")
                     results['processed'].append(fig_path)
                     results['mapping'][fig_path] = converted_path
                 else:
@@ -1330,7 +1505,7 @@ class GoogleDriveProcessor:
         logger.info(f"DEBUG: Mapping has {len(results['mapping'])} entries:")
         for old_p, new_p in results['mapping'].items():
             logger.info(f"  {old_p} -> {new_p}")
-        updated_content = self._update_figure_paths(doc_content, results['mapping'])
+        updated_content = update_figure_paths(doc_content, results['mapping'])
 
         import re
         # Match markdown image syntax: ![alt](path.svg) or ![alt](path.svg){params}
@@ -1373,9 +1548,27 @@ class GoogleDriveProcessor:
             'bibliography_info': bibliography_info  # Includes bibliography_path and processing results
         }
     
-    def process_document_csvs(self, doc_id: str, folder_id: Optional[str] = None,
-                             skip_unchanged: bool = True) -> Dict[str, Any]:
-        """Process CSV files referenced in the document."""
+    def process_document_csvs(
+        self,
+        doc_id: str,
+        folder_id: Optional[str] = None,
+        skip_unchanged: bool = True
+    ) -> Dict[str, Any]:
+        """Download raw CSV data files referenced with {csv/...} syntax.
+
+        This handles CSV files used as data sources (e.g., for jinja templates),
+        NOT figure tables. For CSV tables rendered as PDF images, see
+        process_document_figures() which handles ![caption](fig/table.csv) syntax.
+
+        Args:
+            doc_id: The ID of the Google Doc to process.
+            folder_id: Optional folder ID to search for CSV files (uses doc's parent if not provided).
+            skip_unchanged: Whether to skip unchanged files based on MD5 checksum.
+
+        Returns:
+            Dict with 'csvs' (list of paths found) and 'results' containing
+            'processed', 'skipped', and 'failed' lists.
+        """
         logger.info(f"Processing CSV files for document: {doc_id}")
         
         # Download and read the document
@@ -1383,33 +1576,16 @@ class GoogleDriveProcessor:
                                        update_figure_paths=False)
         
         # Extract CSV paths
-        csv_paths = self.extract_csv_paths(doc_content)
+        csv_paths = extract_csv_paths(doc_content)
         logger.info(f"Found {len(csv_paths)} CSV file references in document")
         
         if not csv_paths:
             logger.info("No CSV files to process")
             return {'csvs': [], 'results': {'processed': [], 'skipped': [], 'failed': []}}
-        
-        # If no folder_id provided, try to find the parent folder of the document
-        if not folder_id:
-            try:
-                doc_metadata = self.get_metadata(doc_id)
-                parents = doc_metadata.get('parents', [])
-                if parents:
-                    folder_id = parents[0]
-                    logger.info(f"Using document's parent folder: {folder_id}")
-                    
-                    # Save folder_id to document metadata for future use
-                    self.cache_manager.save_metadata(doc_id, {
-                        'doc_id': doc_id,
-                        'folder_id': folder_id,
-                        'doc_name': doc_metadata.get('name', 'Unknown')
-                    })
-                else:
-                    logger.warning("No parent folder found for document")
-            except Exception as e:
-                logger.error(f"Error getting document parent folder: {e}")
-        
+
+        # Resolve folder ID
+        folder_id = self._resolve_folder_id(doc_id, folder_id)
+
         # Batch fetch metadata
         folder_cache = self._batch_fetch_folder_metadata([], folder_id, csv_paths=csv_paths)
         
@@ -1427,9 +1603,24 @@ class GoogleDriveProcessor:
             'results': results
         }
     
-    def _process_csv_files(self, csv_paths: List[str], folder_file_cache: Dict, 
-                          skip_unchanged: bool = True, doc_id: str = None) -> Dict[str, Any]:
-        """Process CSV files referenced in the document."""
+    def _process_csv_files(
+        self,
+        csv_paths: List[str],
+        folder_file_cache: Dict[str, Any],
+        skip_unchanged: bool = True,
+        doc_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Process CSV files referenced in the document.
+
+        Args:
+            csv_paths: List of CSV paths to process.
+            folder_file_cache: Pre-fetched folder metadata cache.
+            skip_unchanged: Whether to skip unchanged files.
+            doc_id: Optional document ID for cache context.
+
+        Returns:
+            Dict with 'processed', 'skipped', and 'failed' lists.
+        """
         results = {'processed': [], 'skipped': [], 'failed': []}
         
         for csv_path in csv_paths:
@@ -1474,57 +1665,50 @@ class GoogleDriveProcessor:
                 results['failed'].append(csv_path)
         
         return results
-    
-    def download_document_csvs(self, doc_id: str, folder_id: Optional[str] = None,
-                              skip_unchanged: bool = True) -> Dict[str, Any]:
-        """
-        Download all CSV files referenced in a document.
-        
-        Args:
-            doc_id: The ID of the Google Doc to process
-            folder_id: Optional folder ID to search for CSV files (if not provided, uses doc's parent)
-            skip_unchanged: Whether to skip files that haven't changed (based on MD5 checksum)
-            
-        Returns:
-            Dictionary with 'csvs' list and 'results' containing processing outcome
-        """
-        # This is an alias for process_document_csvs for consistency with naming conventions
-        return self.process_document_csvs(doc_id, folder_id, skip_unchanged)
 
-    def process_document_bibliography(self, doc_id: str, folder_id: Optional[str] = None,
-                                     skip_unchanged: bool = True) -> Dict[str, Any]:
-        """
-        Process bibliography files referenced in the document's frontmatter.
+    def process_document_bibliography(
+        self,
+        doc_id: str,
+        folder_id: Optional[str] = None,
+        skip_unchanged: bool = True
+    ) -> Dict[str, Any]:
+        """Process bibliography files referenced in the document's frontmatter.
 
         NOTE: This is now a wrapper around process_document_figures() which processes
         bibliography during the same document download. For efficiency, prefer calling
         process_document_figures() directly which returns both figures AND bibliography.
 
         Args:
-            doc_id: The ID of the Google Doc to process
-            folder_id: Optional folder ID to search for bibliography files
-            skip_unchanged: Whether to skip files that haven't changed (based on MD5 checksum)
+            doc_id: The ID of the Google Doc to process.
+            folder_id: Optional folder ID to search for bibliography files.
+            skip_unchanged: Whether to skip unchanged files based on MD5 checksum.
 
         Returns:
-            Dictionary with 'bibliography_path' (cached path) and 'results' containing processing outcome
+            Dict with 'bibliography_path' (cached path) and 'results' containing processing outcome.
         """
         # Call process_document_figures which now handles bibliography too
         result = self.process_document_figures(doc_id, folder_id, skip_unchanged)
         # Return just the bibliography info for backwards compatibility
         return result.get('bibliography_info', {'bibliography_path': None, 'results': {'processed': [], 'skipped': [], 'failed': []}})
 
-    def _process_bibliography_files(self, doc_id: str, bibliography, folder_id: str, skip_unchanged: bool = True) -> Dict[str, Any]:
-        """
-        Helper method to process bibliography files (called during document preparation).
+    def _process_bibliography_files(
+        self,
+        doc_id: str,
+        bibliography: Union[str, List[str]],
+        folder_id: str,
+        skip_unchanged: bool = True
+    ) -> Dict[str, Any]:
+        """Process bibliography files (called during document preparation).
 
         Args:
-            doc_id: The ID of the Google Doc
-            bibliography: Bibliography field from frontmatter (string or list)
-            folder_id: Folder ID to search for bibliography files
-            skip_unchanged: Whether to skip files that haven't changed (based on MD5 checksum)
+            doc_id: The ID of the Google Doc.
+            bibliography: Bibliography field from frontmatter (string or list).
+            folder_id: Folder ID to search for bibliography files.
+            skip_unchanged: Whether to skip unchanged files based on MD5 checksum.
 
         Returns:
-            Dictionary with 'bibliography_path' (cached path) and 'results' containing processing outcome
+            Dict with 'bibliography_path' (cached path or list) and 'results' containing
+            processing outcome.
         """
         # Support both string and list of bibliography files
         if isinstance(bibliography, str):
@@ -1568,7 +1752,7 @@ class GoogleDriveProcessor:
                 # Check if local file has same digest
                 local_digest = self.cache_manager.compute_md5(cached_path)
                 if local_digest == remote_digest:
-                    logger.info(f"  Using cached: {cached_path}")
+                    logger.info(f"  Using cached: {relative_bib_path}")
                     results['skipped'].append(bib_path)
                     cached_bib_paths.append(relative_bib_path)
 
@@ -1623,19 +1807,23 @@ class GoogleDriveProcessor:
             'results': results
         }
 
-    def _batch_fetch_folder_metadata(self, figure_paths: List[str], parent_folder_id: str, 
-                                     csv_paths: Optional[List[str]] = None) -> Dict[str, Dict[str, Any]]:
-        """
-        Pre-fetch metadata for all files in the folders referenced by figure and CSV paths.
-        This minimizes API calls by fetching all files in each folder once.
-        
+    def _batch_fetch_folder_metadata(
+        self,
+        figure_paths: List[str],
+        parent_folder_id: str,
+        csv_paths: Optional[List[str]] = None
+    ) -> Dict[str, Dict[str, Any]]:
+        """Pre-fetch metadata for all files in referenced folders.
+
+        Minimizes API calls by fetching all files in each folder once.
+
         Args:
-            figure_paths: List of figure paths to fetch metadata for
-            parent_folder_id: The parent folder ID to search in
-            csv_paths: Optional list of CSV paths to fetch metadata for
-            
+            figure_paths: List of figure paths to fetch metadata for.
+            parent_folder_id: The parent folder ID to search in.
+            csv_paths: Optional list of CSV paths to fetch metadata for.
+
         Returns:
-            Dictionary mapping folder_path -> {filename -> file_info}
+            Dict mapping folder_path -> {filename -> file_info}.
         """
         # Combine all paths to identify unique folders
         all_paths = figure_paths + (csv_paths or [])
@@ -1649,10 +1837,9 @@ class GoogleDriveProcessor:
                 # Add the subfolder (e.g., 'fig' from 'fig/image.svg' or 'csv' from 'csv/data.csv')
                 folders_to_fetch.add(path_parts[0])
         
-        logger.info(f"Pre-fetching metadata for {len(folders_to_fetch)} folder(s): {folders_to_fetch}")
-        
         folder_cache = {}
-        
+        folder_counts = []
+
         for folder_name in folders_to_fetch:
             if folder_name == '':
                 # Root folder
@@ -1666,22 +1853,31 @@ class GoogleDriveProcessor:
                     continue
                 target_folder_id = subfolder_id
                 cache_key = folder_name
-            
+
             # List all files in this folder
             files_in_folder = self._list_all_files_in_folder(target_folder_id)
-            
+
             # Create a mapping of filename -> file_info
             file_map = {}
             for file_info in files_in_folder:
                 file_map[file_info['name']] = file_info
-            
+
             folder_cache[cache_key] = file_map
-            logger.info(f"  Cached {len(file_map)} files from folder '{folder_name or 'root'}'")
-        
+            folder_counts.append(f"{folder_name or 'root'} ({len(file_map)})")
+
+        logger.info(f"Pre-fetched metadata: {', '.join(folder_counts)}")
+
         return folder_cache
     
     def _list_all_files_in_folder(self, folder_id: str) -> List[Dict[str, Any]]:
-        """List all files (not folders) in a Google Drive folder."""
+        """List all files (not folders) in a Google Drive folder.
+
+        Args:
+            folder_id: The Google Drive folder ID.
+
+        Returns:
+            List of file metadata dicts.
+        """
         files = []
         page_token = None
         
@@ -1705,8 +1901,18 @@ class GoogleDriveProcessor:
         
         return files
     
-    def _find_file_in_cache(self, file_path: str, folder_cache: Dict[str, Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-        """Find a file in the pre-fetched folder cache."""
+    def _find_file_in_cache(
+        self, file_path: str, folder_cache: Dict[str, Dict[str, Any]]
+    ) -> Optional[Dict[str, Any]]:
+        """Find a file in the pre-fetched folder cache.
+
+        Args:
+            file_path: The file path to look up.
+            folder_cache: Pre-fetched folder metadata cache.
+
+        Returns:
+            File metadata dict if found, None otherwise.
+        """
         path_parts = Path(file_path).parts
         
         # Determine which folder to look in
@@ -1724,26 +1930,17 @@ class GoogleDriveProcessor:
             return folder_cache[folder_key].get(filename)
         
         return None
-    
-    def _find_file_in_folder_hierarchy(self, file_path: str, folder_id: str) -> Optional[Dict[str, Any]]:
-        """Find a file in folder hierarchy, checking subfolders if needed."""
-        # First try in the main folder
-        file_info = self.find_file_in_drive(file_path, folder_id)
-        
-        # If not found and path has subdirectories, try searching in subfolders
-        if not file_info and '/' in file_path:
-            path_parts = Path(file_path).parts
-            if len(path_parts) > 1:
-                subfolder_name = path_parts[0]
-                subfolder_id = self._find_subfolder_by_name(folder_id, subfolder_name)
-                if subfolder_id:
-                    logger.info(f"  Searching in subfolder: {subfolder_name}")
-                    file_info = self.find_file_in_drive(file_path, subfolder_id)
-        
-        return file_info
-    
+
     def _find_subfolder_by_name(self, parent_folder_id: str, subfolder_name: str) -> Optional[str]:
-        """Find a subfolder by name within a parent folder."""
+        """Find a subfolder by name within a parent folder.
+
+        Args:
+            parent_folder_id: The parent folder ID.
+            subfolder_name: Name of the subfolder to find.
+
+        Returns:
+            Subfolder ID if found, None otherwise.
+        """
         try:
             response = self.drive_service.files().list(
                 q=f"'{parent_folder_id}' in parents and mimeType='application/vnd.google-apps.folder' "
@@ -1757,81 +1954,23 @@ class GoogleDriveProcessor:
             logger.error(f"Error searching for subfolder {subfolder_name}: {e}")
             return None
     
-    def _update_figure_paths(self, markdown_content: str, path_mapping: Dict[str, str]) -> str:
-        """Replace figure paths in document with converted paths while preserving parameters."""
-        logger.debug(f"_update_figure_paths called with {len(path_mapping)} mappings")
-        updated = markdown_content
-        
-        # First, handle paths with parameters - preserve the parameters
-        # Pattern to match figure references with parameters
-        param_pattern = r'(!\[[^\]]*\]\()([^)]+)(\))(\{[^}]*\})'
-        
-        def replace_with_mapping(match):
-            prefix = match.group(1)  # ![alt](
-            path = match.group(2)     # the path
-            suffix = match.group(3)   # )
-            params = match.group(4)   # {parameters} - now preserved
-            
-            # Check if this path has a mapping
-            if path in path_mapping:
-                return f"{prefix}{path_mapping[path]}{suffix}{params}"
-            return f"{prefix}{path}{suffix}{params}"
-        
-        # Replace figures with parameters
-        updated = re.sub(param_pattern, replace_with_mapping, updated)
-        
-        # Then handle regular path replacements for paths without parameters
-        for old_path, new_path in path_mapping.items():
-            # Replace in both inline and reference style images
-            updated = updated.replace(f']({old_path})', f']({new_path})')
-            updated = updated.replace(f']: {old_path}', f']: {new_path}')
-            updated = updated.replace(f']:{old_path}', f']:{new_path}')
-        
-        return updated
-    
-    def _create_figure_path_mapping(self, figure_paths: List[Tuple[str, Dict[str, Any]]]) -> Dict[str, str]:
-        """
-        Create a mapping of figure paths for SVG to PDF conversions.
-        This just creates the mapping without doing any actual processing.
+    def _update_document_figure_paths(
+        self,
+        markdown_content: str,
+        doc_id: str,
+        folder_id: Optional[str] = None
+    ) -> str:
+        """Update figure paths in document content to point to converted PDFs.
 
-        Args:
-            figure_paths: List of (path, params) tuples extracted from the document
-
-        Returns:
-            Dictionary mapping original paths to converted paths
-        """
-        mapping = {}
-        converted_dir = Path('converted')
-
-        for fig_item in figure_paths:
-            # Extract path from tuple (path, params)
-            if isinstance(fig_item, tuple):
-                fig_path = fig_item[0]
-            else:
-                # Backward compatibility if called with plain strings
-                fig_path = fig_item
-
-            # Only map SVG files to their PDF equivalents
-            if fig_path.endswith('.svg'):
-                pdf_path = fig_path.replace('.svg', '.pdf')
-                output_path = converted_dir / pdf_path
-                mapping[fig_path] = str(output_path)
-
-        return mapping
-    
-    def _update_document_figure_paths(self, markdown_content: str, doc_id: str, 
-                                     folder_id: Optional[str] = None) -> str:
-        """
-        Update figure paths in document content to point to converted PDFs.
         This is a lighter-weight version that just updates paths without processing files.
-        
+
         Args:
-            markdown_content: The markdown content to update
-            doc_id: The document ID (used to find parent folder if needed)
-            folder_id: Optional folder ID where figures are located
-            
+            markdown_content: The markdown content to update.
+            doc_id: The document ID (used to find parent folder if needed).
+            folder_id: Optional folder ID where figures are located.
+
         Returns:
-            Updated markdown content with figure paths replaced
+            Updated markdown content with figure paths replaced.
         """
         # Extract figure paths from the document
         figure_data = self.extract_figure_paths(markdown_content)
@@ -1853,52 +1992,42 @@ class GoogleDriveProcessor:
                 logger.debug(f"Could not get parent folder for doc {doc_id}: {e}")
         
         # Create the path mapping
-        path_mapping = self._create_figure_path_mapping(figure_paths)
-        
+        path_mapping = create_figure_path_mapping(figure_paths)
+
         # Update the content with the new paths
         if path_mapping:
-            return self._update_figure_paths(markdown_content, path_mapping)
+            return update_figure_paths(markdown_content, path_mapping)
         
         return markdown_content
     
-    def process_document_assets(self, doc_id: str, folder_id: Optional[str] = None,
-                                skip_unchanged: bool = True) -> Dict[str, Any]:
-        """
-        Process all assets (figures and CSV files) referenced in a document.
-        
-        This is a wrapper function that handles both:
-        - Figure processing (SVG to PDF conversion, PDF downloads)
-        - CSV file downloads
-        
+    def process_document_assets(
+        self,
+        doc_id: str,
+        folder_id: Optional[str] = None,
+        skip_unchanged: bool = True
+    ) -> Dict[str, Any]:
+        """Process all assets (figures and CSV files) referenced in a document.
+
+        This is a wrapper function that handles both figure processing
+        (SVG to PDF conversion, PDF downloads) and CSV file downloads.
+
         Args:
-            doc_id: The ID of the Google Doc to process
-            folder_id: Optional folder ID to search for assets (if not provided, uses doc's parent)
-            skip_unchanged: Whether to skip files that haven't changed (based on MD5 checksum)
-            
+            doc_id: The ID of the Google Doc to process.
+            folder_id: Optional folder ID to search for assets (uses doc's parent if not provided).
+            skip_unchanged: Whether to skip unchanged files based on MD5 checksum.
+
         Returns:
-            Dictionary containing results from both figure and CSV processing:
-            {
-                'document': The updated document content with figure paths replaced,
-                'figures': Results from figure processing,
-                'csvs': Results from CSV processing,
-                'summary': Overall summary statistics
-            }
+            Dict containing:
+            - 'document': Updated document content with figure paths replaced
+            - 'figures': Results from figure processing
+            - 'csvs': Results from CSV processing
+            - 'summary': Overall summary statistics
         """
         logger.info(f"Processing all assets for document: {doc_id}")
-        
-        # Get folder ID if not provided
-        if not folder_id:
-            try:
-                doc_metadata = self.get_metadata(doc_id)
-                parents = doc_metadata.get('parents', [])
-                if parents:
-                    folder_id = parents[0]
-                    logger.info(f"Using document's parent folder: {folder_id}")
-                else:
-                    logger.warning("No parent folder found for document")
-            except Exception as e:
-                logger.error(f"Error getting document parent folder: {e}")
-        
+
+        # Resolve folder ID
+        folder_id = self._resolve_folder_id(doc_id, folder_id)
+
         results = {
             'document': None,
             'figures': None,

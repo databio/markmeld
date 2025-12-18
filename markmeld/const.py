@@ -1,7 +1,8 @@
-# Constants
+"""Constants used throughout the markmeld package."""
 
 PKG_NAME = "markmeld"
 
+# Platform-specific file opener commands
 # https://stackoverflow.com/a/1857/13175187
 FILE_OPENER_MAP = {"Linux": "xdg-open", "Darwin": "open", "Windows": "start"}
 

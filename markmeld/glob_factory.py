@@ -1,35 +1,57 @@
-import os
+"""Target factory that generates targets from glob patterns."""
 
+import glob
+import os
 from logging import getLogger
+from typing import Any, Dict, Optional
 
 PKG_NAME = "markmeld"
-
 _LOGGER = getLogger(PKG_NAME)
 
 
-def make_abspath(relpath, cfg, root=None):
+def make_abspath(relpath: str, cfg: Dict[str, Any], root: Optional[str] = None) -> str:
+    """Convert a relative path to an absolute path.
+
+    Args:
+        relpath: The relative path to convert.
+        cfg: Configuration dictionary containing '_cfg_file_path'.
+        root: Optional root directory. If provided, joins relpath to this root.
+
+    Returns:
+        The absolute path.
+    """
     if root:
         return os.path.join(root, relpath)
     return os.path.join(os.path.dirname(cfg["_cfg_file_path"]), relpath)
 
 
-#  TODO: if it's a folder-style naming, shouldn't we put the output file
-#  in that folder?
-def glob_factory(vars, cfg):
-    import glob
+def glob_factory(vars: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    """Generate build targets from a glob pattern.
 
+    Creates multiple targets from files matching a glob pattern. Each matched
+    file becomes a separate build target with its own output file.
+
+    Args:
+        vars: Variables dictionary containing:
+            - path: Glob pattern to match files.
+            - name_levels: Optional number of directory levels to include in target name.
+            - inherit_from: Optional target to inherit settings from.
+            - glob_variables: Optional additional variables to add to each target.
+        cfg: Configuration dictionary containing '_cfg_file_path' for path resolution.
+
+    Returns:
+        Dictionary mapping target names to target configurations.
+    """
     path = make_abspath(vars["path"], cfg)
-    name_levels = 0
-    if "name_levels" in vars:
-        name_levels = vars["name_levels"]
+    name_levels = vars.get("name_levels", 0)
     globs = glob.glob(path)
     _LOGGER.debug(f"Globs: {globs}")
     _LOGGER.debug(f"Path: {path}")
-    # Populate a targets array to return
-    targets = {}
-    for glob in globs:
+
+    targets: Dict[str, Dict[str, Any]] = {}
+    for glob_path in globs:
         # Extract target name from path
-        split_path = glob.split("/")
+        split_path = glob_path.split("/")
         file_name = os.path.splitext(split_path[-1])[0]
         tgt_array = [file_name]
         for lvl in range(1, int(name_levels)):
@@ -42,7 +64,7 @@ def glob_factory(vars, cfg):
             "output_file": output_file,
             "data": {
                 "md_files": {
-                    "content": glob,
+                    "content": glob_path,
                 }
             },
         }
@@ -55,4 +77,5 @@ def glob_factory(vars, cfg):
 
         if "glob_variables" in vars:
             targets[tgt].update(vars["glob_variables"])
+
     return targets

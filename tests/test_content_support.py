@@ -228,24 +228,20 @@ def test_combined_file_and_content():
         os.unlink(md_file)
 
 
-def test_yaml_content_frontmatter_key():
-    """Test that yaml_content with frontmatter prefix updates global frontmatter"""
+def test_frontmatter_section():
+    """Test that frontmatter: section updates global frontmatter (replaces legacy frontmatter_* prefix)"""
     with tempfile.NamedTemporaryFile(mode='w', suffix='.jinja', delete=False) as f:
         f.write("Author: {{ _global_frontmatter.dict.author }}")
         template_file = f.name
-    
+
     target_data = {
-        "data": {
-            "yaml_content": {
-                "frontmatter_extra": {"author": "YAML Author"}
-            }
-        },
+        "frontmatter": {"author": "YAML Author"},
         "jinja_template": template_file,
         "command": None
     }
-    
+
     cfg, config_file = create_test_config("test_target", target_data)
-    
+
     try:
         mm = MarkdownMelder(cfg)
         result = mm.build_target("test_target", print_only=True)

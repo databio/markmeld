@@ -10,100 +10,66 @@ import unittest
 from unittest.mock import Mock, patch, MagicMock
 import importlib
 
+from markmeld.utilities import extract_csv_paths, update_figure_paths
 
-class TestGoogleDriveOptionalImport:
-    """Test that GoogleDriveProcessor is properly handled as an optional import."""
-    
-    def test_markmeld_core_imports_without_google(self):
-        """Test that core markmeld functionality works without Google extras."""
-        # Core imports should always work
-        from markmeld import MarkdownMelder, load_config_file, load_config_wrapper
-        
-        assert MarkdownMelder is not None
-        assert load_config_file is not None
-        assert load_config_wrapper is not None
-    
-    def test_google_drive_processor_in_all_when_available(self):
-        """Test that GoogleDriveProcessor is in __all__ when dependencies are available."""
+
+class TestGoogleDriveModuleStructure:
+    """Test module structure and imports for Google Drive integration."""
+
+    def test_module_structure(self):
+        """Test that markmeld module structure is correct with or without Google deps."""
         import markmeld
-        
-        # Check if Google dependencies are installed
+
+        # Core functionality should always be available
+        assert hasattr(markmeld, 'MarkdownMelder')
+        assert hasattr(markmeld, 'load_config_file')
+        assert hasattr(markmeld, 'load_config_wrapper')
+        assert hasattr(markmeld, '__all__')
+        assert 'MarkdownMelder' in markmeld.__all__
+
+        # GoogleDriveProcessor availability depends on deps
         try:
             import google.auth
             import googleapiclient
-            # If we get here, dependencies are installed
+            # Deps installed - should be available
             assert "GoogleDriveProcessor" in markmeld.__all__
+            from markmeld import GoogleDriveProcessor
+            assert GoogleDriveProcessor is not None
+            # Check expected methods exist
+            for method in ['download_doc', 'process_document_figures',
+                          'process_document_assets', 'get_metadata',
+                          'download_file', 'extract_figure_paths']:
+                assert hasattr(GoogleDriveProcessor, method), f"Missing method: {method}"
         except ImportError:
-            # Dependencies not installed, should not be in __all__
+            # Deps not installed - should not be in __all__
             assert "GoogleDriveProcessor" not in markmeld.__all__
-    
-    def test_graceful_handling_without_google_deps(self):
-        """Test that markmeld handles missing Google dependencies gracefully."""
-        # Since Google deps are installed in our test environment,
-        # we'll just verify that the import mechanism is in place
-        import markmeld
-        
-        # Core functionality should still be available
-        assert hasattr(markmeld, 'MarkdownMelder')
-        
-        # The __all__ list should exist
-        assert hasattr(markmeld, '__all__')
-        assert 'MarkdownMelder' in markmeld.__all__
 
 
 class TestGoogleDriveProcessorFunctionality:
     """Test GoogleDriveProcessor functionality when it's available."""
-    
+
     @pytest.fixture
     def mock_google_deps(self):
         """Mock Google dependencies for testing."""
         with patch('markmeld.google_drive.service_account') as mock_sa, \
              patch('markmeld.google_drive.build') as mock_build:
-            
+
             # Mock credentials
             mock_creds = Mock()
             mock_creds.service_account_email = "test@example.com"
             mock_sa.Credentials.from_service_account_file.return_value = mock_creds
-            
+
             # Mock drive service
             mock_service = Mock()
             mock_build.return_value = mock_service
-            
+
             yield {
                 'service_account': mock_sa,
                 'build': mock_build,
                 'credentials': mock_creds,
                 'service': mock_service
             }
-    
-    def test_google_drive_processor_exists(self):
-        """Test that GoogleDriveProcessor can be imported when dependencies exist."""
-        try:
-            from markmeld import GoogleDriveProcessor
-            assert GoogleDriveProcessor is not None
-        except ImportError:
-            pytest.skip("Google dependencies not installed")
-    
-    def test_google_drive_processor_methods(self):
-        """Test that GoogleDriveProcessor has expected methods."""
-        try:
-            from markmeld import GoogleDriveProcessor
-        except ImportError:
-            pytest.skip("Google dependencies not installed")
-        
-        # Check for expected methods
-        expected_methods = [
-            'download_doc',
-            'process_document_figures',  # Replaced process_svg_folder
-            'process_document_assets',   # Modern document-driven processing
-            'get_metadata',
-            'download_file',
-            'extract_figure_paths',      # Figure extraction from markdown
-        ]
-        
-        for method in expected_methods:
-            assert hasattr(GoogleDriveProcessor, method), f"Missing method: {method}"
-    
+
     def test_google_drive_processor_initialization(self, mock_google_deps):
         """Test GoogleDriveProcessor initialization with mocked dependencies."""
         try:
@@ -182,42 +148,23 @@ class TestGoogleDriveProcessorFunctionality:
 
 class TestGoogleDriveIntegrationWithMarkmeld:
     """Test that GoogleDriveProcessor doesn't interfere with core markmeld."""
-    
+
     def test_markmeld_basic_functionality_unchanged(self):
         """Test that basic markmeld functionality still works with Google module present."""
         import markmeld
-        
+
         # Test loading a config file
         cfg = markmeld.load_config_file("tests/test_data/_markmeld_basic.yaml")
         assert cfg is not None
-        
+
         # Test creating a MarkdownMelder instance
         melder = markmeld.MarkdownMelder(cfg)
         assert melder is not None
-        
+
         # Test building a target
         result = melder.build_target("default", print_only=True)
         assert result is not None
         assert hasattr(result, 'melded_output')
-    
-    def test_no_unintended_google_imports(self):
-        """Verify GoogleDriveProcessor is only loaded when explicitly imported."""
-        # Since markmeld.__init__ tries to import GoogleDriveProcessor on module load,
-        # we can't test lazy loading. Instead, verify it's handled gracefully.
-        import markmeld
-        
-        # Verify that markmeld works regardless of GoogleDriveProcessor availability
-        assert hasattr(markmeld, 'MarkdownMelder')
-        assert hasattr(markmeld, 'load_config_file')
-        
-        # Check if GoogleDriveProcessor is available (depends on deps)
-        try:
-            from markmeld import GoogleDriveProcessor
-            # If available, it should be in __all__
-            assert 'GoogleDriveProcessor' in markmeld.__all__
-        except ImportError:
-            # If not available, it shouldn't be in __all__
-            assert 'GoogleDriveProcessor' not in markmeld.__all__
 
 
 class TestGoogleDriveProcessorMocked:
@@ -353,7 +300,7 @@ class TestGoogleDriveProcessorMocked:
             ]
             
             for input_md, mapping, expected in test_cases:
-                result = processor._update_figure_paths(input_md, mapping)
+                result = update_figure_paths(input_md, mapping)
                 assert result == expected, f"Failed for input: {input_md}"
 
 
@@ -391,42 +338,42 @@ class TestGoogleDriveCSVFunctionality:
             Duplicate reference: {csv/data.csv}
             """
             
-            csv_paths = processor.extract_csv_paths(markdown_content)
-            
+            csv_paths = extract_csv_paths(markdown_content)
+
             # Should find unique CSV paths
             assert len(csv_paths) == 3
             assert 'csv/data.csv' in csv_paths
             assert 'csv/subfolder/metrics.csv' in csv_paths
             assert 'csv/results.csv' in csv_paths
-    
+
     def test_extract_csv_paths_no_csvs(self):
         """Test extraction when no CSV files are referenced."""
         try:
             from markmeld import GoogleDriveProcessor
         except ImportError:
             pytest.skip("Google dependencies not installed")
-        
+
         with patch('markmeld.google_drive.service_account') as mock_sa, \
              patch('markmeld.google_drive.build') as mock_build:
-            
+
             # Setup mocks
             mock_creds = Mock()
             mock_creds.service_account_email = "test@example.com"
             mock_sa.Credentials.from_service_account_info.return_value = mock_creds
             mock_build.return_value = Mock()
-            
+
             test_creds = {'type': 'service_account', 'project_id': 'test', 'client_email': 'test@example.com'}
             processor = GoogleDriveProcessor(credentials_dict=test_creds)
-            
+
             # Test content without CSV references
             markdown_content = """
             # Document without CSV files
-            
+
             Just regular text here.
             Maybe an image: ![alt](fig/image.png)
             """
-            
-            csv_paths = processor.extract_csv_paths(markdown_content)
+
+            csv_paths = extract_csv_paths(markdown_content)
             
             # Should find no CSV paths
             assert len(csv_paths) == 0
@@ -437,17 +384,19 @@ class TestGoogleDriveCSVFunctionality:
             from markmeld import GoogleDriveProcessor
         except ImportError:
             pytest.skip("Google dependencies not installed")
-        
-        # Check for expected CSV-related methods
-        expected_methods = [
-            'extract_csv_paths',
+
+        # Check for expected CSV-related methods on processor
+        processor_methods = [
             'process_document_csvs',
-            'download_document_csvs',
             '_process_csv_files'
         ]
-        
-        for method in expected_methods:
+
+        for method in processor_methods:
             assert hasattr(GoogleDriveProcessor, method), f"Missing CSV method: {method}"
+
+        # Check for extract_csv_paths in utilities module
+        from markmeld import utilities
+        assert hasattr(utilities, 'extract_csv_paths'), "Missing extract_csv_paths in utilities"
     
     def test_csv_pattern_matching(self):
         """Test various CSV reference patterns."""
@@ -483,7 +432,7 @@ class TestGoogleDriveCSVFunctionality:
             ]
             
             for content, expected in test_cases:
-                result = processor.extract_csv_paths(content)
+                result = extract_csv_paths(content)
                 assert result == expected, f"Failed for pattern: {content}"
 
 

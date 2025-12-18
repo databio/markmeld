@@ -263,3 +263,82 @@ def test_default_command_with_citeproc():
 
     tgt = Target(cfg, "test")
     assert "--citeproc" in tgt.meta["command"]
+
+
+# Tests for assess_variable_matches function
+from markmeld.melder import assess_variable_matches
+
+
+def test_assess_variable_matches_all_match():
+    """Test when all template variables are provided"""
+    template = "Hello {{ name }}! You are {{ age }} years old."
+    provided = {"name": "Alice", "age": 30, "extra": "unused"}
+
+    result = assess_variable_matches(template, provided)
+
+    assert result['missing'] == set()
+    assert "name" in result['template_vars']
+    assert "age" in result['template_vars']
+
+
+def test_assess_variable_matches_missing_vars():
+    """Test when template references variables not provided"""
+    template = "Hello {{ name }}! Your email is {{ email }}."
+    provided = {"name": "Alice"}
+
+    result = assess_variable_matches(template, provided)
+
+    assert result['missing'] == {"email"}
+    assert "name" in result['template_vars']
+    assert "email" in result['template_vars']
+
+
+def test_assess_variable_matches_unused_vars():
+    """Test when variables are provided but not used"""
+    template = "Hello {{ name }}!"
+    provided = {"name": "Alice", "age": 30, "email": "alice@example.com"}
+
+    result = assess_variable_matches(template, provided)
+
+    assert result['missing'] == set()
+    assert result['unused'] == {"age", "email"}
+
+
+def test_assess_variable_matches_underscore_filter():
+    """Test that underscore-prefixed variables are filtered out"""
+    template = "Hello {{ name }}! Config: {{ _internal }}."
+    provided = {"name": "Alice", "_private": "secret"}
+
+    result = assess_variable_matches(template, provided)
+
+    # _internal is missing but should be filtered out (internal variable)
+    assert "_internal" not in result['missing']
+    # _private is unused but should be filtered out (internal variable)
+    assert "_private" not in result['unused']
+
+
+def test_assess_variable_matches_with_filters():
+    """Test that templates using Jinja2 filters parse correctly"""
+    template = "Date: {{ date | default('today') }}. Name: {{ name | upper }}."
+    provided = {"date": "2025-01-01", "name": "alice"}
+
+    result = assess_variable_matches(template, provided)
+
+    assert result['missing'] == set()
+    assert "date" in result['template_vars']
+    assert "name" in result['template_vars']
+
+
+def test_assess_variable_matches_with_loops():
+    """Test that templates with for loops parse correctly"""
+    template = """
+    {% for item in items %}
+    - {{ item.name }}: {{ item.value }}
+    {% endfor %}
+    """
+    provided = {"items": [{"name": "a", "value": 1}]}
+
+    result = assess_variable_matches(template, provided)
+
+    assert result['missing'] == set()
+    assert "items" in result['template_vars']

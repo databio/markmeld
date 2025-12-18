@@ -1,0 +1,5 @@
+Email	Institution	First Name	Middle Name(s)/Initial(s)	Last Name	Suffix	Corresponding Author	Home Page URL	Collaborative Group/Consortium	ORCiD
+{% for person in author %}{{ person.email }}	{{ person.institution }}	{{ person.given_name }}	{{ person.middle_name if person.middle_name else "" }}	{{ person.family_name }}	{{ person.suffix if person.suffix else "" }}	{% if person.correspondence is defined %}"Yes"{% else %}{% endif %}	{{ person.url if person.url else "" }}	{{ person.consortium if person.consortium else "" }}	{{ person.orcid if person.orcid else "" }}
+{% endfor %}
+
+

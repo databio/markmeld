@@ -1,12 +1,19 @@
+"""Command-line interface for markmeld.
+
+This module provides the CLI entry point for markmeld, handling argument parsing,
+target building, and output management. The CLI is accessed via the `mm` command.
+"""
+
 import argparse
 import logmuse
 import os
 import subprocess
 import sys
+from typing import Any, Dict, Optional
 
 from ubiquerg import VersionInHelpParser
 
-from .exceptions import *
+from .exceptions import ConfigError, TargetError
 from .melder import MarkdownMelder
 from .utilities import load_config_wrapper, get_file_open_cmd
 from ._version import __version__
@@ -27,13 +34,16 @@ targets:
 """
 
 
-def build_argparser():
-    """
-    Builds argument parser.
+def build_argparser() -> argparse.ArgumentParser:
+    """Build the argument parser for the markmeld CLI.
 
-    :return argparse.ArgumentParser
-    """
+    Creates and configures an ArgumentParser with all markmeld command-line
+    options including target selection, output modes, cache management,
+    and filter listing.
 
+    Returns:
+        Configured argument parser ready for use.
+    """
     banner = "%(prog)s - markdown melder"
     additional_description = "\nhttps://markmeld.databio.org"
 
@@ -152,9 +162,19 @@ def build_argparser():
     return parser
 
 
-def main(test_args=None):
-    """
-    Main command-line interface function
+def main(test_args: Optional[Dict[str, Any]] = None) -> None:
+    """Run the markmeld command-line interface.
+
+    Main entry point for the `mm` command. Handles argument parsing,
+    configuration loading, target building, and output display.
+
+    Args:
+        test_args: Optional dictionary of arguments for testing purposes.
+            If provided, these override parsed command-line arguments.
+
+    Raises:
+        ConfigError: If config file is missing or invalid.
+        TargetError: If target doesn't exist or has configuration issues.
     """
     parser = logmuse.add_logging_options(build_argparser())
     args, _ = parser.parse_known_args()

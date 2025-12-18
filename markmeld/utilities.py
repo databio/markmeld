@@ -1,5 +1,4 @@
-"""
-Utility functions for the markmeld package.
+"""Utility functions for the markmeld package.
 
 This module contains helper functions for:
 - Configuration file loading and processing
@@ -19,7 +18,7 @@ from collections.abc import Mapping
 from logging import getLogger
 from pathlib import Path
 from string import Template as StringTemplate
-from typing import Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 from ubiquerg import expandpath
 
@@ -35,28 +34,32 @@ _LOGGER = getLogger(PKG_NAME)
 # ====================
 
 class MyTemplate(StringTemplate):
-    """
-    Custom string template class for command variable substitution.
-    
+    """Custom string template for command variable substitution.
+
     This class modifies the standard string.Template to:
     - Use an empty delimiter (no $ prefix required)
-    - Only replace variables that are surrounded by braces {variable}
-    - Only replace if a replacement value is provided (no errors on missing variables)
-    
-    This allows commands to contain braces without raising errors if the variable
-    is not found in the substitution dictionary. This is useful for commands that
-    may contain shell expressions or other brace-delimited content that should not
-    be replaced.
-    
+    - Only replace variables surrounded by braces {variable}
+    - Leave undefined variables as-is (no errors on missing variables)
+
+    This allows commands to contain braces without errors if the variable
+    is not found in the substitution dictionary. Useful for commands with
+    shell expressions or other brace-delimited content.
+
+    Attributes:
+        delimiter: Empty string (no prefix required).
+        idpattern: Disabled (None).
+        braceidpattern: Pattern allowing alphanumeric chars and hyphens.
+
     Example:
         >>> template = MyTemplate("echo {name} > {output_file}")
         >>> template.safe_substitute(name="test", output_file="out.txt")
         'echo test > out.txt'
-        
+
         >>> template = MyTemplate("if [[ {check} ]]; then echo {undefined}; fi")
         >>> template.safe_substitute(check="true")
         'if [[ true ]]; then echo {undefined}; fi'  # {undefined} is preserved
     """
+
     delimiter = ""
     idpattern = None
     # braceidpattern = r"[_a-z][_a-z0-9]*"
@@ -64,20 +67,18 @@ class MyTemplate(StringTemplate):
     # braceidpattern = r"[_a-z][_a-z0-9]*(?:\.[_a-z][_a-z0-9]*)*"  # allows dots, to enable nested variable names
 
 
-def format_command(tgt):
-    """
-    Given a command from a user config file, populate variables
-    from the target metadata.
-    
-    This function performs recursive variable substitution, allowing variables
-    to contain other variables. It uses the custom MyTemplate class to safely
-    substitute variables without raising errors for undefined variables.
-    
+def format_command(tgt: Any) -> str:
+    """Format a command string by substituting variables from target metadata.
+
+    Performs recursive variable substitution (up to 5 iterations), allowing
+    variables to contain other variables. Uses MyTemplate for safe substitution
+    that preserves undefined variables.
+
     Args:
-        tgt: Target object with metadata containing command and variables
-        
+        tgt: Target object with metadata containing 'command' and variables.
+
     Returns:
-        str: The formatted command with all variables substituted
+        The formatted command with all available variables substituted.
     """
     cmd = tgt.meta["command"]
     if "output_file" in tgt.meta and tgt.meta["output_file"]:
@@ -107,12 +108,19 @@ def format_command(tgt):
     return cmd
 
 
-def run_cmd(cmd, stdin=None, workdir=None):
-    """
-    Runs a command from a given workdir
+def run_cmd(
+    cmd: str, stdin: Optional[bytes] = None, workdir: Optional[str] = None
+) -> Tuple[int, str, str]:
+    """Run a shell command with optional stdin and working directory.
+
+    Args:
+        cmd: Shell command to execute.
+        stdin: Optional bytes to pass to command's stdin.
+        workdir: Working directory for command execution. If a file path,
+            uses its parent directory.
 
     Returns:
-        tuple: (returncode, stdout, stderr) where stdout and stderr are strings
+        Tuple of (returncode, stdout, stderr) where stdout and stderr are strings.
     """
     _LOGGER.info(f"MM | Command: {cmd}; CWD: {workdir}")
 
@@ -148,9 +156,15 @@ def run_cmd(cmd, stdin=None, workdir=None):
 # Configuration File Loading
 # ====================
 
-def recursive_get(dat, indices):
-    """
-    Indexes into a nested dict with a list of indexes.
+def recursive_get(dat: Dict[str, Any], indices: List[str]) -> Optional[Any]:
+    """Index into a nested dictionary using a list of keys.
+
+    Args:
+        dat: Nested dictionary to traverse.
+        indices: List of keys to follow into the nested structure.
+
+    Returns:
+        Value at the nested location, or None if any key is not found.
     """
     for i in indices:
         if i not in dat:
@@ -159,22 +173,47 @@ def recursive_get(dat, indices):
     return dat
 
 
-def load_config_wrapper(cfg_path, workpath=None, autocomplete=True):
+def load_config_wrapper(
+    cfg_path: str, workpath: Optional[str] = None, autocomplete: bool = True
+) -> Dict[str, Any]:
+    """Load a configuration file with import tracking to prevent duplicates.
+
+    Wrapper function that initializes import tracking before loading.
+
+    Args:
+        cfg_path: Path to the configuration file.
+        workpath: Working path for resolving relative paths.
+        autocomplete: If True, suppresses some logging output.
+
+    Returns:
+        Loaded configuration dictionary.
     """
-    Wrapper function that maintains a list of imported files, to prevent duplicate imports.
-    """
-    imported_list = {}
+    imported_list: Dict[str, bool] = {}
     return load_config_file(cfg_path, workpath, autocomplete, imported_list)
 
 
-def load_config_file(filepath, workpath=None, autocomplete=True, imported_list={}):
-    """
-    Loads a configuration file.
+def load_config_file(
+    filepath: str,
+    workpath: Optional[str] = None,
+    autocomplete: bool = True,
+    imported_list: Optional[Dict[str, bool]] = None,
+) -> Dict[str, Any]:
+    """Load a YAML configuration file.
 
-    @param str filepath Path to configuration file to load
-    @param str workpath The working path that the target's relative paths are relative to
-    @return dict Loaded yaml data object.
+    Args:
+        filepath: Path to the configuration file.
+        workpath: Working path for resolving relative paths in targets.
+        autocomplete: If True, suppresses some logging output.
+        imported_list: Dictionary tracking already-imported files to prevent duplicates.
+
+    Returns:
+        Loaded configuration dictionary, or empty dict if file not found.
+
+    Raises:
+        Exception: If file exists but cannot be parsed (non-FileNotFoundError).
     """
+    if imported_list is None:
+        imported_list = {}
     _LOGGER.debug(f"Loading config file: {filepath}")
     _LOGGER.debug(f"Imported list: {imported_list}")
     if imported_list.get(filepath):
@@ -194,7 +233,17 @@ def load_config_file(filepath, workpath=None, autocomplete=True, imported_list={
         raise e  # Fail on other errors
 
 
-def make_abspath(relpath, filepath, root=None):
+def make_abspath(relpath: str, filepath: str, root: Optional[str] = None) -> str:
+    """Convert a relative path to an absolute path.
+
+    Args:
+        relpath: Relative path to convert.
+        filepath: Reference file or directory path for resolution.
+        root: If provided, joins relpath directly to this root instead.
+
+    Returns:
+        Absolute path.
+    """
     if root:
         return os.path.join(root, relpath)
 
@@ -208,11 +257,26 @@ def make_abspath(relpath, filepath, root=None):
 
 
 def load_config_data(
-    cfg_data, filepath=None, workpath=None, autocomplete=True, imported_list={}
-):
+    cfg_data: str,
+    filepath: Optional[str] = None,
+    workpath: Optional[str] = None,
+    autocomplete: bool = True,
+    imported_list: Optional[Dict[str, bool]] = None,
+) -> Dict[str, Any]:
+    """Parse YAML config data, process imports, and run target factories.
+
+    Args:
+        cfg_data: Raw YAML configuration string.
+        filepath: Path of the config file (for resolving relative imports).
+        workpath: Working path for target relative paths.
+        autocomplete: If True, suppresses some logging output.
+        imported_list: Dictionary tracking already-imported files.
+
+    Returns:
+        Processed configuration dictionary with merged imports and factory targets.
     """
-    Recursive loader that parses a yaml string, handles imports, and runs target factories to create targets.
-    """
+    if imported_list is None:
+        imported_list = {}
     higher_cfg = yaml.load(cfg_data, Loader=yaml.SafeLoader)
     higher_cfg["_cfg_file_path"] = filepath
     lower_cfg = {}
@@ -265,14 +329,14 @@ def load_config_data(
 
     # Target factories
     if "target_factories" in lower_cfg:
-        plugins = load_plugins()
-        _LOGGER.debug(f"Available plugins: {plugins}")
+        factories = load_target_factories()
+        _LOGGER.debug(f"Available target factories: {factories}")
         for fac in lower_cfg["target_factories"]:
             fac_name = list(fac.keys())[0]
             fac_vals = list(fac.values())[0]
             _LOGGER.debug(f"Processing target factory: {fac_name}")
             # Look up function to call.
-            func = plugins[fac_name]
+            func = factories[fac_name]
             factory_targets = func(fac_vals, lower_cfg)
             for k, v in factory_targets.items():
                 factory_targets[k]["_workpath"] = os.path.dirname(filepath)
@@ -285,7 +349,16 @@ def load_config_data(
     return lower_cfg
 
 
-def warn_overriding_target(old, new):
+def warn_overriding_target(old: Dict[str, Any], new: Dict[str, Any]) -> None:
+    """Check for and raise error on target name conflicts.
+
+    Args:
+        old: Existing configuration dictionary.
+        new: New configuration dictionary being merged.
+
+    Raises:
+        Exception: If a target in new already exists in old.
+    """
     if "targets" in old and "targets" in new:
         for tgt in new["targets"]:
             if tgt in old["targets"]:
@@ -303,9 +376,21 @@ def warn_overriding_target(old, new):
                 )
 
 
-def deep_update(old, new, warn_override=True):
-    """
-    Like built-in dict update, but recursive.
+def deep_update(
+    old: Dict[str, Any], new: Dict[str, Any], warn_override: bool = True
+) -> Dict[str, Any]:
+    """Recursively update a dictionary with another dictionary.
+
+    Like built-in dict.update(), but merges nested dictionaries instead
+    of replacing them entirely.
+
+    Args:
+        old: Dictionary to update (modified in place).
+        new: Dictionary with values to merge in.
+        warn_override: If True, check for and warn about target conflicts.
+
+    Returns:
+        The updated old dictionary.
     """
     if warn_override:
         warn_overriding_target(old, new)
@@ -318,10 +403,18 @@ def deep_update(old, new, warn_override=True):
 
 
 # ====================
-# Plugin Loading
+# Target Factory Loading
 # ====================
 
-def load_plugins():
+def load_target_factories() -> Dict[str, Callable]:
+    """Load target factories from entry points.
+
+    Discovers target factories registered under the 'markmeld.factories' entry point
+    group and combines them with built-in factories.
+
+    Returns:
+        Dictionary mapping factory names to their factory functions.
+    """
     try:
         # Python 3.10+ has importlib.metadata in stdlib
         from importlib.metadata import entry_points
@@ -329,7 +422,7 @@ def load_plugins():
         # Fallback for Python 3.8-3.9
         from importlib_metadata import entry_points
 
-    built_in_plugins = {"glob": glob_factory}
+    built_in_factories: Dict[str, Callable] = {"glob": glob_factory}
 
     # Get entry points for markmeld.factories
     try:
@@ -338,27 +431,28 @@ def load_plugins():
     except TypeError:
         # Python 3.8-3.9 compatibility
         eps = entry_points().get("markmeld.factories", [])
-    
-    installed_plugins = {
-        ep.name: ep.load() for ep in eps
-    }
-    built_in_plugins.update(installed_plugins)
-    return built_in_plugins
+
+    installed_factories = {ep.name: ep.load() for ep in eps}
+    built_in_factories.update(installed_factories)
+    return built_in_factories
 
 
 # ====================
 # File and Path Operations
 # ====================
 
-def globs_to_dict(globs, cfg_path):
-    """
-    Given some globs, resolve them to the actual files, and return them in a
-    dict that is keyed by the base file name, without extension or parent folders.
+def globs_to_dict(globs: Optional[List[str]], cfg_path: str) -> Dict[str, str]:
+    """Resolve glob patterns to a dictionary of file names to paths.
 
-    @param globs Iterable[str] List of globs to convert to files.
-    @param cfg_path str Path to configuration file or directory
+    Args:
+        globs: List of glob patterns to resolve.
+        cfg_path: Path to configuration file or directory for resolving
+            relative patterns.
+
+    Returns:
+        Dictionary mapping base file names (without extension) to absolute paths.
     """
-    return_items = {}
+    return_items: Dict[str, str] = {}
     if not globs:
         return return_items
 
@@ -380,22 +474,27 @@ def globs_to_dict(globs, cfg_path):
 
 
 def get_file_open_cmd() -> str:
-    """
-    Detect the platform markmeld is running on, and
-    return the correct executable to call.
+    """Get the platform-appropriate command for opening files.
 
-    @return str name of executable
+    Returns:
+        Name of the executable: 'open' on macOS, 'start' on Windows,
+        'xdg-open' on Linux/other.
     """
     system = platform.system()
     return FILE_OPENER_MAP.get(system, "xdg-open")
 
 
 def write_to_file(content: str, output_path: Union[str, Path]) -> None:
-    """Write content to a file."""
+    """Write content to a file, creating parent directories as needed.
+
+    Args:
+        content: String content to write.
+        output_path: Destination file path.
+    """
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    
-    with open(output_path, 'w', encoding='utf-8') as f:
+
+    with open(output_path, "w", encoding="utf-8") as f:
         f.write(content)
 
 
@@ -404,7 +503,17 @@ def write_to_file(content: str, output_path: Union[str, Path]) -> None:
 # ====================
 
 def sanitize_filename(filename: str) -> str:
-    """Sanitize a filename by removing/replacing invalid characters."""
+    """Sanitize a filename by removing or replacing invalid characters.
+
+    Handles Windows-incompatible characters, trailing dots/spaces, and
+    enforces a maximum length of 255 characters.
+
+    Args:
+        filename: Original filename to sanitize.
+
+    Returns:
+        Sanitized filename safe for use on all platforms.
+    """
     # Remove invalid characters for filenames
     invalid_chars = '<>:"/\\|?*'
     for char in invalid_chars:
@@ -432,13 +541,29 @@ def sanitize_filename(filename: str) -> str:
     return filename
 
 
-def clean_markdown(markdown_content: str,
-                  clean_escapes: bool = True,
-                  remove_images: bool = True,
-                  strip_heading_bold: bool = True,
-                  replace_svg_with_pdf: bool = False,
-                  fix_latex_chars: bool = True) -> str:
-    """Apply all cleaning operations to markdown content."""
+def clean_markdown(
+    markdown_content: str,
+    clean_escapes: bool = True,
+    remove_images: bool = True,
+    strip_heading_bold: bool = True,
+    replace_svg_with_pdf: bool = False,
+    fix_latex_chars: bool = True,
+) -> str:
+    """Apply cleaning operations to markdown content.
+
+    Primarily used to clean Google Docs exports for LaTeX processing.
+
+    Args:
+        markdown_content: Raw markdown content to clean.
+        clean_escapes: Remove escape characters from markdown elements.
+        remove_images: Remove embedded images and data URIs.
+        strip_heading_bold: Remove bold formatting from headings.
+        replace_svg_with_pdf: Replace .svg extensions with .pdf in images.
+        fix_latex_chars: Replace Unicode characters incompatible with LaTeX.
+
+    Returns:
+        Cleaned markdown content.
+    """
     if clean_escapes:
         markdown_content = clean_escape_characters(markdown_content)
     
@@ -458,7 +583,17 @@ def clean_markdown(markdown_content: str,
 
 
 def clean_escape_characters(markdown_content: str) -> str:
-    """Remove escape characters from markdown elements. Used to clean Google Docs exports."""
+    """Remove escape characters from markdown elements.
+
+    Used to clean Google Docs exports which over-escape markdown syntax.
+    Preserves LaTeX escape sequences.
+
+    Args:
+        markdown_content: Markdown content with escaped characters.
+
+    Returns:
+        Content with markdown escapes removed but LaTeX escapes preserved.
+    """
     content = markdown_content
     
     # Remove escapes from various markdown characters (but NOT LaTeX ones)
@@ -490,7 +625,17 @@ def clean_escape_characters(markdown_content: str) -> str:
 
 
 def remove_embedded_images(markdown_content: str) -> str:
-    """Remove embedded images and image references from markdown content. Used to clean Google Docs exports."""
+    """Remove embedded images and image references from markdown.
+
+    Removes reference-style image definitions, inline data URI images,
+    and markdown image references. Used to clean Google Docs exports.
+
+    Args:
+        markdown_content: Markdown content potentially containing images.
+
+    Returns:
+        Content with embedded images removed and blank lines cleaned up.
+    """
     # Remove reference-style image definitions with data URIs (both with and without angle brackets)
     content = re.sub(r'^\[[^\]]+\]:\s*<?data:[^>\n]*>?\s*$', '', markdown_content, flags=re.MULTILINE)
     
@@ -507,7 +652,16 @@ def remove_embedded_images(markdown_content: str) -> str:
 
 
 def strip_bold_from_headings(markdown_content: str) -> str:
-    """Remove bold formatting from markdown headings. Used to clean Google Docs exports."""
+    """Remove bold formatting from markdown headings.
+
+    Used to clean Google Docs exports which often wrap heading text in bold.
+
+    Args:
+        markdown_content: Markdown content with potentially bold headings.
+
+    Returns:
+        Content with bold markers removed from heading lines.
+    """
     # Pattern matches heading lines with bold markers
     content = re.sub(r'^(#+)\s+\*\*(.*?)\*\*\s*$', r'\1 \2', markdown_content, flags=re.MULTILINE)
     
@@ -523,7 +677,16 @@ def strip_bold_from_headings(markdown_content: str) -> str:
 
 
 def replace_svg_extensions(markdown_content: str) -> str:
-    """Replace .svg extensions with .pdf in markdown image syntax."""
+    """Replace .svg extensions with .pdf in markdown image syntax.
+
+    Used when SVG images need to be converted to PDF for LaTeX processing.
+
+    Args:
+        markdown_content: Markdown content with image references.
+
+    Returns:
+        Content with .svg image extensions replaced by .pdf.
+    """
     # Pattern to match markdown images with .svg extension
     pattern = r'!\[([^\]]*)\]\(([^)]+?)(\.svg)\)'
     
@@ -534,18 +697,17 @@ def replace_svg_extensions(markdown_content: str) -> str:
 
 
 def check_and_fix_latex_incompatible_chars(markdown_content: str) -> str:
-    """
-    Check for and fix Unicode characters that are incompatible with LaTeX.
-    
-    This function detects characters that will cause "inputenc Error: Unicode character not set up 
-    for use with LaTeX" errors and either replaces them with LaTeX-compatible alternatives or 
-    warns about them.
-    
+    """Check for and fix Unicode characters incompatible with LaTeX.
+
+    Detects characters that cause "inputenc Error: Unicode character not set up
+    for use with LaTeX" errors and replaces them with LaTeX-compatible
+    alternatives. Also warns about other non-ASCII characters.
+
     Args:
-        markdown_content: The markdown content to check and fix
-        
+        markdown_content: Markdown content to check and fix.
+
     Returns:
-        The markdown content with problematic characters fixed
+        Content with problematic Unicode characters replaced.
     """
     # Dictionary of problematic Unicode characters and their LaTeX-safe replacements
     # Add more as we discover them
@@ -697,5 +859,102 @@ def check_and_fix_latex_incompatible_chars(markdown_content: str) -> str:
             _LOGGER.warning("Consider reviewing these characters if you encounter LaTeX errors.")
             _LOGGER.warning("=" * 70)
             _LOGGER.warning("")
-    
+
     return content
+
+
+def extract_csv_paths(markdown_content: str) -> List[str]:
+    """Extract all CSV file paths from markdown content using {csv/...} syntax.
+
+    Args:
+        markdown_content: The markdown content to search
+
+    Returns:
+        List of unique CSV file paths found
+    """
+    # Pattern to match {csv/path/to/file.csv} syntax
+    csv_pattern = r'\{(csv/[^}]+\.csv)\}'
+
+    paths = re.findall(csv_pattern, markdown_content)
+
+    # Remove duplicates while preserving order
+    seen = set()
+    unique_paths = []
+    for path in paths:
+        if path not in seen:
+            seen.add(path)
+            unique_paths.append(path)
+
+    return unique_paths
+
+
+def update_figure_paths(markdown_content: str, path_mapping: Dict[str, str]) -> str:
+    """Replace figure paths in document with converted paths while preserving parameters.
+
+    Args:
+        markdown_content: The markdown content to update
+        path_mapping: Dictionary mapping original paths to new paths
+
+    Returns:
+        Updated markdown content with paths replaced
+    """
+    _LOGGER.debug(f"update_figure_paths called with {len(path_mapping)} mappings")
+    updated = markdown_content
+
+    # First, handle paths with parameters - preserve the parameters
+    # Pattern to match figure references with parameters
+    param_pattern = r'(!\[[^\]]*\]\()([^)]+)(\))(\{[^}]*\})'
+
+    def replace_with_mapping(match):
+        prefix = match.group(1)  # ![alt](
+        path = match.group(2)     # the path
+        suffix = match.group(3)   # )
+        params = match.group(4)   # {parameters} - now preserved
+
+        # Check if this path has a mapping
+        if path in path_mapping:
+            return f"{prefix}{path_mapping[path]}{suffix}{params}"
+        return f"{prefix}{path}{suffix}{params}"
+
+    # Replace figures with parameters
+    updated = re.sub(param_pattern, replace_with_mapping, updated)
+
+    # Then handle regular path replacements for paths without parameters
+    for old_path, new_path in path_mapping.items():
+        # Replace in both inline and reference style images
+        updated = updated.replace(f']({old_path})', f']({new_path})')
+        updated = updated.replace(f']: {old_path}', f']: {new_path}')
+        updated = updated.replace(f']:{old_path}', f']:{new_path}')
+
+    return updated
+
+
+def create_figure_path_mapping(figure_paths: List[Tuple[str, Dict[str, Any]]]) -> Dict[str, str]:
+    """
+    Create a mapping of figure paths for SVG to PDF conversions.
+    This just creates the mapping without doing any actual processing.
+
+    Args:
+        figure_paths: List of (path, params) tuples extracted from the document
+
+    Returns:
+        Dictionary mapping original paths to converted paths
+    """
+    mapping = {}
+    converted_dir = Path('converted')
+
+    for fig_item in figure_paths:
+        # Extract path from tuple (path, params)
+        if isinstance(fig_item, tuple):
+            fig_path = fig_item[0]
+        else:
+            # Backward compatibility if called with plain strings
+            fig_path = fig_item
+
+        # Only map SVG files to their PDF equivalents
+        if fig_path.endswith('.svg'):
+            pdf_path = fig_path.replace('.svg', '.pdf')
+            output_path = converted_dir / pdf_path
+            mapping[fig_path] = str(output_path)
+
+    return mapping

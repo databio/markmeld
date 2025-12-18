@@ -48,23 +48,22 @@ class TestResourceManager:
         assert isinstance(templates, list)
         assert len(templates) > 0
         
-        # Check for some expected templates based on the file structure
+        # Check for some expected templates based on the actual file structure
         expected_templates = [
             "generic",
             "letter",
-            "grant-generic",
-            "grant-research-plan",
-            "manuscript-generic",
-            "manuscript-manuscript",
-            "manuscript-manuscript-supplement",
-            "manuscript-simple-supplement",
-            "citation-lists-citation-list-template",
-            "citation-lists-citation-list-template-simple",
-            "citation-lists-citation-list-template-very-simple"
+            "letter-with-signature",
+            "manuscript",
+            "manuscript-supplement",
+            "research-plan",
+            "simple-supplement",
+            "citation-list-template",
+            "citation-list-template-simple",
+            "citation-list-template-very-simple"
         ]
-        
+
         for expected in expected_templates:
-            assert expected in templates, f"Expected template {expected} not found"
+            assert expected in templates, f"Expected template {expected} not found. Available: {templates}"
     
     def test_list_csl_files(self):
         """Test listing available CSL files."""
@@ -147,14 +146,14 @@ class TestResourceManager:
         # Check for specific expected variables
         expected_vars = [
             "mm-template-generic",
-            "mm-template-grant-generic",
-            "mm-template-manuscript-manuscript",
+            "mm-template-letter",
+            "mm-template-manuscript",
             "mm-csl-nature",
             "mm-csl-bioinformatics"
         ]
-        
+
         for expected_var in expected_vars:
-            assert expected_var in variables, f"Expected variable {expected_var} not found"
+            assert expected_var in variables, f"Expected variable {expected_var} not found. Available: {list(variables.keys())[:20]}"
     
     def test_backward_compatibility_functions(self):
         """Test backward compatibility functions for filter_manager migration."""
@@ -175,19 +174,19 @@ class TestResourceManager:
         """Test that template paths follow the expected naming structure."""
         rm = ResourceManager()
         variables = rm.get_all_resource_variables()
-        
+
         # Check manuscript templates
-        assert "mm-template-manuscript-manuscript" in variables
-        assert "mm-template-manuscript-manuscript-supplement" in variables
-        assert "mm-template-manuscript-simple-supplement" in variables
-        
-        # Check grant templates
-        assert "mm-template-grant-generic" in variables
-        assert "mm-template-grant-research-plan" in variables
-        
+        assert "mm-template-manuscript" in variables
+        assert "mm-template-manuscript-supplement" in variables
+        assert "mm-template-simple-supplement" in variables
+
+        # Check letter templates
+        assert "mm-template-letter" in variables
+        assert "mm-template-letter-with-signature" in variables
+
         # Check citation list templates
-        assert "mm-template-citation-lists-citation-list-template" in variables
-        assert "mm-template-citation-lists-citation-list-template-simple" in variables
+        assert "mm-template-citation-list-template" in variables
+        assert "mm-template-citation-list-template-simple" in variables
     
     def test_csl_file_naming(self):
         """Test that CSL files are named correctly without extensions."""

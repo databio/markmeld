@@ -1,0 +1,22 @@
+---
+{{ _global_frontmatter.raw }}suppress-bibliography: {% if exclude_refs %}True{% else %}False{% endif %}
+---
+
+{% if not exclude_aim %}
+{{ specific_aims }}
+{% endif %}
+
+{{ significance_innovation }}
+
+{{ aim1 }}
+
+{% if aim2 is defined %}{{ aim2 }}{% endif %}
+
+{% if aim3 is defined %}{{ aim3 }}{% endif %}
+
+{% if not exclude_refs %}
+\newpage
+
+# References
+
+{% endif %}

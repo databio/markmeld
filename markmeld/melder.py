@@ -8,7 +8,7 @@ import time
 import yaml
 
 from copy import deepcopy
-from typing import Union, List
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from datetime import date
 from jinja2 import Template
@@ -42,7 +42,21 @@ tpl_generic = """
 
 
 @pass_environment
-def datetimeformat(environment, value, to_format="%Y-%m-%d", from_format="%Y-%m-%d"):
+def datetimeformat(environment: Any, value: Any, to_format: str = "%Y-%m-%d", from_format: str = "%Y-%m-%d") -> str:
+    """Format a date/time value from one format to another.
+
+    A Jinja2 filter that converts date strings between different formats.
+    Handles Unix timestamps when from_format is '%s'.
+
+    Args:
+        environment: The Jinja2 environment (automatically passed).
+        value: The date value to format.
+        to_format: The target strftime format string.
+        from_format: The source strftime format string. Use '%s' for Unix timestamps.
+
+    Returns:
+        Formatted date string, or original value if parsing fails.
+    """
     if from_format == "%s":
         value = time.ctime(int(value))
         from_format = "%a %b %d %H:%M:%S %Y"
@@ -55,19 +69,23 @@ def datetimeformat(environment, value, to_format="%Y-%m-%d", from_format="%Y-%m-
         return value
 
 
-# Filter used by the nih_biosketch template to find references
-# in a given prose block. Used to add citations to NIH
-# "contributions" sections.
 @pass_environment
-def extract_refs(environment, value):
-    """
-    Extracts references from a given string.
+def extract_refs(environment: Any, value: str) -> List[str]:
+    """Extract BibTeX reference keys from a string.
 
-    References are denoted by an [@BibTexKey] format.
+    A Jinja2 filter used by the nih_biosketch template to find references
+    in prose blocks for adding citations to NIH "contributions" sections.
+    References are denoted by [@BibTexKey] format.
 
     Args:
-        environment (jinja2.environment.Environment): The Jinja2 environment.
-        value (str): The string from which to extract references.
+        environment: The Jinja2 environment (automatically passed).
+        value: The string from which to extract references.
+
+    Returns:
+        List of extracted BibTeX reference keys without the @ prefix.
+
+    Raises:
+        Exception: If value cannot be processed (e.g., not a string type).
     """
     try:
         m = re.findall("@([a-zA-Z0-9_]+)", value)
@@ -91,11 +109,20 @@ FILTERS["extract_refs"] = extract_refs
 # m
 
 
-def get_frontmatter_formats(frontmatter):
-    """
-    Given a dictionary of content, return 3 versions of it: the dict, a yaml dumped version, and a fenced yaml dumped
+def get_frontmatter_formats(frontmatter: Dict[str, Any]) -> Dict[str, Any]:
+    """Convert frontmatter dict to multiple format representations.
 
-    @param dict frontmatter A dict representing some yaml frontmatter for a md file
+    Given a dictionary of content, returns three versions:
+    the original dict, a YAML-dumped string, and a fenced YAML string.
+
+    Args:
+        frontmatter: A dict representing YAML frontmatter for a markdown file.
+
+    Returns:
+        Dict with keys:
+            - 'raw': YAML-dumped string (empty string if frontmatter is empty)
+            - 'fenced': YAML with --- fences (empty string if frontmatter is empty)
+            - 'dict': Original frontmatter dictionary
     """
     if len(frontmatter) == 0:
         frontmatter_raw = ""
@@ -111,27 +138,90 @@ def get_frontmatter_formats(frontmatter):
     }
 
 
-def process_data(data_block, filepath):
-    """
-    Processes a given data block and extracts metadata.
+def _store_markdown_result(
+    key: str,
+    post: Any,
+    data: Dict[str, Any],
+    frontmatter_temp: Dict[str, Any],
+    local_frontmatter_temp: Dict[str, Any],
+    vars_temp: Dict[str, Any],
+    path: Optional[str] = None,
+    ext: str = "md"
+) -> None:
+    """Store a parsed markdown result and update tracking dictionaries.
 
-    The data_block is a section in the _markmeld coonfig for a target.
-    Each target has a 'data' section, which specifies the sources.
-    To process this data block, those sources are read in, and then processed
-    to extract any metadata blocks, so that those values can be made available to the template. 
-    
+    Helper function that handles the common pattern of storing parsed markdown
+    content and its frontmatter across md_files, remote_notes, and md_content handlers.
+
     Args:
-        data_block (str): The block of data to be processed.
-        filepath (str): The path to the file from which the data block is extracted.
+        key: The key to store the content under.
+        post: A frontmatter Post object with .content and .metadata attributes.
+        data: The main data dictionary to update.
+        frontmatter_temp: Dict tracking merged frontmatter from all sources.
+        local_frontmatter_temp: Dict tracking per-file frontmatter.
+        vars_temp: Dict tracking template variables.
+        path: Optional path/identifier for the source (for _md metadata).
+        ext: File extension for metadata tracking.
+    """
+    data[key] = post.content
+    data["_md"][key] = {
+        "content": post.content,
+        "frontmatter": post.metadata,
+        "path": path,
+        "ext": ext,
+    }
+    frontmatter_temp.update(post.metadata)
+    local_frontmatter_temp[key] = post.metadata
+    data["_raw"][key] = frontmatter.dumps(post)
+    if len(post.metadata) > 0:
+        vars_temp.update(post.metadata)
+        frontmatter_temp.update(post.metadata)
+
+
+def process_data(
+    data_block: Dict[str, Any],
+    filepath: str,
+    frontmatter_base: Optional[Dict[str, Any]] = None,
+    frontmatter_overrides: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    """Process a data block and extract metadata from all sources.
+
+    The data_block is a section in the _markmeld config for a target.
+    Each target has a 'data' section specifying sources (markdown files, YAML files,
+    remote notes, etc.). This function reads those sources and extracts any metadata
+    blocks to make them available to the template.
+
+    Precedence order (lowest to highest):
+    frontmatter: < md frontmatter < yaml data < variables < frontmatter_overrides:
+
+    Args:
+        data_block: The data configuration block from the target.
+        filepath: Path to the config file for resolving relative paths.
+        frontmatter_base: Base frontmatter values (lowest precedence).
+        frontmatter_overrides: Override frontmatter values (highest precedence).
 
     Returns:
-        dict: A dictionary containing the processed data, including raw data, metadata, and YAML content.
+        Dictionary containing processed data including:
+        - Content keyed by variable names
+        - '_raw': Raw content for each source
+        - '_md': Metadata about markdown sources
+        - '_yaml': Metadata about YAML sources
+        - '_global_frontmatter': Merged frontmatter from all sources
+        - '_local_frontmatter': Per-file frontmatter
+        - '_global_vars': All template variables
     """
     _LOGGER.info(f"MM | Processing data block...")
     data = {"_raw": {}, "_md": {}, "_yaml": {}}  # Initialize return value
     frontmatter_temp = {}
     local_frontmatter_temp = {}
     vars_temp = {}
+
+    # Process frontmatter: section first (base defaults - lowest precedence)
+    if frontmatter_base:
+        for k, v in frontmatter_base.items():
+            frontmatter_temp[k] = v
+            vars_temp[k] = v
+            data[k] = v
 
     md_files = {}
     yaml_files = {}
@@ -163,53 +253,8 @@ def process_data(data_block, filepath):
     if YAML_CONTENT_KEY in data_block and data_block[YAML_CONTENT_KEY]:
         yaml_content.update(data_block[YAML_CONTENT_KEY])
 
-    for k, v in yaml_files.items():
-        _LOGGER.info(f"MM | Processing yaml file {k}: {v}")
-        vabs = make_abspath(v, filepath)
-        if not os.path.exists(vabs):
-            _LOGGER.error(f"File not found: {vabs}")
-        else:
-            with open(vabs, "r") as f:
-                yaml_dict = yaml.load(f, Loader=yaml.SafeLoader)
-                _LOGGER.debug(yaml_dict)
-                # data[k] = yaml_dict
-                if k in unkeyed_yaml_files:
-                    data.update(yaml_dict)
-                    data["_yaml"].update(yaml_dict)
-                else:
-                    data[k] = yaml_dict
-                    # data["_yaml"][k] = yaml_dict
-                    data["_yaml"][k] = {
-                        "content": yaml_dict,
-                        "path": os.path.relpath(v, os.path.dirname(filepath)),
-                        "ext": get_file_extension(v),
-                    }
-                    vars_temp[k] = yaml_dict
-                data["_raw"][k] = yaml.dump(yaml_dict)
-                if k[:11] == "frontmatter":
-                    frontmatter_temp.update(yaml_dict)
-
-    for k, v in yaml_content.items():
-        _LOGGER.info(f"MM | Processing yaml content {k}")
-        if isinstance(v, dict):
-            yaml_dict = v
-        elif isinstance(v, str):
-            yaml_dict = yaml.load(v, Loader=yaml.SafeLoader)
-        else:
-            _LOGGER.warning(f"Unsupported yaml content type for {k}: {type(v)}")
-            continue
-        
-        data[k] = yaml_dict
-        data["_yaml"][k] = {
-            "content": yaml_dict,
-            "path": None,
-            "ext": "yaml",
-        }
-        vars_temp[k] = yaml_dict
-        data["_raw"][k] = yaml.dump(yaml_dict)
-        if k[:11] == "frontmatter":
-            frontmatter_temp.update(yaml_dict)
-
+    # Process md_files BEFORE yaml_files so yaml can override md frontmatter
+    # Precedence: frontmatter: < md frontmatter < yaml data < variables < frontmatter_overrides:
     for k, v in md_files.items():
         _LOGGER.info(f"MM | Processing md file {k}:{v}")
         if not v:
@@ -229,25 +274,11 @@ def process_data(data_block, filepath):
                 data[k] = ""  # Populate with empty values
                 data["_raw"][k] = {}
                 continue
-        data[k] = p.content
-        # data["_md"][k] = p.content
-
-        data["_md"][k] = {
-            "content": p.content,
-            "frontmatter": p.metadata,
-            "path": os.path.relpath(v, os.path.dirname(filepath)),
-            "ext": get_file_extension(v),
-        }
-        frontmatter_temp.update(p.metadata)
-        local_frontmatter_temp[k] = p.metadata
-        data["_raw"][k] = frontmatter.dumps(p)
-        # data["md_dict"][k] = p.__dict__
-        # data[k]["all"] = frontmatter.dumps(p)
-        # _LOGGER.debug(data["md"][k])
-        if len(p.metadata) > 0:
-            # data[k]["metadata_yaml"] = yaml.dump(p.metadata)
-            vars_temp.update(p.metadata)
-            frontmatter_temp.update(p.metadata)
+        _store_markdown_result(
+            k, p, data, frontmatter_temp, local_frontmatter_temp, vars_temp,
+            path=os.path.relpath(v, os.path.dirname(filepath)),
+            ext=get_file_extension(v)
+        )
 
     for k, v in remote_notes.items():
         _LOGGER.info(f"MM | Processing remote note {k}:{v}")
@@ -256,13 +287,10 @@ def process_data(data_block, filepath):
             continue
         note_content = apih.fetch_note_content(v)
         p = frontmatter.loads(note_content)
-        data[k] = p.content
-        data["_md"][k] = {
-            "content": p.content,
-            "frontmatter": p.metadata,
-            "path": v,
-            "ext": "md",
-        }
+        _store_markdown_result(
+            k, p, data, frontmatter_temp, local_frontmatter_temp, vars_temp,
+            path=v
+        )
 
     for k, v in md_content.items():
         _LOGGER.info(f"MM | Processing md content {k}")
@@ -284,29 +312,65 @@ def process_data(data_block, filepath):
             data[k] = ""
             data["_raw"][k] = {}
             continue
-        
-        data[k] = p.content
-        data["_md"][k] = {
-            "content": p.content,
-            "frontmatter": p.metadata,
+
+        _store_markdown_result(
+            k, p, data, frontmatter_temp, local_frontmatter_temp, vars_temp
+        )
+
+    # Process yaml_files AFTER md so yaml values can override md frontmatter
+    for k, v in yaml_files.items():
+        _LOGGER.info(f"MM | Processing yaml file {k}: {v}")
+        vabs = make_abspath(v, filepath)
+        if not os.path.exists(vabs):
+            _LOGGER.error(f"File not found: {vabs}")
+        else:
+            with open(vabs, "r") as f:
+                yaml_dict = yaml.load(f, Loader=yaml.SafeLoader)
+                _LOGGER.debug(yaml_dict)
+                if k in unkeyed_yaml_files:
+                    data.update(yaml_dict)
+                    data["_yaml"].update(yaml_dict)
+                    # For unkeyed yaml files, also update vars_temp and frontmatter_temp
+                    vars_temp.update(yaml_dict)
+                    frontmatter_temp.update(yaml_dict)
+                else:
+                    data[k] = yaml_dict
+                    data["_yaml"][k] = {
+                        "content": yaml_dict,
+                        "path": os.path.relpath(v, os.path.dirname(filepath)),
+                        "ext": get_file_extension(v),
+                    }
+                    vars_temp[k] = yaml_dict
+                data["_raw"][k] = yaml.dump(yaml_dict)
+
+    for k, v in yaml_content.items():
+        _LOGGER.info(f"MM | Processing yaml content {k}")
+        if isinstance(v, dict):
+            yaml_dict = v
+        elif isinstance(v, str):
+            yaml_dict = yaml.load(v, Loader=yaml.SafeLoader)
+        else:
+            _LOGGER.warning(f"Unsupported yaml content type for {k}: {type(v)}")
+            continue
+
+        data[k] = yaml_dict
+        data["_yaml"][k] = {
+            "content": yaml_dict,
             "path": None,
-            "ext": "md",
+            "ext": "yaml",
         }
-        frontmatter_temp.update(p.metadata)
-        local_frontmatter_temp[k] = p.metadata
-        data["_raw"][k] = frontmatter.dumps(p)
-        if len(p.metadata) > 0:
-            vars_temp.update(p.metadata)
-            frontmatter_temp.update(p.metadata)
+        vars_temp[k] = yaml_dict
+        data["_raw"][k] = yaml.dump(yaml_dict)
 
     if "variables" in data_block and data_block["variables"]:
         data.update(data_block["variables"])
         vars_temp.update(data_block["variables"])
-        for k, v in data_block["variables"].items():
-            if k[:11] == "frontmatter":
-                frontmatter_temp.update({k[12:]: v})
 
-    # vars_raw = yaml.dump(vars_temp)
+    # Process frontmatter_overrides: section last (highest precedence - always wins)
+    if frontmatter_overrides:
+        frontmatter_temp.update(frontmatter_overrides)
+        vars_temp.update(frontmatter_overrides)
+        data.update(frontmatter_overrides)
 
     # Make frontmatter variables available at top level
     # This allows templates to access variables like {{ author }} instead of {{ _global_vars.author }}
@@ -318,8 +382,8 @@ def process_data(data_block, filepath):
     # and excludes markdown content... Is that useful?
     data["_global_vars"] = vars_temp
 
-    # Integrated, global frontmatter from 3 sources, in order:
-    # .md frontmatter, yaml data named frontmatter_*, variables named frontmatter_*
+    # Integrated, global frontmatter from all sources in precedence order:
+    # frontmatter: (base) < md frontmatter < yaml data < variables < frontmatter_overrides:
     data["_global_frontmatter"] = get_frontmatter_formats(frontmatter_temp)
 
     # Local frontmatter (per markdown file)
@@ -330,9 +394,14 @@ def process_data(data_block, filepath):
     return data
 
 
-def get_file_extension(path):
-    """
-    Helper function to get the file extension from a path
+def get_file_extension(path: str) -> str:
+    """Get the file extension from a file path.
+
+    Args:
+        path: The file path to extract extension from.
+
+    Returns:
+        The file extension including the dot (e.g., '.md', '.yaml').
     """
     basename = os.path.basename(path)
     splitext = os.path.splitext(basename)
@@ -340,11 +409,64 @@ def get_file_extension(path):
     return ext
 
 
-def load_template(cfg: str) -> Template:
+def assess_variable_matches(template_source: str, provided_vars: dict) -> dict:
     """
-    Load a jinja template from a file or URL
+    Compare variables referenced in a Jinja2 template against provided variables.
 
-    Returns a jinja2 Template object
+    Args:
+        template_source: The raw Jinja2 template source string
+        provided_vars: Dict of variables that will be passed to the template
+
+    Returns:
+        dict with keys:
+            - 'template_vars': set of variables referenced in the template
+            - 'provided_vars': set of top-level keys provided to the template
+            - 'missing': set of variables in template but not provided
+            - 'unused': set of variables provided but not in template
+    """
+    from jinja2 import Environment, meta
+
+    env = Environment()
+    try:
+        parsed = env.parse(template_source)
+        template_vars = meta.find_undeclared_variables(parsed)
+    except Exception as e:
+        _LOGGER.warning(f"Could not parse template for variable analysis: {e}")
+        return {'template_vars': set(), 'provided_vars': set(), 'missing': set(), 'unused': set()}
+
+    provided_keys = set(provided_vars.keys())
+
+    missing = template_vars - provided_keys
+    unused = provided_keys - template_vars
+
+    # Filter out internal/special variables that start with underscore
+    missing = {v for v in missing if not v.startswith('_')}
+    unused = {v for v in unused if not v.startswith('_')}
+
+    return {
+        'template_vars': template_vars,
+        'provided_vars': provided_keys,
+        'missing': missing,
+        'unused': unused
+    }
+
+
+def load_template(cfg: Dict[str, Any]) -> Optional[Template]:
+    """Load a Jinja2 template from a file or URL.
+
+    Reads the jinja_template path from configuration and loads the template
+    content. Supports both local files and remote URLs.
+
+    Args:
+        cfg: Configuration dictionary containing 'jinja_template' path and
+            optional 'mm_templates' base directory.
+
+    Returns:
+        Jinja2 Template object with .source attribute containing raw content,
+        or None if no jinja_template is configured.
+
+    Raises:
+        Exception: If template file is not found or URL returns an error.
     """
 
     if "jinja_template" not in cfg or not cfg["jinja_template"]:
@@ -397,18 +519,41 @@ def load_template(cfg: str) -> Template:
     return t
 
 
-class Target(object):
-    """
-    Holds 2 dicts: Original cfg data, and specific metadata for a target.
-    Really there are 2 classes of variables in a target. One is the variables
-    available for the template rendering. The second is the variables
-    available to execute the command to produce the target, to which
-    the rendered output is passed. Some variables need to be made available
-    in both places. But really, I don't see a downside to just combining them.
-    Therefore, I should merge these into one concept.
+class Target:
+    """Represents a single build target in markmeld.
+
+    Holds configuration data, metadata, and build state for a target.
+    Combines variables for template rendering with variables for command
+    execution into a unified concept.
+
+    Attributes:
+        root_cfg: The root configuration dictionary from _markmeld.yaml.
+        target_name: Name of this target.
+        meta: Merged metadata dictionary for this target.
+        messages: List of status messages from building.
+        returncode: Return code from command execution (None if not run).
+        stdout: Captured stdout from subprocess.
+        stderr: Captured stderr from subprocess.
+        melded_input: Data dictionary passed to template (set during build).
+        melded_output: Rendered template output (set during build).
     """
 
-    def __init__(self, root_cfg={}, target_name=None, vardata=None):
+    def __init__(
+        self,
+        root_cfg: Dict[str, Any] = {},
+        target_name: Optional[str] = None,
+        vardata: Optional[List[str]] = None
+    ) -> None:
+        """Initialize a Target object.
+
+        Args:
+            root_cfg: The root configuration dictionary from _markmeld.yaml.
+            target_name: Name of the target to build.
+            vardata: Optional list of "key=value" strings for CLI variables.
+
+        Raises:
+            TargetError: If targets are not specified or target_name not found.
+        """
         self.root_cfg = root_cfg
         self.target_name = target_name
 
@@ -534,20 +679,30 @@ class Target(object):
         if "output_file" in self.meta:
             _LOGGER.info(f"MM | Output file: {self.meta['output_file']}")
 
-    def __repr__(self):
+    def __repr__(self) -> str:
+        """Return YAML representation of target metadata."""
         return yaml.dump(self.__dict__["meta"], default_flow_style=False)
-        # import json
-        # return json.dumps(self.__dict__, sort_keys=True, indent=4)
 
-    def add_message(self, message, status="success"):
+    def add_message(self, message: str, status: str = "success") -> None:
+        """Add a status message to the target's message list.
+
+        Args:
+            message: The message text to add.
+            status: Message status, either 'success' or 'fail'.
+        """
         if status == "fail":
             _LOGGER.warning(message)
         self.messages.append({"status": status, "message": message})
 
-    def report(self, print_output=False, dump_output=False):
-        """
-        Report the results of building this target.
+    def report(self, print_output: bool = False, dump_output: bool = False) -> None:
+        """Report the results of building this target.
+
+        Logs status messages, stdout/stderr from commands, and success/failure status.
         Moved from CLI to make it accessible for API usage.
+
+        Args:
+            print_output: Whether output was printed only (no command run).
+            dump_output: Whether output was dumped for debugging.
         """
         color_red = "\x1b[31;20m"
         color_reset = "\x1b[0m"
@@ -585,7 +740,21 @@ class Target(object):
         
         _LOGGER.info(f"Return code: {self.returncode}")
 
-    def resolve_target_inheritance(self, target_name):
+    def resolve_target_inheritance(self, target_name: str) -> Dict[str, Any]:
+        """Resolve configuration inheritance for a target.
+
+        Recursively resolves the 'inherit_from' chain to build the complete
+        configuration for a target, merging parent configurations in order.
+
+        Args:
+            target_name: Name of the target to resolve.
+
+        Returns:
+            Merged configuration dictionary for the target.
+
+        Raises:
+            TargetError: If an inherited target is not found.
+        """
         root_cfg = self.root_cfg
         if "targets" not in root_cfg:
             error_msg = f"No targets specified in config."
@@ -618,18 +787,22 @@ class Target(object):
             return accumulated
 
 
-class MarkdownMelder(object):
-    """
-    Maiin class for the markmeld package. It is responsible for 
-    building targets, which are specified in the markmeld config file.
+class MarkdownMelder:
+    """Main class for the markmeld package.
+
+    Responsible for building targets specified in the markmeld config file.
+    Orchestrates template rendering, data processing, and command execution.
+
+    Attributes:
+        cfg: The configuration dictionary from _markmeld.yaml.
+        target_objects: Cache of built Target objects.
     """
 
-    def __init__(self, cfg: dict):
-        """
-        Instantiate a MarkdownMelder object.
+    def __init__(self, cfg: Dict[str, Any]) -> None:
+        """Initialize a MarkdownMelder instance.
 
         Args:
-            cfg (dict): The configuration dictionary, which is the _markmeld.yaml file.
+            cfg: The configuration dictionary from _markmeld.yaml.
         """
         _LOGGER.info("Initializing MarkdownMelder...")
         self.cfg = cfg
@@ -647,15 +820,14 @@ class MarkdownMelder(object):
         return cache_root
 
     def _update_bibliography_path(self, content: str, cached_bib_path: Union[str, List[str]]) -> str:
-        """
-        Update the bibliography path in the document's frontmatter to point to the cached file.
+        """Update the bibliography path in document frontmatter to the cached file.
 
         Args:
-            content: The markdown content with frontmatter
-            cached_bib_path: The path to the cached bibliography file(s)
+            content: The markdown content with frontmatter.
+            cached_bib_path: Path to the cached bibliography file(s).
 
         Returns:
-            Updated markdown content with bibliography path pointing to cached file
+            Updated markdown content with bibliography path pointing to cached file.
         """
         import frontmatter
         import re
@@ -671,7 +843,16 @@ class MarkdownMelder(object):
         # Convert back to string with frontmatter
         return frontmatter.dumps(post)
 
-    def open_target(self, target_name):
+    def open_target(self, target_name: str) -> Union[str, bool]:
+        """Get the output file path for a target if it should be opened.
+
+        Args:
+            target_name: Name of the target.
+
+        Returns:
+            Output file path string if target has output and should be opened,
+            False otherwise.
+        """
         tgt = Target(self.cfg, target_name)
 
         if tgt.meta["output_file"] and not "stopopen" in tgt.meta:
@@ -679,22 +860,31 @@ class MarkdownMelder(object):
         else:
             return False
 
-    def describe_target(self, target_name):
+    def describe_target(self, target_name: str) -> bool:
+        """Log description of a target's configuration.
+
+        Args:
+            target_name: Name of the target to describe.
+
+        Returns:
+            Always returns True.
+        """
         tgt = Target(self.cfg, target_name)
         _LOGGER.info(f"MM | Describing target: {tgt.target_name}")
         _LOGGER.info(tgt)
         return True
 
-    def preprocess_google_doc(self, tgt):
-        """
-        Preprocess a Google Doc target by fetching the document and figures.
-        Transforms the target's data to use local cached content.
-        
+    def preprocess_google_doc(self, tgt: Target) -> Optional[Target]:
+        """Preprocess a Google Doc target by fetching document and figures.
+
+        Downloads the Google Doc content and associated figures to local cache,
+        then transforms the target's data configuration to use the cached content.
+
         Args:
-            tgt: Target object with google-doc type configuration
-            
+            tgt: Target object with google-doc type configuration.
+
         Returns:
-            Modified Target object with local content, or None on failure
+            Modified Target object with local cached content, or None on failure.
         """
         try:
             # Extract Google Doc configuration
@@ -778,10 +968,15 @@ class MarkdownMelder(object):
                         if bib_results.get('failed'):
                             _LOGGER.warning(f"MM | Failed to download {len(bib_results['failed'])} bibliography files for '{var_name}'")
 
-            # Transform target data to use the fetched content
-            tgt.meta["data"] = {
-                "md_content": md_content
-            }
+            # Transform target data: preserve existing fields (like variables),
+            # remove processed google_docs, add md_content
+            existing_data = tgt.meta.get("data", {})
+            _LOGGER.info(f"MM | Existing data keys before transform: {list(existing_data.keys())}")
+            if "variables" in existing_data:
+                _LOGGER.info(f"MM | Preserving variables: {existing_data['variables']}")
+            existing_data.pop(GOOGLE_DOCS_KEY, None)  # Remove processed google_docs
+            tgt.meta["data"] = deep_update(existing_data, {"md_content": md_content}, warn_override=False)
+            _LOGGER.info(f"MM | Final data keys after transform: {list(tgt.meta['data'].keys())}")
             
             # Remove the type field so it processes as a normal target
             del tgt.meta[TARGET_TYPE_KEY]
@@ -795,9 +990,28 @@ class MarkdownMelder(object):
             _LOGGER.error(f"Full traceback:\n{traceback.format_exc()}")
             return None
 
-    def build_target(self, target_name, print_only=False, vardump=False, report=True):
-        """
-        @return [False|tgt] if the
+    def build_target(
+        self,
+        target_name: str,
+        print_only: bool = False,
+        vardump: bool = False,
+        report: bool = True
+    ) -> Union[Target, Dict[int, Target], None]:
+        """Build a target by processing inputs and running the command.
+
+        Main entry point for building targets. Handles preprocessing for
+        special target types (e.g., Google Doc), runs prebuilds, melds inputs,
+        renders templates, executes commands, and runs postbuilds.
+
+        Args:
+            target_name: Name of the target to build.
+            print_only: If True, render template but don't run command.
+            vardump: If True, dump variables instead of rendering.
+            report: If True, log build results.
+
+        Returns:
+            Target object with build results, dict of Target objects for loop
+            targets (keyed by iteration index), or None if preprocessing fails.
         """
         tgt = Target(self.cfg, target_name)
         _LOGGER.info(
@@ -840,15 +1054,19 @@ class MarkdownMelder(object):
         
         return result
 
-    def build_side_targets(self, tgt, side_list_key="prebuild"):
-        """
-        Builds side targets for a target, which are prebuilds or postbuilds.
+    def build_side_targets(self, tgt: Target, side_list_key: str = "prebuild") -> bool:
+        """Build side targets (prebuilds or postbuilds) for a target.
 
-        Side targets accompany a target, are built either before (prebuild)
-        or after (postbuild) a main target.
+        Side targets accompany a main target and are built either before
+        (prebuild) or after (postbuild) the main target.
 
-        @param tgt Target The main target to build
-        @param side_list_key Iterable[str] The key of the target that contains a list of side targets. e.g. "prebuild" or "postbuild"
+        Args:
+            tgt: The main target whose side targets should be built.
+            side_list_key: Key in target metadata containing list of side target
+                names ('prebuild' or 'postbuild').
+
+        Returns:
+            True if all side targets built successfully, False otherwise.
         """
         if side_list_key in tgt.meta:
             _LOGGER.info(f"MM | Run {side_list_key} for target: {tgt.target_name}")
@@ -868,7 +1086,22 @@ class MarkdownMelder(object):
                     return False
         return True
 
-    def run_command_for_target(self, tgt, print_only, vardump=False):
+    def run_command_for_target(
+        self, tgt: Target, print_only: bool, vardump: bool = False
+    ) -> Target:
+        """Execute the command for a target.
+
+        Handles different target types (raw, meta, normal) and either renders
+        the template, dumps variables, or runs the configured command.
+
+        Args:
+            tgt: Target object with melded_input already populated.
+            print_only: If True, render template but don't run command.
+            vardump: If True, return variables instead of rendering.
+
+        Returns:
+            Target object with melded_output and returncode set.
+        """
         _LOGGER.info(f"Defined path for this target: {tgt.meta['_defpath']}")
         _LOGGER.info(f"Working path for this target: {tgt.meta['_workpath']}")
 
@@ -941,8 +1174,31 @@ class MarkdownMelder(object):
                 )
         return tgt
 
-    def build_target_in_loop(self, tgt, print_only=False, vardump=False, report=True):
-        #  Process each iteration of the loop
+    def build_target_in_loop(
+        self,
+        tgt: Target,
+        print_only: bool = False,
+        vardump: bool = False,
+        report: bool = True
+    ) -> Dict[int, Target]:
+        """Build a target multiple times using loop configuration.
+
+        Implements mail-merge functionality by iterating over a data collection
+        and building the target once for each item.
+
+        Args:
+            tgt: Target object with loop configuration in meta.
+            print_only: If True, render template but don't run command.
+            vardump: If True, dump variables instead of rendering.
+            report: If True, log build results for each iteration.
+
+        Returns:
+            Dictionary mapping iteration index to Target objects.
+
+        Raises:
+            Exception: If loop_data variable is not found.
+        """
+        # Process each iteration of the loop
         melded_input = tgt.melded_input
         loop_data_var = tgt.meta["loop"]["loop_data"].split(".")
         _LOGGER.debug(f"Retrieve loop data variable named {loop_data_var}")
@@ -983,19 +1239,43 @@ class MarkdownMelder(object):
 
         return return_target_objects
 
-    def meld_inputs(self, tgt):
-        # data_copy = deepcopy(tgt.root_cfg)
-        # data_copy.update(tgt.meta)
+    def meld_inputs(self, tgt: Target) -> Dict[str, Any]:
+        """Process and merge all inputs for a target.
+
+        Reads data sources specified in the target configuration, processes
+        frontmatter, and merges everything into a single data dictionary
+        for template rendering.
+
+        Args:
+            tgt: Target object to process inputs for.
+
+        Returns:
+            Merged data dictionary ready for template rendering.
+        """
         data_copy = deepcopy(tgt.meta)
 
         if "version" in tgt.root_cfg and not tgt.root_cfg["version"] >= 1:
             _LOGGER.error("Can't process this config version.")
 
         _LOGGER.info("MM | Processing config version 1...")
+        # Extract frontmatter sections from target meta (not from data block)
+        frontmatter_base = tgt.meta.get("frontmatter", None)
+        frontmatter_overrides = tgt.meta.get("frontmatter_overrides", None)
+
         if "data" in tgt.meta:
-            processed_data_block = process_data(tgt.meta["data"], tgt.meta["_workpath"])
+            processed_data_block = process_data(
+                tgt.meta["data"],
+                tgt.meta["_workpath"],
+                frontmatter_base=frontmatter_base,
+                frontmatter_overrides=frontmatter_overrides
+            )
         else:
-            processed_data_block = process_data({}, tgt.meta["_workpath"])
+            processed_data_block = process_data(
+                {},
+                tgt.meta["_workpath"],
+                frontmatter_base=frontmatter_base,
+                frontmatter_overrides=frontmatter_overrides
+            )
         _LOGGER.debug("processed_data_block:", processed_data_block)
         data_copy.update(processed_data_block)
 
@@ -1025,8 +1305,26 @@ class MarkdownMelder(object):
             )
         return data_copy
 
-    def render_template(self, melded_input, target, double=None):
-        # print(melded_input)
+    def render_template(
+        self,
+        melded_input: Dict[str, Any],
+        target: Target,
+        double: Optional[bool] = None
+    ) -> str:
+        """Render the Jinja2 template with the melded input data.
+
+        Args:
+            melded_input: Data dictionary to pass to the template.
+            target: Target object containing template configuration.
+            double: Whether to render twice (recursive rendering). If None,
+                uses target's recursive_render setting (defaults to True).
+
+        Returns:
+            Rendered template string.
+
+        Raises:
+            Exception: If using deprecated 'md_template' instead of 'jinja_template'.
+        """
         if "data" not in melded_input:
             melded_input["data"] = {}
         if "md_template" in target.meta:
@@ -1043,6 +1341,15 @@ class MarkdownMelder(object):
             _LOGGER.error(
                 "No jinja_template provided. Using generic markmeld jinja_template."
             )
+
+        # Check for variable mismatches before rendering
+        if hasattr(tpl, 'source') and tpl.source:
+            mismatch_report = assess_variable_matches(tpl.source, melded_input)
+            if mismatch_report['missing']:
+                _LOGGER.warning(f"Template references variables not provided: {mismatch_report['missing']}")
+            # Log unused vars at debug level (less critical)
+            if mismatch_report['unused']:
+                _LOGGER.debug(f"Provided variables not used in template: {mismatch_report['unused']}")
 
         if double is None:
             if (

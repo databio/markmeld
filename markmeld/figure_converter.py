@@ -1,5 +1,4 @@
-"""
-Figure Converter - Unified handler for all figure format conversions.
+"""Figure Converter - Unified handler for all figure format conversions.
 
 This module handles conversion of various figure formats to PDF:
 - SVG to PDF (via inkscape)
@@ -18,7 +17,7 @@ import re
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Optional, Dict, Any, Tuple, List
+from typing import Any, Dict, List, Optional, Tuple
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(message)s')
@@ -26,29 +25,33 @@ logger = logging.getLogger(__name__)
 
 
 class FigureConverter:
+    """Handles all figure-to-PDF conversions for the markmeld system.
+
+    Consolidates figure conversion logic with change detection and caching.
+
+    Attributes:
+        cache_manager: CloudCacheManager instance for cache operations.
+        drive_service: Google Drive API service instance.
+        inkscape_command: Path to inkscape executable.
+        default_table_params: Default parameters for table formatting.
+
+    Supported conversions:
+        - SVG to PDF (via inkscape)
+        - CSV to PDF (via weasyprint)
+        - Google Sheets to PDF (via weasyprint)
     """
-    Handles all figure-to-PDF conversions for the markmeld system.
-    
-    This class consolidates all figure conversion logic, providing:
-    - SVG to PDF conversion (via inkscape)
-    - CSV to PDF conversion (via table_pdf_builder)
-    - Google Sheets to PDF conversion (via table_pdf_builder)
-    - Change detection and caching
-    - Parameter handling for table formatting
-    """
-    
-    def __init__(self, cache_manager, drive_service=None):
-        """
-        Initialize the FigureConverter.
-        
+
+    def __init__(self, cache_manager: Any, drive_service: Any = None) -> None:
+        """Initialize the FigureConverter.
+
         Args:
-            cache_manager: CloudCacheManager instance for cache operations
-            drive_service: Google Drive API service instance (for Sheets conversion)
+            cache_manager: CloudCacheManager instance for cache operations.
+            drive_service: Google Drive API service instance (for Sheets).
         """
         self.cache_manager = cache_manager
         self.drive_service = drive_service
         self.inkscape_command = "inkscape"
-        
+
         # Default table parameters
         self.default_table_params = {
             'fig_width_mm': 174,  # Standard page width minus margins
@@ -57,22 +60,26 @@ class FigureConverter:
             'tr_padding_h': 3
         }
     
-    def convert_figure(self, source_path: str, params: Dict[str, Any], 
-                      doc_id: str, file_info: Optional[Dict] = None, 
-                      original_path: Optional[str] = None) -> Optional[str]:
-        """
-        Main routing method for figure conversion.
-        
+    def convert_figure(
+        self,
+        source_path: str,
+        params: Dict[str, Any],
+        doc_id: str,
+        file_info: Optional[Dict] = None,
+        original_path: Optional[str] = None,
+    ) -> Optional[str]:
+        """Route figure conversion to appropriate handler.
+
         Args:
-            source_path: Path to the source figure file (may be cached path)
-            params: Parameters dictionary from markdown
-            doc_id: Document ID for cache context
-            file_info: Optional file metadata from Google Drive
-            original_path: Original path from markdown (for digest keys)
-            
+            source_path: Path to the source figure file (may be cached).
+            params: Parameters dictionary from markdown.
+            doc_id: Document ID for cache context.
+            file_info: Optional file metadata from Google Drive.
+            original_path: Original path from markdown (for digest keys).
+
         Returns:
-            Relative path to the converted PDF file (e.g., "fig/overview.pdf"),
-            or None if conversion failed
+            Relative path to converted PDF (e.g., "fig/overview.pdf"),
+            or None if conversion failed.
         """
         # Use original_path for digest operations if provided
         digest_path = original_path if original_path else source_path
@@ -88,8 +95,8 @@ class FigureConverter:
         
         # Check if conversion is needed
         if not self.needs_conversion(digest_path, doc_id, output_path, file_info, params):
-            logger.info(f"  Using cached: {output_path}")
-            logger.debug(f"  Cache path is absolute: {output_path.is_absolute()}, resolved: {output_path.resolve()}")
+            relative_path = self._get_relative_output_path(digest_path, figure_type)
+            logger.info(f"  Using cached: {relative_path}")
             # Return relative path matching the original structure
             return self._get_relative_output_path(digest_path, figure_type)
         
@@ -129,14 +136,13 @@ class FigureConverter:
             return None
     
     def get_figure_type(self, path: str) -> str:
-        """
-        Detect figure type from path.
-        
+        """Detect figure type from path or URL.
+
         Args:
-            path: File path or URL
-            
+            path: File path or URL.
+
         Returns:
-            Figure type: 'svg', 'csv', 'sheet', 'pdf', or 'unknown'
+            Figure type: 'svg', 'csv', 'sheet', 'pdf', or 'unknown'.
         """
         path_lower = path.lower()
         
@@ -151,21 +157,25 @@ class FigureConverter:
         else:
             return 'unknown'
     
-    def needs_conversion(self, source_path: str, doc_id: str, 
-                         output_path: Path, file_info: Optional[Dict] = None,
-                         params: Optional[Dict] = None) -> bool:
-        """
-        Check if conversion is needed.
-        
+    def needs_conversion(
+        self,
+        source_path: str,
+        doc_id: str,
+        output_path: Path,
+        file_info: Optional[Dict] = None,
+        params: Optional[Dict] = None,
+    ) -> bool:
+        """Check if conversion is needed based on cache and digests.
+
         Args:
-            source_path: Source file path
-            doc_id: Document ID for cache context
-            output_path: Target output path
-            file_info: Optional file metadata with MD5 checksum
-            params: Optional parameters for table conversion
-            
+            source_path: Source file path.
+            doc_id: Document ID for cache context.
+            output_path: Target output path.
+            file_info: Optional file metadata with MD5 checksum.
+            params: Optional parameters for table conversion.
+
         Returns:
-            True if conversion is needed, False if cached version is current
+            True if conversion needed, False if cached version is current.
         """
         # If output doesn't exist, conversion is needed
         if not output_path.exists():
@@ -222,15 +232,14 @@ class FigureConverter:
         return True
     
     def convert_svg(self, svg_path: str, output_path: Path) -> bool:
-        """
-        Convert SVG to PDF using inkscape.
-        
+        """Convert SVG to PDF using inkscape.
+
         Args:
-            svg_path: Path to SVG file
-            output_path: Path for output PDF
-            
+            svg_path: Path to SVG file.
+            output_path: Path for output PDF.
+
         Returns:
-            True if successful, False otherwise
+            True if successful, False otherwise.
         """
         try:
             # Ensure output directory exists
@@ -274,7 +283,10 @@ class FigureConverter:
                 logger.error(f"   Check if Inkscape completed successfully")
                 return False
             
-            logger.info(f"  Converted: {svg_path} -> {output_path}")
+            # Log with relative paths for readability
+            svg_rel = '/'.join(Path(svg_path).parts[-2:])
+            out_rel = '/'.join(output_path.parts[-2:])
+            logger.info(f"  Converted: {svg_rel} -> {out_rel}")
             return True
             
         except subprocess.TimeoutExpired:
@@ -292,17 +304,18 @@ class FigureConverter:
             logger.error(f"   SVG file: {svg_path}")
             return False
     
-    def convert_csv(self, csv_path: str, output_path: Path, params: Dict[str, Any]) -> bool:
-        """
-        Convert CSV to PDF using table_pdf_builder.
-        
+    def convert_csv(
+        self, csv_path: str, output_path: Path, params: Dict[str, Any]
+    ) -> bool:
+        """Convert CSV to PDF using weasyprint.
+
         Args:
-            csv_path: Path to CSV file
-            output_path: Path for output PDF
-            params: Table formatting parameters
-            
+            csv_path: Path to CSV file.
+            output_path: Path for output PDF.
+            params: Table formatting parameters.
+
         Returns:
-            True if successful, False otherwise
+            True if successful, False otherwise.
         """
         try:
             import pandas as pd
@@ -320,26 +333,33 @@ class FigureConverter:
             # Convert to PDF
             self._df_to_pdf(df, str(output_path), **table_params)
             
-            logger.info(f"  Converted: {csv_path} -> {output_path}")
+            # Log with relative paths for readability
+            csv_rel = '/'.join(Path(csv_path).parts[-2:])
+            out_rel = '/'.join(output_path.parts[-2:])
+            logger.info(f"  Converted: {csv_rel} -> {out_rel}")
             return True
             
         except Exception as e:
             logger.error(f"Error converting CSV to PDF: {e}")
             return False
     
-    def _convert_gsheet(self, sheet_url: str, output_path: Path, 
-                       params: Dict[str, Any], file_info: Optional[Dict] = None) -> bool:
-        """
-        Convert Google Sheet to PDF.
-        
+    def _convert_gsheet(
+        self,
+        sheet_url: str,
+        output_path: Path,
+        params: Dict[str, Any],
+        file_info: Optional[Dict] = None,
+    ) -> bool:
+        """Convert Google Sheet to PDF.
+
         Args:
-            sheet_url: Google Sheets URL or ID
-            output_path: Path for output PDF
-            params: Table formatting parameters
-            file_info: Optional file metadata from Google Drive
-            
+            sheet_url: Google Sheets URL or ID.
+            output_path: Path for output PDF.
+            params: Table formatting parameters.
+            file_info: Optional file metadata from Google Drive.
+
         Returns:
-            True if successful, False otherwise
+            True if successful, False otherwise.
         """
         try:
             import pandas as pd
@@ -370,23 +390,25 @@ class FigureConverter:
             # Convert to PDF
             self._df_to_pdf(df, str(output_path), **table_params)
             
-            logger.info(f"  Converted: Google Sheet {sheet_id} -> {output_path}")
+            out_rel = '/'.join(output_path.parts[-2:])
+            logger.info(f"  Converted: Google Sheet {sheet_id} -> {out_rel}")
             return True
             
         except Exception as e:
             logger.error(f"Error converting Google Sheet to PDF: {e}")
             return False
     
-    def _download_sheet_as_dataframe(self, sheet_id: str, worksheet: Optional[str] = None):
-        """
-        Download Google Sheet as pandas DataFrame using Drive API.
-        
+    def _download_sheet_as_dataframe(
+        self, sheet_id: str, worksheet: Optional[str] = None
+    ) -> Optional[Any]:
+        """Download Google Sheet as pandas DataFrame using Drive API.
+
         Args:
-            sheet_id: Google Sheet ID
-            worksheet: Optional worksheet name
-            
+            sheet_id: Google Sheet ID.
+            worksheet: Optional worksheet name.
+
         Returns:
-            pandas DataFrame or None if failed
+            pandas DataFrame or None if failed.
         """
         if not self.drive_service:
             logger.error("Drive service not available for Sheet download")
@@ -423,16 +445,17 @@ class FigureConverter:
             logger.error(f"Error downloading Google Sheet: {e}")
             return None
     
-    def _prepare_table_parameters(self, params: Dict[str, Any], df) -> Dict[str, Any]:
-        """
-        Prepare table parameters for PDF generation.
-        
+    def _prepare_table_parameters(
+        self, params: Dict[str, Any], df: Any
+    ) -> Dict[str, Any]:
+        """Prepare table parameters for PDF generation.
+
         Args:
-            params: Parameters from markdown
-            df: pandas DataFrame
-            
+            params: Parameters from markdown.
+            df: pandas DataFrame.
+
         Returns:
-            Dictionary of parameters for table_pdf_builder
+            Dictionary of parameters for table PDF builder.
         """
         import pandas as pd
         
@@ -470,154 +493,249 @@ class FigureConverter:
                 table_params['font_size_pt'] = float(size_str)
             logger.debug(f"  Set font-size: {table_params['font_size_pt']}pt")
         
+        # Extract column/padding params FIRST (needed for height calculation)
+        if 'col-names' in params:
+            table_params['colnames'] = params['col-names'].split(',')
+        else:
+            table_params['colnames'] = list(df.columns)
+
+        if 'col-widths' in params:
+            widths = params['col-widths'].split(',')
+            table_params['col_widths'] = [float(w.strip()) for w in widths]
+        else:
+            n_cols = len(df.columns)
+            table_params['col_widths'] = [100.0 / n_cols] * n_cols
+
+        if 'col-align' in params:
+            table_params['col_alignments'] = params['col-align'].split(',')
+        else:
+            table_params['col_alignments'] = ['left'] * len(df.columns)
+
+        if 'padding-v' in params:
+            table_params['tr_padding_v'] = float(params['padding-v'])
+        if 'padding-h' in params:
+            table_params['tr_padding_h'] = float(params['padding-h'])
+
+        # NOW handle height (explicit or auto-calculated)
         if 'fig_height' in params:
-            # Convert height like "200mm", "200", or "auto"
             height_str = str(params['fig_height']).strip().lower()
             if height_str == 'auto':
-                # Use CSS auto for height
                 table_params['fig_height_mm'] = 'auto'
                 logger.info(f"  Using CSS auto height")
             elif height_str.endswith('mm'):
                 table_params['fig_height_mm'] = float(height_str[:-2])
                 logger.info(f"  Using explicit height: {table_params['fig_height_mm']}mm")
             else:
-                # Assume mm if no unit specified (and not 'auto')
                 try:
                     table_params['fig_height_mm'] = float(height_str)
                     logger.info(f"  Using explicit height: {table_params['fig_height_mm']}mm")
                 except ValueError:
-                    # If conversion fails, fall back to CSS auto
                     logger.warning(f"  Invalid height value '{params['fig_height']}', using CSS auto")
                     table_params['fig_height_mm'] = 'auto'
         else:
-            # Auto-calculate height based on row count (+1 for header)
-            table_params['fig_height_mm'] = self._guess_pdf_height_mm(len(df) + 1)
-            logger.info(f"  Auto-calculated height: {table_params['fig_height_mm']}mm for {len(df)} data rows + header")
-        
-        # Column names (default to DataFrame columns)
-        if 'col-names' in params:
-            table_params['colnames'] = params['col-names'].split(',')
-        else:
-            table_params['colnames'] = list(df.columns)
-        
-        # Column widths
-        if 'col-widths' in params:
-            widths = params['col-widths'].split(',')
-            table_params['col_widths'] = [float(w.strip()) for w in widths]
-        else:
-            # Equal distribution
-            n_cols = len(df.columns)
-            table_params['col_widths'] = [100.0 / n_cols] * n_cols
-        
-        # Column alignments
-        if 'col-align' in params:
-            table_params['col_alignments'] = params['col-align'].split(',')
-        else:
-            table_params['col_alignments'] = ['left'] * len(df.columns)
-        
-        # Padding parameters
-        if 'padding-v' in params:
-            table_params['tr_padding_v'] = float(params['padding-v'])
-        if 'padding-h' in params:
-            table_params['tr_padding_h'] = float(params['padding-h'])
+            # Auto-calculate height using actual column widths
+            font_size = table_params.get('font_size_pt', 6)
+            page_width = table_params.get('fig_width_mm', 174)
+            if page_width == 'auto':
+                page_width = 174
+            table_params['fig_height_mm'] = self._find_optimal_height(
+                df, table_params['col_widths'], table_params['col_alignments'],
+                page_width, font_size,
+                table_params.get('tr_padding_v', 1), table_params.get('tr_padding_h', 3)
+            )
+            logger.info(f"  Auto-calculated height: {table_params['fig_height_mm']:.2f}mm for {len(df)} data rows + header (font: {font_size}pt)")
         
         logger.debug(f"  Final table params: {table_params}")
         return table_params
     
-    def _df_to_pdf(self, df, output_file: str, colnames: list, col_widths: list,
-                  col_alignments: list, fig_width_mm: float, fig_height_mm: float = None,
-                  font_size_pt: float = 6, tr_padding_v: float = 1, tr_padding_h: float = 3):
+    def _build_table_css(
+        self,
+        col_widths: List[float],
+        col_alignments: List[str],
+        page_width_mm: float,
+        page_height_mm: float,
+        font_size_pt: float,
+        tr_padding_v: float,
+        tr_padding_h: float,
+    ) -> str:
+        """Build CSS for table rendering.
+
+        Args:
+            col_widths: List of column widths as percentages.
+            col_alignments: List of column alignments.
+            page_width_mm: Page width in millimeters.
+            page_height_mm: Page height in millimeters.
+            font_size_pt: Font size in points.
+            tr_padding_v: Vertical padding in pixels.
+            tr_padding_h: Horizontal padding in pixels.
+
+        Returns:
+            CSS string for table styling.
         """
-        Convert DataFrame to PDF (adapted from table_pdf_builder).
+        # Column-specific CSS
+        col_css = ""
+        for i, (w, align) in enumerate(zip(col_widths, col_alignments)):
+            col_css += f"th:nth-child({i+1}), td:nth-child({i+1}) {{ width: {w}%; text-align: {align}; box-sizing: border-box; }}\n"
+
+        # Format dimensions
+        def fmt(val):
+            return 'auto' if val == 'auto' else f"{val}mm"
+
+        width_css, height_css = fmt(page_width_mm), fmt(page_height_mm)
+        page_size = "auto" if width_css == 'auto' and height_css == 'auto' else f"{width_css} {height_css}"
+
+        return f"""<style>
+          @page {{ size: {page_size}; margin: 0; }}
+          body {{ font-family: Helvetica, Arial, sans-serif; font-size: {font_size_pt}pt; margin: 2mm; }}
+          table {{ border-collapse: collapse; width: 100%; table-layout: fixed; padding: 0; }}
+          th, td {{ border: 0; padding: {tr_padding_v}px {tr_padding_h}px; word-wrap: break-word; }}
+          th {{ background-color: #ccc; color: black; font-weight: bold; }}
+          tr:nth-child(even) {{ background-color: #f2f2f2; }}
+          {col_css}
+        </style>"""
+
+    def _df_to_pdf(
+        self,
+        df: Any,
+        output_file: str,
+        colnames: List[str],
+        col_widths: List[float],
+        col_alignments: List[str],
+        fig_width_mm: float,
+        fig_height_mm: Optional[float] = None,
+        font_size_pt: float = 6,
+        tr_padding_v: float = 1,
+        tr_padding_h: float = 3,
+    ) -> None:
+        """Convert DataFrame to PDF using weasyprint.
+
+        Args:
+            df: pandas DataFrame to convert.
+            output_file: Output PDF file path.
+            colnames: Column header names.
+            col_widths: Column widths as percentages.
+            col_alignments: Column text alignments.
+            fig_width_mm: Page width in millimeters.
+            fig_height_mm: Page height (auto-calculated if None).
+            font_size_pt: Font size in points.
+            tr_padding_v: Vertical cell padding in pixels.
+            tr_padding_h: Horizontal cell padding in pixels.
+
+        Raises:
+            ValueError: If column counts don't match.
         """
         from weasyprint import HTML
-        
+
         if len(df.columns) != len(colnames):
             raise ValueError("Number of column names does not match DataFrame columns")
         if len(col_widths) != len(colnames):
             raise ValueError("Number of column widths does not match number of columns")
         if len(col_alignments) != len(colnames):
             raise ValueError("Number of column alignments does not match number of columns")
-        
+
+        # Auto-calculate height if not provided
         if fig_height_mm is None:
-            fig_height_mm = self._guess_pdf_height_mm(len(df) + 1)  # +1 for header
-        
-        # Replace column names
+            page_width = fig_width_mm if fig_width_mm != 'auto' else 174
+            fig_height_mm = self._find_optimal_height(
+                df, col_widths, col_alignments, page_width, font_size_pt, tr_padding_v, tr_padding_h
+            )
+
         df.columns = colnames
-        
-        # Build column width & alignment CSS
-        col_css = ""
-        for i, (w, align) in enumerate(zip(col_widths, col_alignments)):
-            col_css += f"th:nth-child({i+1}), td:nth-child({i+1}) {{ width: {w}%; text-align: {align}; box-sizing: border-box; }}\n"
-        
-        # Build CSS
-        # Handle 'auto' dimensions and numeric values
-        def format_dimension(value):
-            """Format dimension value for CSS."""
-            if value == 'auto':
-                return 'auto'
+        css = self._build_table_css(col_widths, col_alignments, fig_width_mm, fig_height_mm,
+                                     font_size_pt, tr_padding_v, tr_padding_h)
+
+        logger.info(f"  Generating PDF with dimensions: {fig_width_mm}mm x {fig_height_mm}mm")
+        HTML(string=css + df.to_html(index=False, escape=True)).write_pdf(output_file)
+
+    def _find_optimal_height(
+        self,
+        df: Any,
+        col_widths: List[float],
+        col_alignments: List[str],
+        page_width_mm: float,
+        font_size_pt: float,
+        tr_padding_v: float,
+        tr_padding_h: float,
+    ) -> float:
+        """Find minimum page height that fits content on one page.
+
+        Uses binary search to find optimal height.
+
+        Args:
+            df: pandas DataFrame.
+            col_widths: Column widths as percentages.
+            col_alignments: Column text alignments.
+            page_width_mm: Page width in millimeters.
+            font_size_pt: Font size in points.
+            tr_padding_v: Vertical padding in pixels.
+            tr_padding_h: Horizontal padding in pixels.
+
+        Returns:
+            Optimal page height in millimeters.
+        """
+        from weasyprint import HTML
+
+        def fits_on_one_page(height_mm: float) -> bool:
+            css = self._build_table_css(col_widths, col_alignments, page_width_mm, height_mm,
+                                         font_size_pt, tr_padding_v, tr_padding_h)
+            return len(HTML(string=css + df.to_html(index=False, escape=True)).render().pages) == 1
+
+        low, high = 10.0, 2000.0
+        if not fits_on_one_page(high):
+            logger.warning("Content doesn't fit on 2000mm page")
+            return high
+
+        while high - low > 1.0:
+            mid = (low + high) / 2
+            if fits_on_one_page(mid):
+                high = mid
             else:
-                return f"{value}mm"
-        
-        width_css = format_dimension(fig_width_mm)
-        height_css = format_dimension(fig_height_mm)
-        
-        if width_css == 'auto' and height_css == 'auto':
-            page_size = "auto"
+                low = mid
+
+        return high * 1.02  # Small buffer for safety
+
+    def _guess_pdf_height_mm(
+        self,
+        n_rows: int,
+        font_size_pt: float = 6,
+        df: Any = None,
+        page_width_mm: float = 174,
+    ) -> float:
+        """Estimate page height for table.
+
+        Uses binary search if DataFrame provided, otherwise formula-based.
+
+        Args:
+            n_rows: Number of data rows.
+            font_size_pt: Font size in points.
+            df: Optional pandas DataFrame for accurate calculation.
+            page_width_mm: Page width in millimeters.
+
+        Returns:
+            Estimated page height in millimeters.
+        """
+        if df is not None:
+            # Use accurate binary search
+            n_cols = len(df.columns)
+            col_widths = [100.0 / n_cols] * n_cols
+            col_alignments = ['left'] * n_cols
+            return self._find_optimal_height(df, col_widths, col_alignments,
+                                              page_width_mm, font_size_pt, 1, 3)
         else:
-            page_size = f"{width_css} {height_css}"
-        
-        logger.info(f"  Generating PDF with dimensions: {width_css} x {height_css}")
-        
-        css = f"""
-        <style>
-          @page {{
-            size: {page_size};
-            margin: 0;
-          }}
-          body {{
-            font-family: Helvetica, Arial, sans-serif;
-            font-size: {font_size_pt}pt;
-            margin: 2mm;
-          }}
-          table {{
-            border-collapse: collapse;
-            width: 100%;
-            table-layout: fixed;
-            padding: 0;
-          }}
-          th, td {{
-            border: 0;
-            padding: {tr_padding_v}px {tr_padding_h}px;
-            word-wrap: break-word;
-          }}
-          th {{
-            background-color: #ccc;
-            color: black;
-            font-weight: bold;
-          }}
-          tr:nth-child(even) {{background-color: #f2f2f2;}}
-          {col_css}
-        </style>
-        """
-        
-        # Generate HTML
-        html_content = css + df.to_html(index=False, escape=True)
-        
-        # Render PDF
-        HTML(string=html_content).write_pdf(output_file)
-    
-    def _guess_pdf_height_mm(self, n_rows: int) -> float:
-        """
-        Estimate page height (mm) based on number of rows.
-        """
-        slope = (215 - 12) / (60 - 3)   # ~3.5614
-        intercept = 12 - slope * 3      # ~1.316
-        return slope * n_rows + intercept
+            # Formula fallback (for tests without df)
+            slope = 2.64 + (font_size_pt - 6) * 0.353
+            return (slope * n_rows + 2.5) * 1.10
     
     def get_output_path(self, source_path: str, doc_id: str, figure_type: str) -> Path:
-        """
-        Determine the output path for converted figure.
+        """Determine the output path for converted figure.
+
+        Args:
+            source_path: Source file path or URL.
+            doc_id: Document ID for cache context.
+            figure_type: Type of figure ('svg', 'csv', 'sheet').
+
+        Returns:
+            Absolute path for the output PDF file.
         """
         if figure_type == 'svg':
             # For SVG files, replace extension with .pdf
@@ -635,23 +753,20 @@ class FigureConverter:
             return Path(source_path)
 
     def _get_relative_output_path(self, source_path: str, figure_type: str) -> str:
-        """
-        Get the relative output path for a converted figure.
+        """Get relative output path for a converted figure.
 
-        Preserves the directory structure from the source path, just changes extension.
-        This ensures the output path matches LaTeX conventions and makes documents portable.
-
-        Examples:
-            "fig/overview.svg" -> "fig/overview.pdf"
-            "images/diagram.csv" -> "images/diagram.pdf"
-            "overview.svg" -> "overview.pdf"
+        Preserves directory structure, just changes extension to .pdf.
 
         Args:
-            source_path: Original path from markdown (e.g., "fig/overview.svg")
-            figure_type: Type of figure ('svg', 'csv', 'sheet')
+            source_path: Original path from markdown (e.g., "fig/overview.svg").
+            figure_type: Type of figure ('svg', 'csv', 'sheet').
 
         Returns:
-            Relative path string with PDF extension
+            Relative path string with PDF extension.
+
+        Example:
+            >>> _get_relative_output_path("fig/overview.svg", "svg")
+            'fig/overview.pdf'
         """
         if figure_type == 'svg':
             return source_path.replace('.svg', '.pdf')
@@ -805,901 +920,3 @@ class FigureConverter:
                 unique_figures.append((path, params))
         
         return unique_figures
-    
-    def extract_figure_references(self, markdown_content: str) -> List[Tuple[str, int, str, int, str]]:
-        """
-        Extract all figure references from markdown content.
-
-        Finds references in formats like:
-        - (Fig. 2), (Figure 2), (Fig 2)
-        - (Fig. 2A), (Fig. 3B, 3C), (Figure 3B-D)
-        - (Figure S2), (Supplemental Figure 2)
-        - Figure \ref{fig:label} with or without spaces before panels
-        - Non-parenthetic references: "as shown in Figure 2"
-
-        Returns:
-            List of tuples: (reference_text, figure_number, panel_letters, line_number, context)
-        """
-        references = []
-        lines = markdown_content.split('\n')
-
-        for line_num, line in enumerate(lines, 1):
-            # Skip lines that are image definitions
-            if line.strip().startswith('![') or re.match(r'^\s*\[[^\]]+\]:\s*', line):
-                continue
-
-            # Track positions already matched to avoid duplicates
-            matched_positions = set()
-
-            # Simplified patterns - handle each type separately for better control
-            # Order matters! More specific patterns should come first to avoid being masked by general ones
-            patterns = [
-                # Context phrases (including "shown in") - MUST come first to capture the full phrase
-                r'(?:as\s+shown\s+in\s+|see\s+|shown\s+in\s+|described\s+in\s+|illustrated\s+in\s+)Fig(?:ure)?\.?\s*(?:\\ref\{[^}]+\}|S?\d+)[A-Z]?(?:-[A-Z])?',
-                # LaTeX ref style with panel - NO space allowed before panel letter
-                # Include optional parentheses in capture
-                r'\(?\s*Fig(?:ure)?\.?\s*\\ref\{[^}]+\}[A-Z]?(?:-[A-Z])?\)?',
-                # LaTeX ref style WITHOUT panel but potentially with space (error case)
-                r'\(\s*Fig(?:ure)?\.?\s*\\ref\{[^}]+\}\s+[A-Z]?\)',
-                # Multi-panel references in parentheses - MUST come before simple pattern
-                # Matches "(Fig. 3A, 3B)" or "(Fig. S3, S4)" etc.
-                r'\(\s*Fig(?:ure)?\.?\s*S?\d+[A-Z]?(?:-[A-Z])?(?:\s*,\s*(?:Fig(?:ure)?\.?\s*)?[S\d]+[A-Z]?(?:-[A-Z])?)*\s*\)',
-                # Simple figure references (parenthetic or not) - catches figures anywhere including inside parentheses
-                # This will match Fig. 2C even when preceded by other text like "AUC >98%; Fig. 2C"
-                # Include optional parentheses in capture
-                r'\(?\s*(?:Supplemental\s+)?Fig(?:ure)?\.?\s*S?\d+[A-Z]?(?:-[A-Z])?\)?',
-            ]
-
-            for pattern in patterns:
-                for match in re.finditer(pattern, line, re.IGNORECASE):
-                    # Check if any part of this match overlaps with already matched positions
-                    if any(pos in matched_positions for pos in range(match.start(), match.end())):
-                        continue
-
-                    # Mark this position range as matched
-                    for pos in range(match.start(), match.end()):
-                        matched_positions.add(pos)
-
-                    ref_text = match.group(0).strip()
-
-                    # Clean up the reference text (remove trailing punctuation that's not part of parentheses)
-                    if ref_text and ref_text[-1] in ',;' and not ref_text.startswith('('):
-                        ref_text = ref_text[:-1]
-
-                    # Check if this is a multi-figure reference
-                    multi_refs = self.parse_multi_figure_reference(ref_text)
-
-                    if multi_refs:
-                        # Get context once for all references in this match
-                        start_pos = max(0, match.start() - 30)
-                        end_pos = min(len(line), match.end() + 30)
-                        context = line[start_pos:end_pos].strip()
-
-                        # Add each figure reference separately
-                        for figure_num, panels in multi_refs:
-                            references.append((
-                                ref_text,  # Keep original text for reporting
-                                figure_num,
-                                panels,
-                                line_num,
-                                context
-                            ))
-                    else:
-                        # Single reference - parse normally
-                        parsed = self.parse_figure_reference(ref_text)
-                        if parsed:
-                            figure_num, panels = parsed
-
-                            # Get context (surrounding text)
-                            start_pos = max(0, match.start() - 30)
-                            end_pos = min(len(line), match.end() + 30)
-                            context = line[start_pos:end_pos].strip()
-
-                            references.append((
-                                ref_text,
-                                figure_num,
-                                panels,
-                                line_num,
-                                context
-                            ))
-
-        return references
-    
-    def parse_multi_figure_reference(self, ref_text: str) -> Optional[List[Tuple[str, str]]]:
-        """
-        Parse multi-figure references like "(Fig. 3A, 3B)" or "(Fig. S3, S4)" or "(Fig. 2C, Fig. S2)".
-
-        Args:
-            ref_text: Reference text that might contain multiple figures
-
-        Returns:
-            List of tuples (figure_number, panel_letters) or None if not multi-ref
-        """
-        # First try to find all complete figure references with "Fig." prefix
-        # Pattern to match "Fig. X" or "Figure X" with optional panel
-        complete_fig_pattern = r'Fig(?:ure)?\.?\s*(S?\d+)([A-Z](?:-[A-Z])?)?'
-        complete_matches = list(re.finditer(complete_fig_pattern, ref_text, re.IGNORECASE))
-
-        if len(complete_matches) > 1:
-            # Multiple complete figure references like "(Fig. 2C, Fig. S2)"
-            refs = []
-            for match in complete_matches:
-                fig_num = match.group(1)
-                panel = match.group(2) or ''
-                refs.append((fig_num, panel))
-            return refs
-
-        # Fall back to original abbreviated format handling: "(Fig. 3A, 3B)" or "(Fig. S3, S4)"
-        # Pattern: Fig. followed by figure number, then comma-separated additional refs
-        pattern = r'\(?\s*Fig(?:ure)?\.?\s*(S?\d+)([A-Z](?:-[A-Z])?)?(?:\s*,\s*([S\d]+[A-Z]?(?:-[A-Z])?(?:\s*,\s*[S\d]+[A-Z]?(?:-[A-Z])?)*))?\)?'
-
-        match = re.match(pattern, ref_text, re.IGNORECASE)
-        if match and match.group(3):  # Has comma-separated parts
-            refs = []
-
-            # First figure
-            fig_num = match.group(1)
-            panel = match.group(2) or ''
-            refs.append((fig_num, panel))
-
-            # Additional figures
-            additional = match.group(3)
-            if additional:
-                # Split by comma and process each
-                for part in additional.split(','):
-                    part = part.strip()
-                    # Check if it's just a panel letter (e.g., "3B")
-                    if re.match(r'^[A-Z](?:-[A-Z])?$', part):
-                        # Just a panel for the same figure
-                        refs.append((fig_num, part))
-                    elif re.match(r'^S?\d+[A-Z]?(?:-[A-Z])?$', part):
-                        # Parse figure number and optional panel
-                        num_match = re.match(r'^(S?\d+)([A-Z](?:-[A-Z])?)?$', part)
-                        if num_match:
-                            refs.append((num_match.group(1), num_match.group(2) or ''))
-
-            return refs if len(refs) > 1 else None
-
-        return None
-    
-    def parse_figure_reference(self, ref_text: str) -> Optional[Tuple[str, str]]:
-        """
-        Parse a figure reference to extract figure number and panel letters.
-
-        Args:
-            ref_text: Reference text like "(Fig. 3B)", "Figure S2", etc.
-
-        Returns:
-            Tuple of (figure_number, panel_letters) or None if parsing fails
-        """
-        # Clean up the text - remove parentheses and trailing punctuation
-        ref_text = ref_text.strip('()')
-        if ref_text and ref_text[-1] in ',;':
-            ref_text = ref_text[:-1]
-
-        # Handle LaTeX \ref{} style
-        if '\\ref{' in ref_text:
-            # Extract the label
-            label_match = re.search(r'\\ref\{([^}]+)\}', ref_text)
-            if label_match:
-                label = label_match.group(1)
-                # Check for panel letters IMMEDIATELY after the ref (NO space allowed)
-                # Spaces before panel letters are LaTeX errors
-                panel_match = re.search(r'\\ref\{[^}]+\}([A-Z](?:-[A-Z])?)', ref_text)
-                panels = panel_match.group(1) if panel_match else ''
-                return (label, panels)
-
-        # Handle regular figure references
-        # Match patterns like "Fig. 3B", "Figure S2", "Supplemental Figure 2"
-        # Now also handles spaces before panels
-        patterns = [
-            # Standard format with optional space before panel
-            r'(?:Supplemental\s+)?Fig(?:ure)?\.?\s*(S?\d+)\s*([A-Z](?:-[A-Z])?)?',
-            # Handle single panel letter
-            r'(?:Supplemental\s+)?Fig(?:ure)?\.?\s*(S?\d+)\s*([A-Z])',
-            # Handle comma-separated panels like "3B, 3C"
-            r'(\d+)\s*([A-Z](?:\s*,\s*[A-Z])*)',
-        ]
-
-        for pattern in patterns:
-            match = re.search(pattern, ref_text, re.IGNORECASE)
-            if match:
-                figure_num = match.group(1)
-                panels = match.group(2) if len(match.groups()) > 1 and match.group(2) else ''
-                # Clean up panels - remove spaces
-                if panels:
-                    panels = panels.replace(' ', '')
-                return (figure_num, panels)
-
-        return None
-    
-    def extract_figure_labels(self, markdown_content: str) -> Dict[str, Tuple[int, str]]:
-        r"""
-        Extract figure label definitions from figure captions in markdown.
-
-        Finds labels in patterns like:
-        - ![**\label{overview} Figure 1.** Caption text](path.svg)
-        - ![**\label{supp-data} Supplemental Figure 1.** Caption text](path.svg)
-
-        Args:
-            markdown_content: The full markdown document content
-
-        Returns:
-            Dict mapping label names to tuples of (line_number, figure_type)
-            where figure_type is either 'main' or 'supplemental'
-        """
-        labels = {}
-        lines = markdown_content.split('\n')
-
-        # Pattern to match: ![**\label{name} Supplemental Figure ...
-        # or: ![**\label{name} Figure ...
-        pattern = r'!\[\*\*\\label\{([^}]+)\}\s*(Supplemental\s+)?Figure'
-
-        for line_num, line in enumerate(lines, 1):
-            # Only look at lines that start image definitions
-            if not line.strip().startswith('!['):
-                continue
-
-            match = re.search(pattern, line)
-            if match:
-                label_name = match.group(1)
-                is_supplemental = match.group(2) is not None
-                figure_type = 'supplemental' if is_supplemental else 'main'
-
-                labels[label_name] = (line_num, figure_type)
-
-        return labels
-
-    def build_label_order_map(self, label_definitions: Dict[str, Tuple[int, str]]) -> Dict[str, int]:
-        """
-        Build a mapping from label names to their sequential order within each figure type.
-
-        Args:
-            label_definitions: Dict from extract_figure_labels() with label -> (line_num, type)
-
-        Returns:
-            Dict mapping label names to their order number (1, 2, 3, etc.)
-            Main and supplemental figures are numbered separately.
-        """
-        # Separate main and supplemental figures
-        main_labels = [(label, line_num) for label, (line_num, fig_type) in label_definitions.items()
-                       if fig_type == 'main']
-        supp_labels = [(label, line_num) for label, (line_num, fig_type) in label_definitions.items()
-                       if fig_type == 'supplemental']
-
-        # Sort by line number (definition order)
-        main_labels.sort(key=lambda x: x[1])
-        supp_labels.sort(key=lambda x: x[1])
-
-        # Assign order numbers
-        label_order = {}
-        for i, (label, _) in enumerate(main_labels, 1):
-            label_order[label] = i
-        for i, (label, _) in enumerate(supp_labels, 1):
-            label_order[label] = i
-
-        return label_order
-
-    def validate_figure_order(self, references: List[Tuple[str, int, str, int, str]], markdown_content: str = None) -> List[Dict[str, Any]]:
-        """
-        Validate that figure references appear in logical order.
-
-        Checks both numeric references (Fig. 3, Fig S2) and LaTeX label references
-        (Fig. \ref{overview}, Supplemental Figure \ref{suppfig1}).
-
-        For numeric references:
-        - Main figures should appear in order: 1, 2, 3, ...
-        - Supplemental figures should appear in order: S1, S2, S3, ...
-        - Detects out-of-order citations (e.g., Fig 5 before Fig 3)
-        - Detects gaps (e.g., Fig 1, then Fig 5, missing 2-4)
-
-        For label-based references:
-        - Builds mapping from labels to appearance order in supplement section
-        - Validates references cite figures in the order they appear
-        - Detects out-of-order citations (e.g., citing 3rd supp fig before 1st)
-        - Detects gaps (e.g., citing supp figs 1 and 3, but not 2)
-
-        Args:
-            references: List of figure references from extract_figure_references
-            markdown_content: Optional markdown content for label extraction
-
-        Returns:
-            List of order violations with details
-        """
-        violations = []
-
-        # Track first occurrence of each figure (both numeric and label-based)
-        first_occurrences = {}
-        figure_order = []
-        label_references = []  # Track label-based references separately
-
-        for ref_text, fig_num, panels, line_num, context in references:
-            # Handle LaTeX label references
-            if '\\ref{' in str(ref_text):
-                # Store label references for later processing
-                label_references.append((fig_num, line_num, ref_text, context))
-                continue
-
-            # Track first occurrence of numeric references
-            if fig_num not in first_occurrences:
-                first_occurrences[fig_num] = {
-                    'line': line_num,
-                    'text': ref_text,
-                    'context': context
-                }
-                figure_order.append(fig_num)
-        
-        # Check if main figures are in order
-        main_figures = [f for f in figure_order if not f.startswith('S')]
-        supplemental_figures = [f for f in figure_order if f.startswith('S')]
-        
-        # Check main figure ordering
-        for i in range(1, len(main_figures)):
-            try:
-                curr_num = int(main_figures[i])
-                prev_num = int(main_figures[i-1])
-                
-                if curr_num < prev_num:
-                    violations.append({
-                        'type': 'out_of_order',
-                        'figure': main_figures[i],
-                        'expected_after': main_figures[i-1],
-                        'line': first_occurrences[main_figures[i]]['line'],
-                        'context': first_occurrences[main_figures[i]]['context'],
-                        'message': f"Figure {curr_num} appears after Figure {prev_num}"
-                    })
-            except ValueError:
-                # Skip if not a simple number
-                pass
-        
-        # Check supplemental figure ordering
-        for i in range(1, len(supplemental_figures)):
-            try:
-                curr_num = int(supplemental_figures[i][1:])  # Remove 'S' prefix
-                prev_num = int(supplemental_figures[i-1][1:])
-
-                if curr_num < prev_num:
-                    violations.append({
-                        'type': 'out_of_order',
-                        'figure': supplemental_figures[i],
-                        'expected_after': supplemental_figures[i-1],
-                        'line': first_occurrences[supplemental_figures[i]]['line'],
-                        'context': first_occurrences[supplemental_figures[i]]['context'],
-                        'message': f"Figure {supplemental_figures[i]} appears after Figure {supplemental_figures[i-1]}"
-                    })
-            except (ValueError, IndexError):
-                # Skip if not a simple number
-                pass
-
-        # Check for gaps in main figure sequence
-        if len(main_figures) > 1:
-            try:
-                main_nums = [int(f) for f in main_figures]
-                expected_figures = list(range(min(main_nums), max(main_nums) + 1))
-                missing_figures = [f for f in expected_figures if str(f) not in main_figures]
-
-                for missing in missing_figures:
-                    # Find the first figure after the gap
-                    later_figures = [f for f in main_nums if f > missing]
-                    if later_figures:
-                        first_later = str(later_figures[0])
-                        violations.append({
-                            'type': 'missing_figure',
-                            'figure': str(missing),
-                            'referenced_after': first_later,
-                            'line': first_occurrences[first_later]['line'],
-                            'context': first_occurrences[first_later]['context'],
-                            'message': f"Figure {first_later} referenced, but Figure {missing} was never referenced"
-                        })
-            except (ValueError, TypeError):
-                pass
-
-        # Check for gaps in supplemental figure sequence
-        if len(supplemental_figures) > 1:
-            try:
-                # Extract numeric parts
-                supp_nums = [int(f[1:]) for f in supplemental_figures]
-                expected_supps = list(range(min(supp_nums), max(supp_nums) + 1))
-                missing_supps = [f for f in expected_supps if f'S{f}' not in supplemental_figures]
-
-                for missing in missing_supps:
-                    # Find the first figure after the gap
-                    later_supps = [f for f in supp_nums if f > missing]
-                    if later_supps:
-                        first_later = f'S{later_supps[0]}'
-                        violations.append({
-                            'type': 'missing_figure',
-                            'figure': f'S{missing}',
-                            'referenced_after': first_later,
-                            'line': first_occurrences[first_later]['line'],
-                            'context': first_occurrences[first_later]['context'],
-                            'message': f"Figure {first_later} referenced, but Figure S{missing} was never referenced"
-                        })
-            except (ValueError, TypeError, IndexError):
-                pass
-
-        # Validate LaTeX label-based figures if markdown_content provided
-        if markdown_content and label_references:
-            try:
-                # Extract label definitions from markdown
-                label_definitions = self.extract_figure_labels(markdown_content)
-
-                if label_definitions:
-                    # Build label-to-order mapping
-                    label_order_map = self.build_label_order_map(label_definitions)
-
-                    # Track label references by type
-                    label_ref_order = []  # List of (label, line_num, text, context, fig_type)
-
-                    for label, line_num, ref_text, context in label_references:
-                        if label in label_definitions:
-                            _, fig_type = label_definitions[label]
-                            label_ref_order.append((label, line_num, ref_text, context, fig_type))
-
-                    # Separate main and supplemental label references
-                    main_label_refs = [r for r in label_ref_order if r[4] == 'main']
-                    supp_label_refs = [r for r in label_ref_order if r[4] == 'supplemental']
-
-                    # Check supplemental label order
-                    for i in range(1, len(supp_label_refs)):
-                        curr_label, curr_line, curr_text, curr_context, _ = supp_label_refs[i]
-                        prev_label, prev_line, prev_text, prev_context, _ = supp_label_refs[i-1]
-
-                        curr_order = label_order_map.get(curr_label, 0)
-                        prev_order = label_order_map.get(prev_label, 0)
-
-                        if curr_order > 0 and prev_order > 0 and curr_order < prev_order:
-                            violations.append({
-                                'type': 'label_out_of_order',
-                                'figure': curr_label,
-                                'expected_after': prev_label,
-                                'line': curr_line,
-                                'context': curr_context,
-                                'message': f"Supplemental figure '{curr_label}' (appears {curr_order} in supplement) "
-                                          f"is referenced before '{prev_label}' (appears {prev_order} in supplement)"
-                            })
-
-                    # Check for gaps in supplemental label references
-                    if len(supp_label_refs) > 1:
-                        referenced_orders = sorted([label_order_map[label] for label, _, _, _, _ in supp_label_refs
-                                                   if label in label_order_map])
-
-                        if referenced_orders:
-                            expected_range = list(range(min(referenced_orders), max(referenced_orders) + 1))
-                            missing_orders = [o for o in expected_range if o not in referenced_orders]
-
-                            if missing_orders:
-                                # Find which labels correspond to missing orders
-                                for missing_order in missing_orders:
-                                    missing_labels = [label for label, order in label_order_map.items()
-                                                     if order == missing_order and label_definitions.get(label, (0, ''))[1] == 'supplemental']
-
-                                    for missing_label in missing_labels:
-                                        violations.append({
-                                            'type': 'missing_supplemental_label',
-                                            'figure': missing_label,
-                                            'message': f"Supplemental figure '{missing_label}' (position {missing_order}) "
-                                                      f"is never referenced in text"
-                                        })
-
-                    # Check for mixed referencing style (warning only)
-                    numeric_supps = [f for f in supplemental_figures if f.startswith('S') and f[1:].isdigit()]
-                    label_supps = [label for label, (_, fig_type) in label_definitions.items()
-                                  if fig_type == 'supplemental']
-
-                    if numeric_supps and label_supps:
-                        violations.append({
-                            'type': 'mixed_reference_style',
-                            'message': f"Document uses both numeric ({len(numeric_supps)} refs) and "
-                                      f"label-based ({len(label_supps)} refs) for supplemental figures. "
-                                      f"Consider using one consistent style."
-                        })
-
-            except Exception as e:
-                # Don't fail validation if label processing has issues
-                import logging
-                logger = logging.getLogger("markmeld")
-                logger.debug(f"Label validation error: {e}")
-
-        return violations
-
-    def validate_panel_order(self, references: List[Tuple[str, int, str, int, str]]) -> List[Dict[str, Any]]:
-        """
-        Validate that figure panels appear in correct alphabetical order.
-
-        Args:
-            references: List of figure references from extract_figure_references
-
-        Returns:
-            List of panel order violations with details
-        """
-        violations = []
-
-        # Track panels seen for each figure
-        figure_panels = {}  # figure_num -> {panel -> (line, context)}
-
-        for ref_text, fig_num, panels, line_num, context in references:
-            # Skip LaTeX references with labels for now
-            if '\\ref{' in str(fig_num):
-                # For LaTeX refs, extract base figure name without 'fig:' prefix
-                if fig_num.startswith('fig:'):
-                    fig_num = fig_num[4:]
-
-            # Skip if no panels
-            if not panels:
-                continue
-
-            # Initialize tracking for this figure if needed
-            if fig_num not in figure_panels:
-                figure_panels[fig_num] = {}
-
-            # Handle multi-panel references (e.g., "B-D")
-            if '-' in panels:
-                # Extract range (e.g., "B-D" -> ['B', 'C', 'D'])
-                start_panel = panels[0]
-                end_panel = panels[2] if len(panels) >= 3 else panels[0]
-                for p in range(ord(start_panel), ord(end_panel) + 1):
-                    panel = chr(p)
-                    if panel not in figure_panels[fig_num]:
-                        figure_panels[fig_num][panel] = (line_num, context)
-            else:
-                # Single panel or comma-separated panels
-                panel_list = panels.split(',') if ',' in panels else [panels]
-                for panel in panel_list:
-                    panel = panel.strip()
-                    if panel and panel not in figure_panels[fig_num]:
-                        figure_panels[fig_num][panel] = (line_num, context)
-
-        # Check each figure for panel order violations
-        for fig_num, panels_dict in figure_panels.items():
-            if not panels_dict:
-                continue
-
-            # Get sorted list of panels that were referenced
-            panels_seen = sorted(panels_dict.keys())
-
-            # Check if first panel is not 'A'
-            if panels_seen and panels_seen[0] != 'A':
-                first_panel = panels_seen[0]
-                line_num, context = panels_dict[first_panel]
-                violations.append({
-                    'type': 'missing_panel_A',
-                    'figure': fig_num,
-                    'first_panel': first_panel,
-                    'line': line_num,
-                    'context': context,
-                    'message': f"Figure {fig_num} starts with panel {first_panel}, but panel A was never referenced"
-                })
-
-            # Check for gaps in panel sequence
-            if len(panels_seen) > 1:
-                expected_panels = [chr(ord('A') + i) for i in range(ord(panels_seen[-1]) - ord('A') + 1)]
-                missing_panels = [p for p in expected_panels if p not in panels_seen]
-
-                if missing_panels:
-                    # Find the first referenced panel after the gap
-                    for missing in missing_panels:
-                        # Find panels that come after the missing one
-                        later_panels = [p for p in panels_seen if p > missing]
-                        if later_panels:
-                            first_later = later_panels[0]
-                            line_num, context = panels_dict[first_later]
-                            violations.append({
-                                'type': 'missing_panel',
-                                'figure': fig_num,
-                                'missing_panel': missing,
-                                'referenced_panel': first_later,
-                                'line': line_num,
-                                'context': context,
-                                'message': f"Figure {fig_num} panel {first_later} referenced, but panel {missing} was never referenced"
-                            })
-
-            # Check if panels appear in correct alphabetical order
-            # Sort by line number to get the order panels were first mentioned
-            panel_order_by_line = sorted(panels_dict.items(), key=lambda x: x[1][0])
-            prev_panel = None
-            for panel, (line_num, context) in panel_order_by_line:
-                if prev_panel and panel < prev_panel:
-                    violations.append({
-                        'type': 'panel_out_of_order',
-                        'figure': fig_num,
-                        'panel': panel,
-                        'expected_after': prev_panel,
-                        'line': line_num,
-                        'context': context,
-                        'message': f"Figure {fig_num} panel {panel} appears before panel {prev_panel} (expected alphabetical order)"
-                    })
-                prev_panel = panel
-
-        return violations
-
-    def detect_figure_warnings(self, references: List[Tuple[str, int, str, int, str]]) -> List[Dict[str, Any]]:
-        """
-        Detect potential issues with figure references.
-
-        Args:
-            references: List of figure references
-
-        Returns:
-            List of warnings with details
-        """
-        warnings = []
-
-        # Check for non-parenthetic references that might need parentheses
-        for ref_text, fig_num, panels, line_num, context in references:
-            # Skip if it's in a figure caption (starts with **)
-            if context.startswith('**'):
-                continue
-
-            # Check if ref_text starts with '(' or if it's within parentheses in the context
-            in_parentheses = ref_text.startswith('(')
-
-            # If ref_text doesn't start with '(', check if it appears within parentheses in context
-            if not in_parentheses and context:
-                # Find where the reference appears in the context
-                # Strip the leading/trailing parts of ref_text that might include closing parens
-                ref_core = ref_text.rstrip(')')
-                ref_pos = context.find(ref_core)
-                if ref_pos > 0:
-                    # Check if there's an opening paren before the reference
-                    text_before = context[:ref_pos]
-                    # Count parens - if there's an unmatched '(' before us, we're in parentheses
-                    open_count = text_before.count('(')
-                    close_count = text_before.count(')')
-                    in_parentheses = open_count > close_count
-
-            # Warning for references not in parentheses (unless in specific contexts)
-            if not in_parentheses:
-                # Check if the reference text itself contains acceptable context phrases
-                # These are typically part of the match when using our combined pattern
-                acceptable_starts = [
-                    'as shown in',
-                    'see fig',
-                    'shown in fig',
-                    'described in fig',
-                    'illustrated in fig'
-                ]
-
-                ref_lower = ref_text.lower()
-                if not any(ref_lower.startswith(ctx) for ctx in acceptable_starts):
-                    # For standalone "Figure X" references, check context
-                    if ref_lower.startswith('fig'):
-                        # This is a standalone figure reference - warn about it
-                        warnings.append({
-                            'type': 'no_parentheses',
-                            'figure': fig_num,
-                            'line': line_num,
-                            'text': ref_text,
-                            'context': context,
-                            'message': f"Figure reference '{ref_text}' is not in parentheses"
-                        })
-
-        return warnings
-    
-    def generate_figure_analysis_report(self, markdown_content: str) -> str:
-        """
-        Generate a comprehensive figure reference analysis report.
-
-        Args:
-            markdown_content: The markdown content to analyze
-
-        Returns:
-            Formatted report string
-        """
-        # Extract references
-        references = self.extract_figure_references(markdown_content)
-
-        if not references:
-            return ""
-
-        # Validate figure order
-        figure_violations = self.validate_figure_order(references, markdown_content)
-
-        # Validate panel order
-        panel_violations = self.validate_panel_order(references)
-
-        # Detect warnings
-        warnings = self.detect_figure_warnings(references)
-
-        # Check for prefix consistency
-        prefix_warnings = self.check_prefix_consistency(references)
-
-        # Build report
-        report_lines = []
-
-        # Summary
-        report_lines.append("")
-        report_lines.append("=" * 70)
-        report_lines.append("📊 FIGURE REFERENCE ANALYSIS")
-        report_lines.append("=" * 70)
-        report_lines.append("")
-        report_lines.append(f"Total figure references found: {len(references)}")
-
-        # Count unique figures (including all panels)
-        unique_figures = set()
-        unique_figure_bases = set()  # Just the figure numbers without panels
-        for _, fig_num, panels, _, _ in references:
-            if not '\\ref{' in str(fig_num):
-                # Add the full figure+panel combination
-                if panels:
-                    unique_figures.add(f"{fig_num}{panels}")
-                else:
-                    unique_figures.add(fig_num)
-                # Also track just the base figure number
-                unique_figure_bases.add(fig_num)
-
-        report_lines.append(f"Unique figures referenced: {len(unique_figure_bases)}")
-        report_lines.append("")
-
-        # List first occurrences - SORTED BY LINE NUMBER
-        first_occurrences = {}
-        for ref_text, fig_num, panels, line_num, context in references:
-            # Create a unique key for each figure+panel combination
-            if panels:
-                key = f"{fig_num}_{panels}"
-                display_text = f"Fig. {fig_num}{panels}"  # Normalized display
-            else:
-                key = fig_num
-                display_text = f"Fig. {fig_num}"  # Normalized display
-
-            if key not in first_occurrences:
-                first_occurrences[key] = {
-                    'line': line_num,
-                    'text': display_text,  # Use normalized text for cleaner display
-                    'panels': panels,
-                    'fig_num': fig_num,
-                    'original_text': ref_text  # Keep original for reference
-                }
-
-        if first_occurrences:
-            report_lines.append("First occurrence of each figure (ordered by appearance):")
-            # Sort by line number (order of appearance)
-            for key in sorted(first_occurrences.keys(),
-                            key=lambda x: first_occurrences[x]['line']):
-                info = first_occurrences[key]
-                # No need for panel_info since it's in the normalized text
-                report_lines.append(f"  Line {info['line']:4d}: {info['text']}")
-            report_lines.append("")
-
-        # Report figure order violations (separate numeric and label-based)
-        numeric_violations = [v for v in figure_violations
-                             if v['type'] in ['out_of_order', 'missing_figure']]
-        label_violations = [v for v in figure_violations
-                           if v['type'] in ['label_out_of_order', 'missing_supplemental_label', 'mixed_reference_style']]
-
-        if numeric_violations:
-            report_lines.append("⚠️  NUMERIC FIGURE ORDER VIOLATIONS:")
-            report_lines.append("")
-            for violation in numeric_violations:
-                report_lines.append(f"  - {violation['message']}")
-                if 'line' in violation and violation['line'] > 0:
-                    report_lines.append(f"    Line {violation['line']}: {violation.get('context', '')}")
-                report_lines.append("")
-
-        if label_violations:
-            report_lines.append("⚠️  LABEL-BASED FIGURE ORDER VIOLATIONS:")
-            report_lines.append("")
-            for violation in label_violations:
-                report_lines.append(f"  - {violation['message']}")
-                if 'line' in violation and violation['line'] > 0:
-                    report_lines.append(f"    Line {violation['line']}: {violation.get('context', '')}")
-                report_lines.append("")
-
-        # Report panel order violations
-        if panel_violations:
-            report_lines.append("❌ PANEL ORDER VIOLATIONS:")
-            report_lines.append("")
-            for violation in panel_violations:
-                report_lines.append(f"  - {violation['message']}")
-                if violation['line'] > 0:  # Some violations may not have a specific line
-                    report_lines.append(f"    Line {violation['line']}: {violation['context']}")
-                report_lines.append("")
-
-        # Report prefix consistency warnings
-        if prefix_warnings:
-            report_lines.append("⚠️  FIGURE PREFIX INCONSISTENCIES:")
-            report_lines.append("")
-            for warning in prefix_warnings:
-                report_lines.append(f"  - {warning['message']}")
-                if warning['line'] > 0:
-                    report_lines.append(f"    Line {warning['line']}: {warning['context']}")
-                report_lines.append("")
-
-        # Report other warnings
-        if warnings:
-            report_lines.append("⚠️  FIGURE REFERENCE WARNINGS:")
-            report_lines.append("")
-            for warning in warnings:
-                report_lines.append(f"  - {warning['message']}")
-                report_lines.append(f"    Line {warning['line']}: {warning['context']}")
-                report_lines.append("")
-
-        if not numeric_violations and not label_violations and not panel_violations and not warnings and not prefix_warnings:
-            report_lines.append("✅ All figure references appear to be in order!")
-            report_lines.append("")
-
-        report_lines.append("=" * 70)
-        report_lines.append("")
-
-        return '\n'.join(report_lines)
-    
-    def check_prefix_consistency(self, references: List[Tuple[str, int, str, int, str]]) -> List[Dict[str, Any]]:
-        """
-        Check for inconsistent use of "Fig." vs "Figure" prefixes.
-        
-        Args:
-            references: List of figure references
-            
-        Returns:
-            List of warnings about prefix inconsistencies
-        """
-        warnings = []
-        
-        # Count the usage of different prefixes
-        prefix_counts = {
-            'Fig.': 0,
-            'Figure': 0,
-            'Fig': 0  # Without period
-        }
-        
-        prefix_examples = {
-            'Fig.': [],
-            'Figure': [],
-            'Fig': []
-        }
-        
-        for ref_text, fig_num, panels, line_num, context in references:
-            # Skip LaTeX references as they might have different patterns
-            if '\\ref{' in ref_text:
-                continue
-                
-            # Determine which prefix is used
-            ref_lower = ref_text.lower()
-            if 'fig.' in ref_lower:
-                prefix_counts['Fig.'] += 1
-                prefix_examples['Fig.'].append((ref_text, line_num, context))
-            elif 'figure' in ref_lower:
-                prefix_counts['Figure'] += 1
-                prefix_examples['Figure'].append((ref_text, line_num, context))
-            elif 'fig' in ref_lower:
-                prefix_counts['Fig'] += 1
-                prefix_examples['Fig'].append((ref_text, line_num, context))
-        
-        # Determine the dominant prefix
-        total_refs = sum(prefix_counts.values())
-        if total_refs == 0:
-            return warnings
-            
-        dominant_prefix = max(prefix_counts, key=prefix_counts.get)
-        dominant_count = prefix_counts[dominant_prefix]
-        
-        # If one prefix is used >80% of the time, warn about the minority uses
-        if dominant_count > 0.8 * total_refs:
-            for prefix, count in prefix_counts.items():
-                if prefix != dominant_prefix and count > 0:
-                    # Add warnings for the minority prefix usage
-                    for ref_text, line_num, context in prefix_examples[prefix][:3]:  # Show first 3 examples
-                        warnings.append({
-                            'type': 'prefix_inconsistency',
-                            'prefix': prefix,
-                            'dominant_prefix': dominant_prefix,
-                            'line': line_num,
-                            'text': ref_text,
-                            'context': context,
-                            'message': f"Inconsistent prefix: '{prefix}' used here, but '{dominant_prefix}' is used in {dominant_count}/{total_refs} references"
-                        })
-                    
-                    # If there are more than 3, add a summary
-                    if len(prefix_examples[prefix]) > 3:
-                        remaining = len(prefix_examples[prefix]) - 3
-                        warnings.append({
-                            'type': 'prefix_inconsistency_summary',
-                            'prefix': prefix,
-                            'dominant_prefix': dominant_prefix,
-                            'line': 0,
-                            'text': '',
-                            'context': '',
-                            'message': f"... and {remaining} more instances of '{prefix}' instead of '{dominant_prefix}'"
-                        })
-        
-        return warnings
