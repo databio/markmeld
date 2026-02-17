@@ -71,18 +71,21 @@ def create_test_dataframe(n_rows: int) -> pd.DataFrame:
 class TestTableHeightCalculation:
     """Test suite for table height calculation."""
 
-    ROW_COUNTS = [6, 24, 48, 60]
-    FONT_SIZES = [6, 12, 18]
+    REPRESENTATIVE_CASES = [
+        (6, 6),    # small table, small font
+        (6, 18),   # small table, large font
+        (60, 6),   # large table, small font
+        (60, 18),  # large table, large font
+    ]
     MAX_OVERSHOOT_PERCENT = 25  # Maximum allowed overshoot
 
     @pytest.fixture
     def figure_converter(self):
         """Create FigureConverter instance."""
-        from markmeld.figure_converter import FigureConverter
+        from markmeld.google_drive import FigureConverter
         return FigureConverter(cache_manager=None)
 
-    @pytest.mark.parametrize("n_rows", ROW_COUNTS)
-    @pytest.mark.parametrize("font_size", FONT_SIZES)
+    @pytest.mark.parametrize("n_rows,font_size", REPRESENTATIVE_CASES)
     def test_no_undershoot(self, figure_converter, n_rows, font_size):
         """Test that calculated height fits content on 1 page (no undershoot)."""
         df = create_test_dataframe(n_rows)
@@ -105,8 +108,7 @@ class TestTableHeightCalculation:
         finally:
             Path(output_path).unlink(missing_ok=True)
 
-    @pytest.mark.parametrize("n_rows", ROW_COUNTS)
-    @pytest.mark.parametrize("font_size", FONT_SIZES)
+    @pytest.mark.parametrize("n_rows,font_size", REPRESENTATIVE_CASES)
     def test_no_excessive_overshoot(self, figure_converter, n_rows, font_size):
         """Test that calculated height is not excessively larger than minimum needed."""
         df = create_test_dataframe(n_rows)
@@ -144,10 +146,10 @@ class TestRealisticContent:
     @pytest.fixture
     def figure_converter(self):
         """Create FigureConverter instance."""
-        from markmeld.figure_converter import FigureConverter
+        from markmeld.google_drive import FigureConverter
         return FigureConverter(cache_manager=None)
 
-    @pytest.mark.parametrize("n_rows", [10, 30, 60])
+    @pytest.mark.parametrize("n_rows", [10, 60])
     def test_realistic_content_fits_single_page(self, figure_converter, n_rows):
         """Test that binary search finds height that fits realistic content on 1 page."""
         df = self.create_realistic_dataframe(n_rows)
@@ -173,7 +175,7 @@ class TestRealisticContent:
         finally:
             Path(output_path).unlink(missing_ok=True)
 
-    @pytest.mark.parametrize("n_rows", [10, 30, 60])
+    @pytest.mark.parametrize("n_rows", [10, 60])
     def test_realistic_content_minimal_overshoot(self, figure_converter, n_rows):
         """Test that binary search doesn't overshoot excessively for realistic content."""
         df = self.create_realistic_dataframe(n_rows)

@@ -28,10 +28,12 @@ def compare_to_file(file, string_to_compare):
 
 def test_output():
     cfg = markmeld.load_config_file("demo/null.yaml")
-    # cmd_data = markmeld.populate_cmd_data(cfg, "default", {})
     x = markmeld.MarkdownMelder(cfg)
     res = x.build_target("default", print_only=True)
-    print(res.melded_output)
+    assert res is not None
+    assert res.melded_output is not None
+    assert len(res.melded_output) > 0
+    assert res.returncode == 0
 
 
 def test_cli():
@@ -163,6 +165,9 @@ def test_null_jinja_template():
     )
     mm = markmeld.MarkdownMelder(cfg)
     res = mm.build_target("target_name", print_only=True)
+    assert res is not None
+    assert res.melded_output is not None
+    assert res.returncode == 0
 
 
 def test_variable_variables():

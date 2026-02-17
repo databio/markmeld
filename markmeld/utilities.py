@@ -4,30 +4,28 @@ This module contains helper functions for:
 - Configuration file loading and processing
 - Command formatting and execution
 - File operations and path handling
-- Markdown content cleaning and processing
 - Plugin loading and management
 """
 
 import glob
 import os
 import platform
-import re
 import subprocess
 import yaml
 from collections.abc import Mapping
-from logging import getLogger
+import logging
 from pathlib import Path
 from string import Template as StringTemplate
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 from ubiquerg import expandpath
 
-from .const import PKG_NAME, FILE_OPENER_MAP
+from .const import FILE_OPENER_MAP
 from .glob_factory import glob_factory
 
 
 
-_LOGGER = getLogger(PKG_NAME)
+_LOGGER = logging.getLogger(__name__)
 
 # ====================
 # Configuration and Command Processing
@@ -67,6 +65,32 @@ class MyTemplate(StringTemplate):
     # braceidpattern = r"[_a-z][_a-z0-9]*(?:\.[_a-z][_a-z0-9]*)*"  # allows dots, to enable nested variable names
 
 
+def expand_dict_templates(d: Dict[str, Any], max_iterations: int = 3) -> Dict[str, Any]:
+    """Expand template variables in string values of a dictionary.
+
+    Iterates over all string values containing '{', substituting template
+    references from the dictionary itself. Repeats up to max_iterations
+    times to resolve nested references.
+
+    Args:
+        d: Dictionary with string values that may contain {variable} references.
+        max_iterations: Maximum expansion passes to handle nested references.
+
+    Returns:
+        The dictionary with template variables expanded in-place.
+    """
+    for key, value in list(d.items()):
+        if isinstance(value, str) and '{' in value:
+            expanded = value
+            for _ in range(max_iterations):
+                new_expanded = MyTemplate(expanded).safe_substitute(**d)
+                if new_expanded == expanded:
+                    break
+                expanded = new_expanded
+            d[key] = expanded
+    return d
+
+
 def format_command(tgt: Any) -> str:
     """Format a command string by substituting variables from target metadata.
 
@@ -86,18 +110,12 @@ def format_command(tgt: Any) -> str:
     else:
         tgt.meta["output_file"] = None
 
-    # Add in custom command keys for all embedded resources
-    # (Note: These should already be injected during Target initialization,
-    # but we ensure they're present here for backward compatibility)
-    from .resource_manager import inject_resource_variables
-    tgt.meta = inject_resource_variables(tgt.meta)
-
     # Recursively expand variables (up to 5 iterations to prevent infinite loops)
     # This allows for variables to contain variables
     cmd = MyTemplate(expandpath(cmd)).safe_substitute(**tgt.meta)
     _LOGGER.debug(f"Expanded command: {cmd}")
     count = 1
-    while True and count < 5:
+    while count < 5:
         cmd_new = MyTemplate(expandpath(cmd)).safe_substitute(**tgt.meta)
         _LOGGER.debug(f"Expanded command: {cmd_new}")
         if cmd == cmd_new:
@@ -539,422 +557,3 @@ def sanitize_filename(filename: str) -> str:
             filename = filename[:251]
     
     return filename
-
-
-def clean_markdown(
-    markdown_content: str,
-    clean_escapes: bool = True,
-    remove_images: bool = True,
-    strip_heading_bold: bool = True,
-    replace_svg_with_pdf: bool = False,
-    fix_latex_chars: bool = True,
-) -> str:
-    """Apply cleaning operations to markdown content.
-
-    Primarily used to clean Google Docs exports for LaTeX processing.
-
-    Args:
-        markdown_content: Raw markdown content to clean.
-        clean_escapes: Remove escape characters from markdown elements.
-        remove_images: Remove embedded images and data URIs.
-        strip_heading_bold: Remove bold formatting from headings.
-        replace_svg_with_pdf: Replace .svg extensions with .pdf in images.
-        fix_latex_chars: Replace Unicode characters incompatible with LaTeX.
-
-    Returns:
-        Cleaned markdown content.
-    """
-    if clean_escapes:
-        markdown_content = clean_escape_characters(markdown_content)
-    
-    if remove_images:
-        markdown_content = remove_embedded_images(markdown_content)
-    
-    if strip_heading_bold:
-        markdown_content = strip_bold_from_headings(markdown_content)
-    
-    if replace_svg_with_pdf:
-        markdown_content = replace_svg_extensions(markdown_content)
-    
-    if fix_latex_chars:
-        markdown_content = check_and_fix_latex_incompatible_chars(markdown_content)
-    
-    return markdown_content
-
-
-def clean_escape_characters(markdown_content: str) -> str:
-    """Remove escape characters from markdown elements.
-
-    Used to clean Google Docs exports which over-escape markdown syntax.
-    Preserves LaTeX escape sequences.
-
-    Args:
-        markdown_content: Markdown content with escaped characters.
-
-    Returns:
-        Content with markdown escapes removed but LaTeX escapes preserved.
-    """
-    content = markdown_content
-    
-    # Remove escapes from various markdown characters (but NOT LaTeX ones)
-    content = content.replace('\\[', '[')
-    content = content.replace('\\]', ']')
-    content = content.replace('\\_', '_')
-    content = content.replace('\\!', '!')
-    content = content.replace('\\(', '(')
-    content = content.replace('\\)', ')')
-    content = content.replace('\\`', '`')
-    content = content.replace('\\-', '-')
-    content = content.replace('\\*', '*')
-    content = content.replace('\\=', '=')
-    content = content.replace('\\+', '+')
-    content = content.replace('\\<', '<')
-    content = content.replace('\\>', '>')
-    
-    # Handle LaTeX-specific fixes: convert double backslashes before LaTeX commands to single
-    # This fixes Google Docs converting \{ to \\{ while preserving the LaTeX command
-    content = re.sub(r'\\\\([{}\\])', r'\\\1', content)
-    
-    # Handle other LaTeX commands: convert \\alpha to \alpha, etc.
-    content = re.sub(r'\\\\([a-zA-Z]+)', r'\\\1', content)
-    
-    # Finally, clean up any remaining double backslashes that aren't LaTeX commands
-    content = re.sub(r'\\\\(?![{}\\a-zA-Z])', r'\\', content)
-
-    return content
-
-
-def remove_embedded_images(markdown_content: str) -> str:
-    """Remove embedded images and image references from markdown.
-
-    Removes reference-style image definitions, inline data URI images,
-    and markdown image references. Used to clean Google Docs exports.
-
-    Args:
-        markdown_content: Markdown content potentially containing images.
-
-    Returns:
-        Content with embedded images removed and blank lines cleaned up.
-    """
-    # Remove reference-style image definitions with data URIs (both with and without angle brackets)
-    content = re.sub(r'^\[[^\]]+\]:\s*<?data:[^>\n]*>?\s*$', '', markdown_content, flags=re.MULTILINE)
-    
-    # Remove markdown image references (both ![][imageX] and ![alt][imageX])
-    content = re.sub(r'!\[[^\]]*\]\[[^\]]+\]', '', content)
-    
-    # Remove inline data URI images
-    content = re.sub(r'!\[[^\]]*\]\(data:[^)]+\)', '', content)
-    
-    # Clean up extra blank lines
-    content = re.sub(r'\n\n+', '\n\n', content)
-    
-    return content.strip()
-
-
-def strip_bold_from_headings(markdown_content: str) -> str:
-    """Remove bold formatting from markdown headings.
-
-    Used to clean Google Docs exports which often wrap heading text in bold.
-
-    Args:
-        markdown_content: Markdown content with potentially bold headings.
-
-    Returns:
-        Content with bold markers removed from heading lines.
-    """
-    # Pattern matches heading lines with bold markers
-    content = re.sub(r'^(#+)\s+\*\*(.*?)\*\*\s*$', r'\1 \2', markdown_content, flags=re.MULTILINE)
-    
-    # Also handle cases where there might be bold within the heading
-    lines = content.split('\n')
-    cleaned_lines = []
-    for line in lines:
-        if line.strip().startswith('#'):
-            line = line.replace('**', '')
-        cleaned_lines.append(line)
-    
-    return '\n'.join(cleaned_lines)
-
-
-def replace_svg_extensions(markdown_content: str) -> str:
-    """Replace .svg extensions with .pdf in markdown image syntax.
-
-    Used when SVG images need to be converted to PDF for LaTeX processing.
-
-    Args:
-        markdown_content: Markdown content with image references.
-
-    Returns:
-        Content with .svg image extensions replaced by .pdf.
-    """
-    # Pattern to match markdown images with .svg extension
-    pattern = r'!\[([^\]]*)\]\(([^)]+?)(\.svg)\)'
-    
-    # Replace .svg with .pdf
-    content = re.sub(pattern, r'![\1](\2.pdf)', markdown_content)
-    
-    return content
-
-
-def check_and_fix_latex_incompatible_chars(markdown_content: str) -> str:
-    """Check for and fix Unicode characters incompatible with LaTeX.
-
-    Detects characters that cause "inputenc Error: Unicode character not set up
-    for use with LaTeX" errors and replaces them with LaTeX-compatible
-    alternatives. Also warns about other non-ASCII characters.
-
-    Args:
-        markdown_content: Markdown content to check and fix.
-
-    Returns:
-        Content with problematic Unicode characters replaced.
-    """
-    # Dictionary of problematic Unicode characters and their LaTeX-safe replacements
-    # Add more as we discover them
-    char_replacements = {
-        '∼': '~',           # U+223C TILDE OPERATOR → regular tilde
-        '−': '-',           # U+2212 MINUS SIGN → hyphen-minus
-        ''': "'",           # U+2019 RIGHT SINGLE QUOTATION MARK → apostrophe
-        ''': "'",           # U+2018 LEFT SINGLE QUOTATION MARK → apostrophe
-        '\u201C': '"',           # U+201C LEFT DOUBLE QUOTATION MARK → quotation mark
-        '\u201D': '"',           # U+201D RIGHT DOUBLE QUOTATION MARK → quotation mark
-        '…': '...',         # U+2026 HORIZONTAL ELLIPSIS → three dots
-        '–': '--',          # U+2013 EN DASH → double hyphen
-        '—': '---',         # U+2014 EM DASH → triple hyphen
-        '\u00A0': ' ',           # U+00A0 NO-BREAK SPACE → regular space
-        '​': '',            # U+200B ZERO WIDTH SPACE → remove
-        '‐': '-',           # U+2010 HYPHEN → hyphen-minus
-        '×': 'x',           # U+00D7 MULTIPLICATION SIGN → letter x
-        '÷': '/',           # U+00F7 DIVISION SIGN → forward slash
-        '≈': '~',           # U+2248 ALMOST EQUAL TO → tilde
-        '≠': '!=',          # U+2260 NOT EQUAL TO → != 
-        '≤': '<=',          # U+2264 LESS-THAN OR EQUAL TO → <=
-        '≥': '>=',          # U+2265 GREATER-THAN OR EQUAL TO → >=
-        '±': '+/-',         # U+00B1 PLUS-MINUS SIGN → +/-
-        '°': '$^\\circ$',   # U+00B0 DEGREE SIGN → LaTeX degree symbol
-        'µ': '$\\mu$',      # U+00B5 MICRO SIGN → LaTeX mu
-        '∞': '$\\infty$',   # U+221E INFINITY → LaTeX infinity
-        '√': '$\\sqrt{}$',  # U+221A SQUARE ROOT → LaTeX square root
-        '∑': '$\\sum$',     # U+2211 N-ARY SUMMATION → LaTeX sum
-        '∏': '$\\prod$',    # U+220F N-ARY PRODUCT → LaTeX product
-        '∫': '$\\int$',     # U+222B INTEGRAL → LaTeX integral
-        'α': '$\\alpha$',   # U+03B1 GREEK SMALL LETTER ALPHA
-        'β': '$\\beta$',    # U+03B2 GREEK SMALL LETTER BETA
-        'γ': '$\\gamma$',   # U+03B3 GREEK SMALL LETTER GAMMA
-        'δ': '$\\delta$',   # U+03B4 GREEK SMALL LETTER DELTA
-        'ε': '$\\epsilon$', # U+03B5 GREEK SMALL LETTER EPSILON
-        'θ': '$\\theta$',   # U+03B8 GREEK SMALL LETTER THETA
-        'λ': '$\\lambda$',  # U+03BB GREEK SMALL LETTER LAMBDA
-        'π': '$\\pi$',      # U+03C0 GREEK SMALL LETTER PI
-        'σ': '$\\sigma$',   # U+03C3 GREEK SMALL LETTER SIGMA
-        'φ': '$\\phi$',     # U+03C6 GREEK SMALL LETTER PHI
-    }
-    
-    # Track what we find and fix
-    issues_found = []
-    content = markdown_content
-    
-    for char, replacement in char_replacements.items():
-        if char in content:
-            # Find context around each occurrence
-            import re
-            pattern = re.compile(re.escape(char))
-            matches = list(pattern.finditer(content))
-            
-            if matches:
-                # Log each occurrence with context
-                for match in matches:
-                    start = max(0, match.start() - 20)
-                    end = min(len(content), match.end() + 20)
-                    context = content[start:end]
-                    # Clean up context for display (remove newlines)
-                    context = context.replace('\n', ' ')
-                    
-                    char_code = f"U+{ord(char):04X}"
-                    issues_found.append({
-                        'char': char,
-                        'char_code': char_code,
-                        'replacement': replacement,
-                        'context': f"...{context}...",
-                        'position': match.start()
-                    })
-                
-                # Replace all occurrences
-                content = content.replace(char, replacement)
-    
-    # Log warnings if any problematic characters were found
-    if issues_found:
-        _LOGGER.warning("⚠️  LaTeX-incompatible characters detected and auto-replaced:")
-
-        # Group by character for cleaner output
-        char_groups = {}
-        for issue in issues_found:
-            char_key = (issue['char'], issue['char_code'], issue['replacement'])
-            if char_key not in char_groups:
-                char_groups[char_key] = []
-            char_groups[char_key].append(issue['context'])
-
-        for (char, char_code, replacement), contexts in char_groups.items():
-            # Format as table: 'char' (code) → 'replacement'   N occ: context
-            count = len(contexts)
-            plural = "s" if count > 1 else ""
-            # Take first context, truncate if too long
-            context = contexts[0]
-            if len(context) > 60:
-                context = context[:57] + "..."
-            _LOGGER.warning(f"  '{char}' ({char_code}) → '{replacement}'   {count} occurrence{plural}: {context}")
-
-        _LOGGER.warning("Note: Review document to ensure replacements are appropriate.")
-    
-    # Also check for any other non-ASCII characters that might cause issues
-    # but aren't in our replacement list
-    remaining_non_ascii = []
-    for i, char in enumerate(content):
-        if ord(char) > 127 and char not in char_replacements:
-            # Skip common accented characters that LaTeX handles well
-            if ord(char) < 256:  # Latin-1 supplement, usually OK
-                continue
-            
-            context_start = max(0, i - 20)
-            context_end = min(len(content), i + 20)
-            context = content[context_start:context_end].replace('\n', ' ')
-            
-            remaining_non_ascii.append({
-                'char': char,
-                'char_code': f"U+{ord(char):04X}",
-                'context': f"...{context}...",
-                'position': i
-            })
-    
-    # Deduplicate remaining non-ASCII warnings
-    if remaining_non_ascii:
-        seen_chars = {}
-        for item in remaining_non_ascii:
-            char_key = (item['char'], item['char_code'])
-            if char_key not in seen_chars:
-                seen_chars[char_key] = []
-            seen_chars[char_key].append(item['context'])
-        
-        if seen_chars:
-            _LOGGER.warning("")
-            _LOGGER.warning("=" * 70)
-            _LOGGER.warning("⚠️  ADDITIONAL NON-ASCII CHARACTERS DETECTED")
-            _LOGGER.warning("=" * 70)
-            _LOGGER.warning("")
-            _LOGGER.warning("The following non-ASCII characters were found that *might* cause")
-            _LOGGER.warning("LaTeX issues (not automatically replaced):")
-            _LOGGER.warning("")
-            
-            for (char, char_code), contexts in list(seen_chars.items())[:10]:  # Limit to 10
-                _LOGGER.warning(f"  Character: '{char}' ({char_code})")
-                _LOGGER.warning(f"  Example context: {contexts[0]}")
-                if len(contexts) > 1:
-                    _LOGGER.warning(f"  Found {len(contexts)} occurrence(s)")
-                _LOGGER.warning("")
-            
-            if len(seen_chars) > 10:
-                _LOGGER.warning(f"  ... and {len(seen_chars) - 10} more unique characters")
-                _LOGGER.warning("")
-            
-            _LOGGER.warning("Consider reviewing these characters if you encounter LaTeX errors.")
-            _LOGGER.warning("=" * 70)
-            _LOGGER.warning("")
-
-    return content
-
-
-def extract_csv_paths(markdown_content: str) -> List[str]:
-    """Extract all CSV file paths from markdown content using {csv/...} syntax.
-
-    Args:
-        markdown_content: The markdown content to search
-
-    Returns:
-        List of unique CSV file paths found
-    """
-    # Pattern to match {csv/path/to/file.csv} syntax
-    csv_pattern = r'\{(csv/[^}]+\.csv)\}'
-
-    paths = re.findall(csv_pattern, markdown_content)
-
-    # Remove duplicates while preserving order
-    seen = set()
-    unique_paths = []
-    for path in paths:
-        if path not in seen:
-            seen.add(path)
-            unique_paths.append(path)
-
-    return unique_paths
-
-
-def update_figure_paths(markdown_content: str, path_mapping: Dict[str, str]) -> str:
-    """Replace figure paths in document with converted paths while preserving parameters.
-
-    Args:
-        markdown_content: The markdown content to update
-        path_mapping: Dictionary mapping original paths to new paths
-
-    Returns:
-        Updated markdown content with paths replaced
-    """
-    _LOGGER.debug(f"update_figure_paths called with {len(path_mapping)} mappings")
-    updated = markdown_content
-
-    # First, handle paths with parameters - preserve the parameters
-    # Pattern to match figure references with parameters
-    param_pattern = r'(!\[[^\]]*\]\()([^)]+)(\))(\{[^}]*\})'
-
-    def replace_with_mapping(match):
-        prefix = match.group(1)  # ![alt](
-        path = match.group(2)     # the path
-        suffix = match.group(3)   # )
-        params = match.group(4)   # {parameters} - now preserved
-
-        # Check if this path has a mapping
-        if path in path_mapping:
-            return f"{prefix}{path_mapping[path]}{suffix}{params}"
-        return f"{prefix}{path}{suffix}{params}"
-
-    # Replace figures with parameters
-    updated = re.sub(param_pattern, replace_with_mapping, updated)
-
-    # Then handle regular path replacements for paths without parameters
-    for old_path, new_path in path_mapping.items():
-        # Replace in both inline and reference style images
-        updated = updated.replace(f']({old_path})', f']({new_path})')
-        updated = updated.replace(f']: {old_path}', f']: {new_path}')
-        updated = updated.replace(f']:{old_path}', f']:{new_path}')
-
-    return updated
-
-
-def create_figure_path_mapping(figure_paths: List[Tuple[str, Dict[str, Any]]]) -> Dict[str, str]:
-    """
-    Create a mapping of figure paths for SVG to PDF conversions.
-    This just creates the mapping without doing any actual processing.
-
-    Args:
-        figure_paths: List of (path, params) tuples extracted from the document
-
-    Returns:
-        Dictionary mapping original paths to converted paths
-    """
-    mapping = {}
-    converted_dir = Path('converted')
-
-    for fig_item in figure_paths:
-        # Extract path from tuple (path, params)
-        if isinstance(fig_item, tuple):
-            fig_path = fig_item[0]
-        else:
-            # Backward compatibility if called with plain strings
-            fig_path = fig_item
-
-        # Only map SVG files to their PDF equivalents
-        if fig_path.endswith('.svg'):
-            pdf_path = fig_path.replace('.svg', '.pdf')
-            output_path = converted_dir / pdf_path
-            mapping[fig_path] = str(output_path)
-
-    return mapping

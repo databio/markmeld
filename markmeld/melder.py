@@ -8,17 +8,17 @@ import time
 import yaml
 
 from copy import deepcopy
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, NamedTuple, Optional, Tuple, Union
 
 from datetime import date
 from jinja2 import Template
 from jinja2.filters import FILTERS, pass_environment
-from logging import getLogger
+import logging
 
 from ubiquerg import expandpath
 from ubiquerg import is_url
 
-from .const import PKG_NAME, GOOGLE_DOCS_KEY, TARGET_TYPE_KEY, GOOGLE_DOC_TARGET_TYPE
+from .const import GOOGLE_DOCS_KEY, TARGET_TYPE_KEY, GOOGLE_DOC_TARGET_TYPE
 from .exceptions import *
 from .utilities import *
 from .api_handler import APIHandler
@@ -32,7 +32,17 @@ REMOTE_NOTES_KEY = "remote_notes"
 MD_CONTENT_KEY = "md_content"
 YAML_CONTENT_KEY = "yaml_content"
 
-_LOGGER = getLogger(PKG_NAME)
+_LOGGER = logging.getLogger(__name__)
+
+
+class MarkdownResult(NamedTuple):
+    """Result of parsing a markdown source."""
+    key: str
+    content: str
+    raw: str
+    metadata: Dict[str, Any]
+    md_info: Dict[str, Any]
+
 
 tpl_generic = """
 {{ _global_frontmatter.fenced}}{{ content }}
@@ -60,12 +70,11 @@ def datetimeformat(environment: Any, value: Any, to_format: str = "%Y-%m-%d", fr
     if from_format == "%s":
         value = time.ctime(int(value))
         from_format = "%a %b %d %H:%M:%S %Y"
-        print(value)
     value = str(value)
     try:
         return datetime.datetime.strptime(value, from_format).strftime(to_format)
-    except ValueError as VE:
-        _LOGGER.warning(VE)
+    except ValueError as ve:
+        _LOGGER.warning(ve)
         return value
 
 
@@ -138,44 +147,35 @@ def get_frontmatter_formats(frontmatter: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _store_markdown_result(
+def _parse_markdown_source(
     key: str,
     post: Any,
-    data: Dict[str, Any],
-    frontmatter_temp: Dict[str, Any],
-    local_frontmatter_temp: Dict[str, Any],
-    vars_temp: Dict[str, Any],
     path: Optional[str] = None,
     ext: str = "md"
-) -> None:
-    """Store a parsed markdown result and update tracking dictionaries.
-
-    Helper function that handles the common pattern of storing parsed markdown
-    content and its frontmatter across md_files, remote_notes, and md_content handlers.
+) -> MarkdownResult:
+    """Parse a markdown source into a structured result.
 
     Args:
-        key: The key to store the content under.
-        post: A frontmatter Post object with .content and .metadata attributes.
-        data: The main data dictionary to update.
-        frontmatter_temp: Dict tracking merged frontmatter from all sources.
-        local_frontmatter_temp: Dict tracking per-file frontmatter.
-        vars_temp: Dict tracking template variables.
-        path: Optional path/identifier for the source (for _md metadata).
+        key: The variable name for this content.
+        post: A frontmatter Post object with .content and .metadata.
+        path: Optional path/identifier for the source.
         ext: File extension for metadata tracking.
+
+    Returns:
+        MarkdownResult with parsed content, raw text, and metadata.
     """
-    data[key] = post.content
-    data["_md"][key] = {
-        "content": post.content,
-        "frontmatter": post.metadata,
-        "path": path,
-        "ext": ext,
-    }
-    frontmatter_temp.update(post.metadata)
-    local_frontmatter_temp[key] = post.metadata
-    data["_raw"][key] = frontmatter.dumps(post)
-    if len(post.metadata) > 0:
-        vars_temp.update(post.metadata)
-        frontmatter_temp.update(post.metadata)
+    return MarkdownResult(
+        key=key,
+        content=post.content,
+        raw=frontmatter.dumps(post),
+        metadata=post.metadata,
+        md_info={
+            "content": post.content,
+            "frontmatter": post.metadata,
+            "path": path,
+            "ext": ext,
+        },
+    )
 
 
 def process_data(
@@ -186,19 +186,26 @@ def process_data(
 ) -> Dict[str, Any]:
     """Process a data block and extract metadata from all sources.
 
-    The data_block is a section in the _markmeld config for a target.
-    Each target has a 'data' section specifying sources (markdown files, YAML files,
-    remote notes, etc.). This function reads those sources and extracts any metadata
-    blocks to make them available to the template.
+    The data_block is the 'data:' section from a target in _markmeld.yaml.
+    This function reads all specified sources and builds a flat namespace
+    of variables available to the Jinja2 template.
 
-    Precedence order (lowest to highest):
-    frontmatter: < md frontmatter < yaml data < variables < frontmatter_overrides:
+    PRECEDENCE MODEL (lowest to highest -- later sources override earlier):
+
+        1. frontmatter:            -- base defaults from target config
+        2. md frontmatter          -- YAML frontmatter inside .md files
+        3. yaml data               -- standalone .yaml files
+        4. variables:              -- explicit variables from target config
+        5. frontmatter_overrides:  -- overrides that always win
+
+    Sources within the same level (e.g., multiple md_files) are processed
+    in iteration order. The last one wins for any overlapping keys.
 
     Args:
         data_block: The data configuration block from the target.
         filepath: Path to the config file for resolving relative paths.
-        frontmatter_base: Base frontmatter values (lowest precedence).
-        frontmatter_overrides: Override frontmatter values (highest precedence).
+        frontmatter_base: Base frontmatter values (level 1).
+        frontmatter_overrides: Override frontmatter values (level 5).
 
     Returns:
         Dictionary containing processed data including:
@@ -215,6 +222,16 @@ def process_data(
     frontmatter_temp = {}
     local_frontmatter_temp = {}
     vars_temp = {}
+
+    def _apply_markdown_result(result: MarkdownResult):
+        """Apply a parsed markdown result to the accumulator dicts."""
+        data[result.key] = result.content
+        data["_md"][result.key] = result.md_info
+        data["_raw"][result.key] = result.raw
+        frontmatter_temp.update(result.metadata)
+        local_frontmatter_temp[result.key] = result.metadata
+        if result.metadata:
+            vars_temp.update(result.metadata)
 
     # Process frontmatter: section first (base defaults - lowest precedence)
     if frontmatter_base:
@@ -253,8 +270,7 @@ def process_data(
     if YAML_CONTENT_KEY in data_block and data_block[YAML_CONTENT_KEY]:
         yaml_content.update(data_block[YAML_CONTENT_KEY])
 
-    # Process md_files BEFORE yaml_files so yaml can override md frontmatter
-    # Precedence: frontmatter: < md frontmatter < yaml data < variables < frontmatter_overrides:
+    # Process md_files BEFORE yaml_files (see precedence model in docstring)
     for k, v in md_files.items():
         _LOGGER.info(f"MM | Processing md file {k}:{v}")
         if not v:
@@ -274,11 +290,11 @@ def process_data(
                 data[k] = ""  # Populate with empty values
                 data["_raw"][k] = {}
                 continue
-        _store_markdown_result(
-            k, p, data, frontmatter_temp, local_frontmatter_temp, vars_temp,
+        _apply_markdown_result(_parse_markdown_source(
+            k, p,
             path=os.path.relpath(v, os.path.dirname(filepath)),
-            ext=get_file_extension(v)
-        )
+            ext=get_file_extension(v),
+        ))
 
     for k, v in remote_notes.items():
         _LOGGER.info(f"MM | Processing remote note {k}:{v}")
@@ -287,10 +303,7 @@ def process_data(
             continue
         note_content = apih.fetch_note_content(v)
         p = frontmatter.loads(note_content)
-        _store_markdown_result(
-            k, p, data, frontmatter_temp, local_frontmatter_temp, vars_temp,
-            path=v
-        )
+        _apply_markdown_result(_parse_markdown_source(k, p, path=v))
 
     for k, v in md_content.items():
         _LOGGER.info(f"MM | Processing md content {k}")
@@ -313,9 +326,7 @@ def process_data(
             data["_raw"][k] = {}
             continue
 
-        _store_markdown_result(
-            k, p, data, frontmatter_temp, local_frontmatter_temp, vars_temp
-        )
+        _apply_markdown_result(_parse_markdown_source(k, p))
 
     # Process yaml_files AFTER md so yaml values can override md frontmatter
     for k, v in yaml_files.items():
@@ -382,8 +393,7 @@ def process_data(
     # and excludes markdown content... Is that useful?
     data["_global_vars"] = vars_temp
 
-    # Integrated, global frontmatter from all sources in precedence order:
-    # frontmatter: (base) < md frontmatter < yaml data < variables < frontmatter_overrides:
+    # Integrated, global frontmatter from all sources in precedence order
     data["_global_frontmatter"] = get_frontmatter_formats(frontmatter_temp)
 
     # Local frontmatter (per markdown file)
@@ -515,7 +525,7 @@ def load_template(cfg: Dict[str, Any]) -> Optional[Template]:
         t = Template(jinja_tpl_contents)
         t.source = jinja_tpl_contents
     except TypeError:
-        _LOGGER.error(f"Unable to open jinja_template. Path:{jinja_tpl}")
+        raise Exception(f"Unable to open jinja_template. Path: {jinja_tpl}")
     return t
 
 
@@ -540,7 +550,7 @@ class Target:
 
     def __init__(
         self,
-        root_cfg: Dict[str, Any] = {},
+        root_cfg: Optional[Dict[str, Any]] = None,
         target_name: Optional[str] = None,
         vardata: Optional[List[str]] = None
     ) -> None:
@@ -554,6 +564,8 @@ class Target:
         Raises:
             TargetError: If targets are not specified or target_name not found.
         """
+        if root_cfg is None:
+            root_cfg = {}
         self.root_cfg = root_cfg
         self.target_name = target_name
 
@@ -608,76 +620,56 @@ class Target:
         from .resource_manager import inject_resource_variables
         meta = inject_resource_variables(meta)
 
-        # Expand any template variables in meta values that reference resources
-        # This allows user variables like bibdb: "{mm-resource-bibdb}" to be fully expanded
-        # BEFORE the pandoc command is generated
-        from .utilities import MyTemplate
-        for key, value in list(meta.items()):
-            if isinstance(value, str) and '{' in value:
-                # Try to expand template variables up to 3 times for nested references
-                expanded = value
-                for _ in range(3):
-                    new_expanded = MyTemplate(expanded).safe_substitute(**meta)
-                    if new_expanded == expanded:
-                        break
-                    expanded = new_expanded
-                meta[key] = expanded
+        # Expand template variables in meta values (e.g., bibdb: "{mm-csl-nature}")
+        # before the pandoc command is generated
+        from .utilities import expand_dict_templates
+        expand_dict_templates(meta)
 
-        if not "command" in meta:
-            # Generally, user should provide a `command`, but for simple default cases,
-            # we can just route through pandoc as a default command.
-            options_array = []
-
-            if "latex_template" in meta:
-                options_array.append('--template "{latex_template}"')
-
-            if "bibdb" in meta:
-                options_array.append('--bibliography "{bibdb}"')
-
-            if "csl" in meta:
-                options_array.append('--csl "{csl}"')
-
-            # Add citeproc if explicitly requested
-            if "citeproc" in meta and meta["citeproc"]:
-                options_array.append('--citeproc')
-
-            # Add Lua filters in user-specified order
-            if "lua_filters" in meta and meta["lua_filters"]:
-                filters_list = meta["lua_filters"]
-                # Support both list and single string
-                if isinstance(filters_list, str):
-                    filters_list = [filters_list]
-                for filter_ref in filters_list:
-                    options_array.append(f'--lua-filter "{filter_ref}"')
-
-            if "output_file" in meta:
-                options_array.append('-o "{output_file}"')
-
-            # Add any extra pandoc arguments from config
-            if "pandoc_extra_args" in meta and meta["pandoc_extra_args"]:
-                extra_args = meta["pandoc_extra_args"]
-                # Support both string and list formats
-                if isinstance(extra_args, list):
-                    options_array.extend(extra_args)
-                else:
-                    options_array.append(extra_args)
-
-            options = " ".join(options_array)
-            meta["command"] = f"pandoc {options}"
-
-        # DEBUG: Log what is being used to generate the command
-        _LOGGER.debug(f"DEBUG: Target init - meta keys: {list(meta.keys())}")
-        _LOGGER.debug(f"DEBUG: citeproc value: {meta.get('citeproc', 'NOT PRESENT')}")
-        _LOGGER.debug(f"DEBUG: lua_filters value: {meta.get('lua_filters', 'NOT PRESENT')}")
-        _LOGGER.debug(f"DEBUG: csl value: {meta.get('csl', 'NOT PRESENT')}")
-        _LOGGER.debug(f"DEBUG: bibdb value: {meta.get('bibdb', 'NOT PRESENT')}")
-        _LOGGER.debug(f"DEBUG: Generated command: {meta.get('command', 'NO COMMAND')}")
+        if "command" not in meta:
+            meta["command"] = self._build_default_command(meta)
 
         _LOGGER.debug(f"meta: {meta}")
         self.meta = meta
         _LOGGER.debug(f"MM | Config file path: {self.meta['_cfg_file_path']}")
         if "output_file" in self.meta:
             _LOGGER.info(f"MM | Output file: {self.meta['output_file']}")
+
+    @staticmethod
+    def _build_default_command(meta: Dict[str, Any]) -> str:
+        """Build a default pandoc command from target metadata."""
+        options_array = []
+
+        if "latex_template" in meta:
+            options_array.append('--template "{latex_template}"')
+
+        if "bibdb" in meta:
+            options_array.append('--bibliography "{bibdb}"')
+
+        if "csl" in meta:
+            options_array.append('--csl "{csl}"')
+
+        if "citeproc" in meta and meta["citeproc"]:
+            options_array.append('--citeproc')
+
+        if "lua_filters" in meta and meta["lua_filters"]:
+            filters_list = meta["lua_filters"]
+            if isinstance(filters_list, str):
+                filters_list = [filters_list]
+            for filter_ref in filters_list:
+                options_array.append(f'--lua-filter "{filter_ref}"')
+
+        if "output_file" in meta:
+            options_array.append('-o "{output_file}"')
+
+        if "pandoc_extra_args" in meta and meta["pandoc_extra_args"]:
+            extra_args = meta["pandoc_extra_args"]
+            if isinstance(extra_args, list):
+                options_array.extend(extra_args)
+            else:
+                options_array.append(extra_args)
+
+        options = " ".join(options_array)
+        return f"pandoc {options}"
 
     def __repr__(self) -> str:
         """Return YAML representation of target metadata."""
@@ -719,11 +711,11 @@ class Target:
             )
 
         # Print captured stdout/stderr from subprocess commands
-        if hasattr(self, 'stdout') and self.stdout and self.stdout.strip():
+        if self.stdout and self.stdout.strip():
             _LOGGER.info("Command output (stdout):")
             print(self.stdout)
 
-        if hasattr(self, 'stderr') and self.stderr and self.stderr.strip():
+        if self.stderr and self.stderr.strip():
             _LOGGER.info("Command errors (stderr):")
             print(self.stderr)
 
@@ -776,7 +768,7 @@ class Target:
             # root_cfg["targets"][target_name]
             inherit_from = root_cfg["targets"][target_name]["inherit_from"]
             # del accumulated["inherit_from"]
-            if type(inherit_from) is not list:
+            if not isinstance(inherit_from, list):
                 inherit_from = [inherit_from]
             for base_target in inherit_from:
                 _LOGGER.info(f"Loading from base target: {base_target}")
@@ -855,7 +847,7 @@ class MarkdownMelder:
         """
         tgt = Target(self.cfg, target_name)
 
-        if tgt.meta["output_file"] and not "stopopen" in tgt.meta:
+        if tgt.meta["output_file"] and "stopopen" not in tgt.meta:
             return tgt.meta["output_file"]
         else:
             return False
@@ -995,7 +987,9 @@ class MarkdownMelder:
         target_name: str,
         print_only: bool = False,
         vardump: bool = False,
-        report: bool = True
+        report: bool = True,
+        input_file: Optional[str] = None,
+        output_file: Optional[str] = None,
     ) -> Union[Target, Dict[int, Target], None]:
         """Build a target by processing inputs and running the command.
 
@@ -1008,15 +1002,33 @@ class MarkdownMelder:
             print_only: If True, render template but don't run command.
             vardump: If True, dump variables instead of rendering.
             report: If True, log build results.
+            input_file: Override content source with an external file path.
+            output_file: Override output file path.
 
         Returns:
             Target object with build results, dict of Target objects for loop
             targets (keyed by iteration index), or None if preprocessing fails.
         """
+        from pathlib import Path
+
         tgt = Target(self.cfg, target_name)
         _LOGGER.info(
             f"MM | Building target: {tgt.target_name} from file {tgt.meta['_cfg_file_path']}"
         )
+
+        # Inject ad-hoc input file into target data
+        if input_file:
+            input_path = str(Path(input_file).resolve())
+            tgt.meta.setdefault("data", {})
+            tgt.meta["data"].setdefault("md_files", {})
+            tgt.meta["data"]["md_files"]["content"] = input_path
+
+        # Override output file
+        if output_file:
+            tgt.meta["output_file"] = str(Path(output_file).resolve())
+        elif input_file and not tgt.meta.get("output_file"):
+            input_path = Path(input_file).resolve()
+            tgt.meta["output_file"] = str(input_path.with_suffix(".pdf"))
 
         # Check for Google Doc type and preprocess if needed
         if TARGET_TYPE_KEY in tgt.meta and tgt.meta[TARGET_TYPE_KEY] == GOOGLE_DOC_TARGET_TYPE:
@@ -1141,17 +1153,16 @@ class MarkdownMelder:
             _LOGGER.debug(f"Running regular command: '{cmd_fmt}'")
             tgt.melded_output = self.render_template(tgt.melded_input, tgt)
             _LOGGER.debug(f"melded_output length: {len(tgt.melded_output) if tgt.melded_output else 0} characters")
-            if tgt.melded_output == "" or tgt.melded_output == None:
+            if tgt.melded_output == "" or tgt.melded_output is None:
                 _LOGGER.error("No input detected. Check variable names")
                 tgt.returncode = 2
             else:
                 # Run figure reference analysis if we have markdown content
                 if tgt.melded_output and isinstance(tgt.melded_output, str):
                     try:
-                        from .figure_converter import FigureConverter
-                        # Create a temporary FigureConverter instance for analysis
-                        fc = FigureConverter(None)  # No cache manager needed for analysis
-                        analysis_report = fc.generate_figure_analysis_report(tgt.melded_output)
+                        from .document_checker import DocumentChecker
+                        dc = DocumentChecker()
+                        analysis_report = dc.generate_figure_analysis_report(tgt.melded_output)
                         if analysis_report:
                             # Log the analysis report as warnings
                             for line in analysis_report.split('\n'):
@@ -1160,15 +1171,6 @@ class MarkdownMelder:
                     except Exception as e:
                         _LOGGER.debug(f"Could not analyze figure references: {e}")
                 
-                # Create output folder if it doesn't exist:
-                if tgt.meta["output_file"] and not os.path.dirname(tgt.meta["output_file"]) == "" and not os.path.exists(
-                    os.path.dirname(tgt.meta["output_file"])
-                ):
-                    
-                    _LOGGER.warning(
-                        f"Missing output folder. Creating output folder: '{os.path.dirname(tgt.meta['output_file'])}' for file '{tgt.meta['output_file']}'"
-                    )
-                    os.makedirs(os.path.dirname(tgt.meta["output_file"]))
                 tgt.returncode, tgt.stdout, tgt.stderr = run_cmd(
                     cmd_fmt, tgt.melded_output.encode(), tgt.meta["_workpath"]
                 )
@@ -1215,7 +1217,6 @@ class MarkdownMelder:
         return_target_objects = {}
         for i in range(len(loop_dat)):
             loop_var_value = loop_dat[i]
-            melded_input_copy = deepcopy(melded_input)
             tgt_copy = deepcopy(tgt)
             var = tgt_copy.meta["loop"]["assign_to"]
             _LOGGER.info(f"{var}: {loop_var_value}")
@@ -1223,9 +1224,9 @@ class MarkdownMelder:
             tgt_copy.meta.update({var: loop_var_value})
             _LOGGER.debug(tgt_copy.meta)
             # _LOGGER.debug(cmd_data)
-            rendered_in = self.render_template(
+            self.render_template(
                 tgt_copy.melded_input, tgt_copy, double=False
-            ).encode()
+            )
             return_target_objects[i] = self.run_command_for_target(
                 tgt_copy, print_only, vardump
             )
@@ -1276,22 +1277,12 @@ class MarkdownMelder:
                 frontmatter_base=frontmatter_base,
                 frontmatter_overrides=frontmatter_overrides
             )
-        _LOGGER.debug("processed_data_block:", processed_data_block)
+        _LOGGER.debug("processed_data_block: %s", processed_data_block)
         data_copy.update(processed_data_block)
 
-        # Expand any template variables in data_copy values (e.g., user variables that reference resources)
-        # This allows user variables like bibdb: "{mm-csl-nature}" to be expanded
-        from .utilities import MyTemplate
-        for key, value in list(data_copy.items()):
-            if isinstance(value, str) and '{' in value:
-                # Try to expand template variables up to 3 times for nested references
-                expanded = value
-                for _ in range(3):
-                    new_expanded = MyTemplate(expanded).safe_substitute(**data_copy)
-                    if new_expanded == expanded:
-                        break
-                    expanded = new_expanded
-                data_copy[key] = expanded
+        # Expand template variables in data_copy values (e.g., bibdb: "{mm-csl-nature}")
+        from .utilities import expand_dict_templates
+        expand_dict_templates(data_copy)
 
         k = list(data_copy.keys())
         _LOGGER.debug(f"MM | Available keys: {k}")

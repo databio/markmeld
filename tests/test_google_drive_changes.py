@@ -9,8 +9,8 @@ from markmeld.google_drive import GoogleDriveProcessor
 class TestActiveChangesDetection:
     """Test the active changes detection functionality."""
     
-    @patch('markmeld.google_drive.service_account.Credentials')
-    @patch('markmeld.google_drive.build')
+    @patch('markmeld.google_drive.processor.service_account.Credentials')
+    @patch('markmeld.google_drive.processor.build')
     def test_check_for_active_changes_with_suggestions(self, mock_build, mock_creds):
         """Test warning when document has suggested edits."""
         
@@ -70,7 +70,7 @@ class TestActiveChangesDetection:
         mock_drive_service.comments().list().execute.return_value = {'comments': []}
         
         # Capture log output
-        with patch('markmeld.google_drive.logger') as mock_logger:
+        with patch('markmeld.google_drive.processor._LOGGER') as mock_logger:
             processor._check_for_active_changes('test_doc_id')
             
             # Verify warning was logged
@@ -78,8 +78,8 @@ class TestActiveChangesDetection:
                            if 'DOCUMENT HAS SUGGESTED EDITS' in str(call)]
             assert len(warning_calls) > 0, "Expected warning about suggested edits"
     
-    @patch('markmeld.google_drive.service_account.Credentials')
-    @patch('markmeld.google_drive.build')
+    @patch('markmeld.google_drive.processor.service_account.Credentials')
+    @patch('markmeld.google_drive.processor.build')
     def test_check_for_active_changes_with_unresolved_comments(self, mock_build, mock_creds):
         """Test warning when document has unresolved comments."""
         
@@ -144,7 +144,7 @@ class TestActiveChangesDetection:
         }
         
         # Capture log output
-        with patch('markmeld.google_drive.logger') as mock_logger:
+        with patch('markmeld.google_drive.processor._LOGGER') as mock_logger:
             processor._check_for_active_changes('test_doc_id')
             
             # Verify warning was logged (checking for new message format)
@@ -152,8 +152,8 @@ class TestActiveChangesDetection:
                            if 'DISCUSSION COMMENTS' in str(call)]
             assert len(warning_calls) > 0, "Expected warning about unresolved discussion comments"
     
-    @patch('markmeld.google_drive.service_account.Credentials')
-    @patch('markmeld.google_drive.build')
+    @patch('markmeld.google_drive.processor.service_account.Credentials')
+    @patch('markmeld.google_drive.processor.build')
     def test_check_for_active_changes_no_issues(self, mock_build, mock_creds):
         """Test no warning when document has no active changes."""
         
@@ -215,7 +215,7 @@ class TestActiveChangesDetection:
         }
         
         # Capture log output
-        with patch('markmeld.google_drive.logger') as mock_logger:
+        with patch('markmeld.google_drive.processor._LOGGER') as mock_logger:
             processor._check_for_active_changes('test_doc_id')
             
             # Verify no warning was logged
@@ -223,8 +223,8 @@ class TestActiveChangesDetection:
                            if 'WARNING' in str(call)]
             assert len(warning_calls) == 0, "Should not warn when no active changes"
     
-    @patch('markmeld.google_drive.service_account.Credentials')
-    @patch('markmeld.google_drive.build')
+    @patch('markmeld.google_drive.processor.service_account.Credentials')
+    @patch('markmeld.google_drive.processor.build')
     def test_check_continues_on_api_failure(self, mock_build, mock_creds):
         """Test that document download continues even if change detection fails."""
         
@@ -253,8 +253,8 @@ class TestActiveChangesDetection:
         except Exception:
             pytest.fail("Check for active changes should not raise exceptions")
     
-    @patch('markmeld.google_drive.service_account.Credentials')
-    @patch('markmeld.google_drive.build')
+    @patch('markmeld.google_drive.processor.service_account.Credentials')
+    @patch('markmeld.google_drive.processor.build')
     def test_filters_original_content_deleted_comments(self, mock_build, mock_creds):
         """Test that comments with 'Original content deleted' are filtered out."""
         
@@ -324,7 +324,7 @@ class TestActiveChangesDetection:
         }
         
         # Capture log output
-        with patch('markmeld.google_drive.logger') as mock_logger:
+        with patch('markmeld.google_drive.processor._LOGGER') as mock_logger:
             processor._check_for_active_changes('test_doc_id')
             
             # Check that warning was logged with only 1 real comment

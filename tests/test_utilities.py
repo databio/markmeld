@@ -4,7 +4,7 @@ Specifically tests for check_and_fix_latex_incompatible_chars function.
 """
 
 import pytest
-from markmeld.utilities import check_and_fix_latex_incompatible_chars
+from markmeld.google_drive.markdown_clean import check_and_fix_latex_incompatible_chars
 
 
 class TestCheckAndFixLatexIncompatibleChars:

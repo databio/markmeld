@@ -61,7 +61,18 @@ def build_argparser() -> argparse.ArgumentParser:
         metavar="I",
         nargs="?",
         const="_markmeld.yaml",
-        help="Initilize config file",
+        help="Initialize config file",
+    )
+
+    parser.add_argument(
+        "--input",
+        help="Override content source with an external file path",
+    )
+
+    parser.add_argument(
+        "-o",
+        "--output",
+        help="Override output file path",
     )
 
     parser.add_argument(
@@ -271,7 +282,7 @@ def main(test_args: Optional[Dict[str, Any]] = None) -> None:
         if args.target:
             tgt = Target(mm.cfg, args.target)
             if TARGET_TYPE_KEY in tgt.meta and tgt.meta[TARGET_TYPE_KEY] == GOOGLE_DOC_TARGET_TYPE:
-                from .cloud_cache_manager import CloudCacheManager
+                from .google_drive import CloudCacheManager
                 from .google_drive import GoogleDriveProcessor
                 
                 # Get google_docs dictionary from target configuration
@@ -336,7 +347,12 @@ def main(test_args: Optional[Dict[str, Any]] = None) -> None:
         sys.exit(0)
 
     built_target = mm.build_target(
-        args.target, print_only=args.print, vardump=args.dump, report=False
+        args.target,
+        print_only=args.print,
+        vardump=args.dump,
+        report=False,
+        input_file=args.input,
+        output_file=args.output,
     )
 
     # Check if build failed before attempting to use built_target
@@ -348,7 +364,7 @@ def main(test_args: Optional[Dict[str, Any]] = None) -> None:
         import json
 
         _LOGGER.info("Dumping JSON output passed to jinja template...")
-        if type(built_target) == dict:  # Multi-output target
+        if isinstance(built_target, dict):  # Multi-output target
             for i, tgt in built_target.items():
                 _LOGGER.info(f"\n\nOutput {i}:")
                 _LOGGER.info(
@@ -362,7 +378,7 @@ def main(test_args: Optional[Dict[str, Any]] = None) -> None:
             )
 
     if args.print:
-        if type(built_target) == dict:  # Multi-output target
+        if isinstance(built_target, dict):  # Multi-output target
             for i, tgt in built_target.items():
                 _LOGGER.info(f"\n\nOutput {i}:")
                 _LOGGER.info(tgt.melded_output)
@@ -370,7 +386,7 @@ def main(test_args: Optional[Dict[str, Any]] = None) -> None:
             print(built_target.melded_output)
 
     # Report results using the Target's report method
-    if type(built_target) == dict:
+    if isinstance(built_target, dict):
         # Multi-output target
         for i, tgt in built_target.items():
             tgt.report(print_output=args.print, dump_output=args.dump)

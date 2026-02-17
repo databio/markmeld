@@ -13,9 +13,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Union
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(message)s')
-logger = logging.getLogger(__name__)
+_LOGGER = logging.getLogger(__name__)
 
 
 class CloudCacheManager:
@@ -71,7 +69,7 @@ class CloudCacheManager:
         'fig': 'fig',             # Cached figure source files (SVG, etc.)
         'bib': 'bib'              # Bibliography files
     }
-    
+
     def __init__(
         self, cache_root: Union[str, Path] = ".cache", create_dirs: bool = True
     ) -> None:
@@ -86,7 +84,7 @@ class CloudCacheManager:
         self.create_dirs = create_dirs
         self._metadata_cache = {}  # In-memory cache for performance
         self._cache_ttl = 300  # 5 minutes TTL
-        logger.info(f"CloudCacheManager initialized with cache_root: {self.cache_root}")
+        _LOGGER.info(f"CloudCacheManager initialized with cache_root: {self.cache_root}")
 
         if self.create_dirs:
             self.cache_root.mkdir(parents=True, exist_ok=True, mode=0o755)
@@ -95,7 +93,7 @@ class CloudCacheManager:
             gitignore_path = self.cache_root / '.gitignore'
             if not gitignore_path.exists():
                 gitignore_path.write_text('# Ignore all cache contents\n*\n')
-    
+
     def get_cache_dir(self, doc_id: str, subdir_type: str) -> Path:
         """Get the cache directory path for a document and subdirectory type.
 
@@ -115,14 +113,14 @@ class CloudCacheManager:
         """
         if subdir_type not in self.CACHE_SUBDIRS:
             raise ValueError(f"Invalid subdir_type: {subdir_type}. Must be one of {list(self.CACHE_SUBDIRS.keys())}")
-        
+
         cache_dir = self.cache_root / doc_id / self.CACHE_SUBDIRS[subdir_type]
-        
+
         if self.create_dirs:
             cache_dir.mkdir(parents=True, exist_ok=True)
-        
+
         return cache_dir
-    
+
     def get_cache_path(
         self, doc_id: str, subdir_type: str, filename: Union[str, Path]
     ) -> Path:
@@ -147,7 +145,7 @@ class CloudCacheManager:
         if self.create_dirs and '/' in str(filename):
             file_path.parent.mkdir(parents=True, exist_ok=True)
 
-        logger.debug(f"get_cache_path() returning: {file_path} (is_absolute: {file_path.is_absolute()})")
+        _LOGGER.debug(f"get_cache_path() returning: {file_path} (is_absolute: {file_path.is_absolute()})")
         return file_path
 
     def _init_document_metadata(self) -> Dict[str, Any]:
@@ -297,27 +295,27 @@ class CloudCacheManager:
             with open(metadata_path, 'r') as f:
                 metadata = json.load(f)
         except json.JSONDecodeError as e:
-            logger.error(f"Corrupt metadata.json at {metadata_path}: {e}")
+            _LOGGER.error(f"Corrupt metadata.json at {metadata_path}: {e}")
             return None
         except IOError as e:
-            logger.error(f"Cannot read metadata.json at {metadata_path}: {e}")
+            _LOGGER.error(f"Cannot read metadata.json at {metadata_path}: {e}")
             return None
 
         # Only support v3.0, v3.1, and v3.2 formats
         cache_version = metadata.get('cache_version')
         if cache_version not in ['3.0', '3.1', '3.2']:
-            logger.warning(f"  Old cache format (v{cache_version}) detected - will rebuild cache with fresh download")
+            _LOGGER.warning(f"  Old cache format (v{cache_version}) detected - will rebuild cache with fresh download")
             return None
 
         # Validate required fields
         required = ['document', 'figures', 'csvs', 'cache_stats', 'cache_version']
         if not all(k in metadata for k in required):
-            logger.warning(f"  Invalid metadata structure - will rebuild cache")
+            _LOGGER.warning(f"  Invalid metadata structure - will rebuild cache")
             return None
 
         # Reject legacy root-level fields (should be nested in 'document')
         if any(k in metadata for k in ('doc_id', 'doc_name', 'folder_id')):
-            logger.warning(f"  Legacy metadata format detected - will rebuild cache")
+            _LOGGER.warning(f"  Legacy metadata format detected - will rebuild cache")
             return None
 
         # Cache the result in memory
@@ -390,7 +388,7 @@ class CloudCacheManager:
             with open(metadata_path, 'w') as f:
                 json.dump(metadata, f, indent=2, sort_keys=True)
         except IOError as e:
-            logger.error(f"Failed to save metadata for {doc_id}: {e}")
+            _LOGGER.error(f"Failed to save metadata for {doc_id}: {e}")
             raise
 
         # Update in-memory cache
@@ -427,9 +425,9 @@ class CloudCacheManager:
         new_md5 = hashlib.md5(content_bytes).hexdigest()
         new_size = len(content_bytes)
 
-        logger.info(f"Updated cache file: {file_path}")
-        logger.info(f"  Size: {new_size} bytes")
-        logger.info(f"  MD5: {new_md5}")
+        _LOGGER.info(f"Updated cache file: {file_path}")
+        _LOGGER.info(f"  Size: {new_size} bytes")
+        _LOGGER.info(f"  MD5: {new_md5}")
 
         # Parse cache path to extract doc_id and relative path
         # Expected structure: cache_root/doc_id/subdir/filename
@@ -438,7 +436,7 @@ class CloudCacheManager:
             parts = relative_to_cache.parts
 
             if len(parts) < 2:
-                logger.warning(f"Cannot update metadata: invalid cache path structure {file_path}")
+                _LOGGER.warning(f"Cannot update metadata: invalid cache path structure {file_path}")
                 return
 
             doc_id = parts[0]
@@ -446,19 +444,19 @@ class CloudCacheManager:
             filename = file_path.name
 
         except ValueError:
-            logger.warning(f"File {file_path} is not in cache root {self.cache_root}")
+            _LOGGER.warning(f"File {file_path} is not in cache root {self.cache_root}")
             return
 
         # Update metadata
         metadata = self.load_metadata(doc_id)
         if not metadata:
-            logger.warning(f"No metadata found for {doc_id}, cannot update file metadata")
+            _LOGGER.warning(f"No metadata found for {doc_id}, cannot update file metadata")
             return
 
         # Determine file category
         category = self._get_file_category(filename)
         if not category:
-            logger.warning(f"Unknown file type for {filename}, skipping metadata update")
+            _LOGGER.warning(f"Unknown file type for {filename}, skipping metadata update")
             return
 
         # Find and update existing file record
@@ -478,7 +476,7 @@ class CloudCacheManager:
                 if 'modifiedTime' in drive_metadata:
                     existing['modified_time'] = drive_metadata['modifiedTime']
 
-            logger.info(f"Updated metadata for existing file: {filename}")
+            _LOGGER.info(f"Updated metadata for existing file: {filename}")
         else:
             # Create new record
             file_record = {
@@ -497,7 +495,7 @@ class CloudCacheManager:
                     file_record['modified_time'] = drive_metadata['modifiedTime']
 
             files_list.append(file_record)
-            logger.info(f"Added new file record to metadata: {filename}")
+            _LOGGER.info(f"Added new file record to metadata: {filename}")
 
         # Update cache stats
         self._update_cache_stats(metadata)
@@ -505,7 +503,7 @@ class CloudCacheManager:
         # Save updated metadata
         self.save_metadata(doc_id, metadata)
 
-        logger.info(f"Cache metadata updated for {doc_id}")
+        _LOGGER.info(f"Cache metadata updated for {doc_id}")
 
     def record_cached_file(
         self,
@@ -546,9 +544,9 @@ class CloudCacheManager:
 
         # Determine file category
         category = self._get_file_category(filename)
-        logger.info(f"Recording cached file: {filename} -> category: {category}")
+        _LOGGER.info(f"Recording cached file: {filename} -> category: {category}")
         if not category:
-            logger.warning(f"Unknown file type for {filename}, skipping metadata")
+            _LOGGER.warning(f"Unknown file type for {filename}, skipping metadata")
             return
 
         # Create file record
@@ -623,7 +621,7 @@ class CloudCacheManager:
         if cache_key in self._metadata_cache:
             del self._metadata_cache[cache_key]
 
-        logger.info(f"Successfully recorded cached file: {filename} in category {category}")
+        _LOGGER.info(f"Successfully recorded cached file: {filename} in category {category}")
 
     def record_conversion(
         self,
@@ -634,7 +632,7 @@ class CloudCacheManager:
         status: str = "success",
         error: Optional[str] = None,
     ) -> None:
-        """Record the result of a file conversion (e.g., SVG → PDF).
+        """Record the result of a file conversion (e.g., SVG -> PDF).
 
         Args:
             doc_id: Document ID.
@@ -646,7 +644,7 @@ class CloudCacheManager:
         """
         metadata = self.load_metadata(doc_id)
         if not metadata:
-            logger.error(f"Cannot record conversion for {filename}: no metadata found")
+            _LOGGER.error(f"Cannot record conversion for {filename}: no metadata found")
             return
 
         # Find the file in metadata - check figures, csvs, and bibliographies
@@ -661,9 +659,9 @@ class CloudCacheManager:
             # Debug: list what files ARE in metadata
             csv_files = [f['filename'] for f in metadata.get('csvs', [])]
             fig_files = [f['filename'] for f in metadata.get('figures', [])]
-            logger.warning(f"Cannot record conversion for {filename}: file not found in metadata")
-            logger.warning(f"  CSVs in metadata: {csv_files}")
-            logger.warning(f"  Figures in metadata: {fig_files}")
+            _LOGGER.warning(f"Cannot record conversion for {filename}: file not found in metadata")
+            _LOGGER.warning(f"  CSVs in metadata: {csv_files}")
+            _LOGGER.warning(f"  Figures in metadata: {fig_files}")
             return
 
         # Update conversion record
@@ -686,8 +684,62 @@ class CloudCacheManager:
         if cache_key in self._metadata_cache:
             del self._metadata_cache[cache_key]
 
-        logger.debug(f"Recorded conversion for {filename}: {status}")
+        _LOGGER.debug(f"Recorded conversion for {filename}: {status}")
 
+    def enrich_with_figure_references(self, doc_id: str, doc_path: Path) -> None:
+        """Enrich figure metadata with text reference information.
+
+        Reads the cached markdown document and uses DocumentChecker to find
+        where each figure is referenced in the text, then updates figure
+        records with first_reference_line and reference_count.
+
+        Matching strategy: figures are matched by reference_order (the Nth
+        image definition) to figure_num (the N in "Figure N" in text).
+
+        Args:
+            doc_id: Document ID.
+            doc_path: Path to the cached markdown document.
+        """
+        from markmeld.document_checker import DocumentChecker
+
+        metadata = self.load_metadata(doc_id)
+        if not metadata or not metadata.get('figures'):
+            return
+
+        markdown_content = doc_path.read_text()
+        dc = DocumentChecker()
+        references = dc.extract_figure_references(markdown_content)
+
+        if not references:
+            return
+
+        # Group references by figure_num: {figure_num: [line_num, ...]}
+        ref_lines = {}
+        for ref in references:
+            ref_lines.setdefault(ref.figure_num, []).append(ref.line_num)
+
+        # Match figure records by reference_order to figure_num
+        updated = False
+        for fig_record in metadata['figures']:
+            order = fig_record.get('reference_order')
+            if order is None:
+                continue
+
+            figure_num = str(order)
+            if figure_num not in ref_lines:
+                continue
+
+            lines = ref_lines[figure_num]
+            fig_record['first_reference_line'] = min(lines)
+            fig_record['reference_count'] = len(lines)
+            updated = True
+
+        if updated:
+            self.save_metadata(doc_id, metadata)
+            cache_key = f"metadata_{doc_id}"
+            if cache_key in self._metadata_cache:
+                del self._metadata_cache[cache_key]
+            _LOGGER.debug("Enriched figure metadata with reference info for %s", doc_id)
 
     def get_cached_files_summary(self, doc_id: str) -> Dict[str, Any]:
         """Get summary of all cached files for a document.
@@ -724,7 +776,7 @@ class CloudCacheManager:
         if metadata and 'document' in metadata:
             return metadata['document'].get('folder_id')
         return None
-    
+
     def ensure_directories(
         self, doc_id: str, subdirs: Optional[List[str]] = None
     ) -> None:
@@ -736,10 +788,10 @@ class CloudCacheManager:
         """
         if subdirs is None:
             subdirs = list(self.CACHE_SUBDIRS.keys())
-        
+
         for subdir_type in subdirs:
             self.get_cache_dir(doc_id, subdir_type)
-    
+
     def clear_cache(
         self, doc_id: Optional[str] = None, subdirs: Optional[List[str]] = None
     ) -> None:
@@ -749,7 +801,7 @@ class CloudCacheManager:
             doc_id: Document ID to clear (None = clear all).
             subdirs: Specific subdirectories to clear (None = all).
         """
-        
+
         if doc_id is None:
             # Clear entire cache
             if self.cache_root.exists():
@@ -759,7 +811,7 @@ class CloudCacheManager:
         else:
             # Clear specific document
             doc_cache_dir = self.cache_root / doc_id
-            
+
             if subdirs is None:
                 # Clear entire document cache
                 if doc_cache_dir.exists():
@@ -770,7 +822,7 @@ class CloudCacheManager:
                     subdir_path = doc_cache_dir / self.CACHE_SUBDIRS.get(subdir_type, subdir_type)
                     if subdir_path.exists():
                         shutil.rmtree(subdir_path)
-    
+
     def list_cached_documents(self) -> List[str]:
         """List all document IDs with cache.
 
@@ -779,14 +831,14 @@ class CloudCacheManager:
         """
         if not self.cache_root.exists():
             return []
-        
+
         doc_ids = []
         for item in self.cache_root.iterdir():
             if item.is_dir() and not item.name.startswith('.'):
                 doc_ids.append(item.name)
-        
+
         return sorted(doc_ids)
-    
+
     def get_cache_size(self, doc_id: Optional[str] = None) -> int:
         """Get cache size in bytes for a document or all documents.
 
@@ -803,12 +855,12 @@ class CloudCacheManager:
                     if item.is_file():
                         total += item.stat().st_size
             return total
-        
+
         if doc_id is None:
             return get_dir_size(self.cache_root)
         else:
             return get_dir_size(self.cache_root / doc_id)
-    
+
     def prune_cache(self, days_old: int = 30) -> List[str]:
         """Remove cached documents older than specified days.
 
@@ -818,13 +870,13 @@ class CloudCacheManager:
         Returns:
             List of pruned document IDs.
         """
-        
+
         cutoff_date = datetime.now() - timedelta(days=days_old)
         pruned = []
-        
+
         for doc_id in self.list_cached_documents():
             metadata = self.load_metadata(doc_id)
-            
+
             if metadata:
                 last_accessed = metadata.get('last_accessed')
                 if last_accessed:
@@ -837,9 +889,9 @@ class CloudCacheManager:
                                 pruned.append(doc_id)
                     except (ValueError, TypeError):
                         pass
-        
+
         return pruned
-    
+
     def load_digest(self, doc_id: str, file_identifier: str) -> Optional[str]:
         """Load stored digest from local filesystem.
 
@@ -857,16 +909,16 @@ class CloudCacheManager:
         # Don't use with_suffix as it replaces the last suffix, which breaks .params files
         digest_path = Path(str(file_identifier) + '.digest')
         digest_file = self.get_cache_path(doc_id, 'digest', digest_path)
-        
+
         if digest_file.exists():
             try:
                 return digest_file.read_text().strip()
             except Exception as e:
-                logger.error(f"Error reading digest file {digest_file}: {str(e)}")
+                _LOGGER.error(f"Error reading digest file {digest_file}: {str(e)}")
                 return None
-        
+
         return None
-    
+
     def save_digest(self, doc_id: str, file_identifier: str, digest: str) -> None:
         """Save digest to local filesystem.
 
@@ -882,10 +934,10 @@ class CloudCacheManager:
         # Don't use with_suffix as it replaces the last suffix, which breaks .params files
         digest_path = Path(str(file_identifier) + '.digest')
         digest_file = self.get_cache_path(doc_id, 'digest', digest_path)
-        
+
         try:
             # Parent directories are created automatically by get_cache_path
             digest_file.write_text(digest)
-            logger.debug(f"Saved digest to {digest_file}: {digest}")
+            _LOGGER.debug(f"Saved digest to {digest_file}: {digest}")
         except Exception as e:
-            logger.error(f"Error saving digest file {digest_file}: {str(e)}")
+            _LOGGER.error(f"Error saving digest file {digest_file}: {str(e)}")

@@ -2,27 +2,10 @@
 
 import glob
 import os
-from logging import getLogger
-from typing import Any, Dict, Optional
+import logging
+from typing import Any, Dict
 
-PKG_NAME = "markmeld"
-_LOGGER = getLogger(PKG_NAME)
-
-
-def make_abspath(relpath: str, cfg: Dict[str, Any], root: Optional[str] = None) -> str:
-    """Convert a relative path to an absolute path.
-
-    Args:
-        relpath: The relative path to convert.
-        cfg: Configuration dictionary containing '_cfg_file_path'.
-        root: Optional root directory. If provided, joins relpath to this root.
-
-    Returns:
-        The absolute path.
-    """
-    if root:
-        return os.path.join(root, relpath)
-    return os.path.join(os.path.dirname(cfg["_cfg_file_path"]), relpath)
+_LOGGER = logging.getLogger(__name__)
 
 
 def glob_factory(vars: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
@@ -42,7 +25,8 @@ def glob_factory(vars: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[str, Dict[st
     Returns:
         Dictionary mapping target names to target configurations.
     """
-    path = make_abspath(vars["path"], cfg)
+    from .utilities import make_abspath
+    path = make_abspath(vars["path"], cfg["_cfg_file_path"])
     name_levels = vars.get("name_levels", 0)
     globs = glob.glob(path)
     _LOGGER.debug(f"Globs: {globs}")

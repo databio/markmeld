@@ -19,9 +19,7 @@ import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(message)s')
-logger = logging.getLogger(__name__)
+_LOGGER = logging.getLogger(__name__)
 
 
 class FigureConverter:
@@ -96,7 +94,7 @@ class FigureConverter:
         # Check if conversion is needed
         if not self.needs_conversion(digest_path, doc_id, output_path, file_info, params):
             relative_path = self._get_relative_output_path(digest_path, figure_type)
-            logger.info(f"  Using cached: {relative_path}")
+            _LOGGER.info(f"  Using cached: {relative_path}")
             # Return relative path matching the original structure
             return self._get_relative_output_path(digest_path, figure_type)
         
@@ -109,21 +107,21 @@ class FigureConverter:
             elif figure_type == 'sheet':
                 success = self._convert_gsheet(source_path, output_path, params, file_info)
             else:
-                logger.warning(f"Unsupported figure type: {figure_type}")
+                _LOGGER.warning(f"Unsupported figure type: {figure_type}")
                 return None
             
             if success:
                 # Save digests for future cache checks (use original path as key)
                 if file_info and 'md5Checksum' in file_info:
-                    logger.info(f"  Saving file digest for {digest_path}: {file_info['md5Checksum']}")
+                    _LOGGER.info(f"  Saving file digest for {digest_path}: {file_info['md5Checksum']}")
                     self.save_digest(digest_path, file_info['md5Checksum'], doc_id, 'file')
                 
                 # For CSV files, also save parameter digest (even if empty)
                 if figure_type == 'csv':
                     params_to_save = params if params is not None else {}
                     params_digest = self.compute_params_digest(params_to_save)
-                    logger.info(f"  Saving params digest for {digest_path}: {params_digest}")
-                    logger.info(f"  Params being saved: {params_to_save}")
+                    _LOGGER.info(f"  Saving params digest for {digest_path}: {params_digest}")
+                    _LOGGER.info(f"  Params being saved: {params_to_save}")
                     self.save_digest(digest_path, params_digest, doc_id, 'params')
 
                 # Return relative path matching the original structure
@@ -132,7 +130,7 @@ class FigureConverter:
                 return None
                 
         except Exception as e:
-            logger.error(f"Error converting {source_path}: {e}")
+            _LOGGER.error(f"Error converting {source_path}: {e}")
             return None
     
     def get_figure_type(self, path: str) -> str:
@@ -191,36 +189,36 @@ class FigureConverter:
         
         # For CSV files, check both file digest AND parameter digest
         if figure_type == 'csv':
-            logger.debug(f"  Checking CSV cache for: {source_path}")
-            logger.debug(f"  Params provided: {params}")
+            _LOGGER.debug(f"  Checking CSV cache for: {source_path}")
+            _LOGGER.debug(f"  Params provided: {params}")
             
             # Check file digest
             if file_info and 'md5Checksum' in file_info:
                 stored_file_digest = self._load_digest(source_path, doc_id, 'file')
                 current_digest = file_info.get('md5Checksum')
-                logger.info(f"  File digest - stored: {stored_file_digest}, current: {current_digest}")
+                _LOGGER.info(f"  File digest - stored: {stored_file_digest}, current: {current_digest}")
                 if stored_file_digest != current_digest:
-                    logger.info(f"  File has changed, re-converting")
+                    _LOGGER.info(f"  File has changed, re-converting")
                     return True  # File has changed
             else:
                 # No file_info provided - can't check file changes, assume needs conversion
-                logger.debug(f"  No file_info provided for CSV, assuming needs conversion")
+                _LOGGER.debug(f"  No file_info provided for CSV, assuming needs conversion")
                 return True
             
             # Check parameter digest (even if params is empty dict)
             params_to_check = params if params is not None else {}
             params_digest = self.compute_params_digest(params_to_check)
             stored_params_digest = self._load_digest(source_path, doc_id, 'params')
-            logger.info(f"  Params digest - stored: {stored_params_digest}, current: {params_digest}")
-            logger.debug(f"  Current params: {params_to_check}")
+            _LOGGER.info(f"  Params digest - stored: {stored_params_digest}, current: {params_digest}")
+            _LOGGER.debug(f"  Current params: {params_to_check}")
             if stored_params_digest != params_digest:
-                logger.info(f"  Parameters changed - re-converting")
-                logger.info(f"    Old digest: {stored_params_digest}")
-                logger.info(f"    New digest: {params_digest}")
-                logger.info(f"    New params: {params_to_check}")
+                _LOGGER.info(f"  Parameters changed - re-converting")
+                _LOGGER.info(f"    Old digest: {stored_params_digest}")
+                _LOGGER.info(f"    New digest: {params_digest}")
+                _LOGGER.info(f"    New params: {params_to_check}")
                 return True  # Parameters have changed
             
-            logger.debug(f"  Both file and params unchanged, using cache")
+            _LOGGER.debug(f"  Both file and params unchanged, using cache")
             return False  # Both file and params unchanged
         
         # For other files (SVG, etc.), check MD5 digest
@@ -254,7 +252,7 @@ class FigureConverter:
                 svg_path
             ]
             
-            logger.info(f"  Converting SVG to PDF: {svg_path}")
+            _LOGGER.info(f"  Converting SVG to PDF: {svg_path}")
             
             # Set environment to avoid X11/DBus issues
             env = os.environ.copy()
@@ -269,39 +267,39 @@ class FigureConverter:
             )
             
             if result.returncode != 0:
-                logger.error(f"❌ Inkscape conversion failed with return code {result.returncode}")
-                logger.error(f"   Command: {' '.join(cmd)}")
+                _LOGGER.error(f"❌ Inkscape conversion failed with return code {result.returncode}")
+                _LOGGER.error(f"   Command: {' '.join(cmd)}")
                 if result.stderr:
-                    logger.error(f"   Error output: {result.stderr[:500]}")
+                    _LOGGER.error(f"   Error output: {result.stderr[:500]}")
                 if result.stdout:
-                    logger.debug(f"   Output: {result.stdout[:500]}")
+                    _LOGGER.debug(f"   Output: {result.stdout[:500]}")
                 return False
             
             if not output_path.exists():
-                logger.error(f"❌ PDF file was not created at {output_path}")
-                logger.error(f"   SVG source: {svg_path}")
-                logger.error(f"   Check if Inkscape completed successfully")
+                _LOGGER.error(f"❌ PDF file was not created at {output_path}")
+                _LOGGER.error(f"   SVG source: {svg_path}")
+                _LOGGER.error(f"   Check if Inkscape completed successfully")
                 return False
             
             # Log with relative paths for readability
             svg_rel = '/'.join(Path(svg_path).parts[-2:])
             out_rel = '/'.join(output_path.parts[-2:])
-            logger.info(f"  Converted: {svg_rel} -> {out_rel}")
+            _LOGGER.info(f"  Converted: {svg_rel} -> {out_rel}")
             return True
             
         except subprocess.TimeoutExpired:
-            logger.error(f"❌ Inkscape conversion timed out after 60 seconds")
-            logger.error(f"   SVG file: {svg_path}")
-            logger.error(f"   This may indicate a complex or corrupted SVG file")
+            _LOGGER.error(f"❌ Inkscape conversion timed out after 60 seconds")
+            _LOGGER.error(f"   SVG file: {svg_path}")
+            _LOGGER.error(f"   This may indicate a complex or corrupted SVG file")
             return False
         except FileNotFoundError:
-            logger.error(f"❌ Inkscape not found: '{self.inkscape_command}'")
-            logger.error(f"   Please install Inkscape: sudo apt-get install inkscape (Ubuntu/Debian)")
-            logger.error(f"   Or: brew install inkscape (macOS)")
+            _LOGGER.error(f"❌ Inkscape not found: '{self.inkscape_command}'")
+            _LOGGER.error(f"   Please install Inkscape: sudo apt-get install inkscape (Ubuntu/Debian)")
+            _LOGGER.error(f"   Or: brew install inkscape (macOS)")
             return False
         except Exception as e:
-            logger.error(f"❌ Unexpected error in SVG conversion: {e}")
-            logger.error(f"   SVG file: {svg_path}")
+            _LOGGER.error(f"❌ Unexpected error in SVG conversion: {e}")
+            _LOGGER.error(f"   SVG file: {svg_path}")
             return False
     
     def convert_csv(
@@ -336,11 +334,11 @@ class FigureConverter:
             # Log with relative paths for readability
             csv_rel = '/'.join(Path(csv_path).parts[-2:])
             out_rel = '/'.join(output_path.parts[-2:])
-            logger.info(f"  Converted: {csv_rel} -> {out_rel}")
+            _LOGGER.info(f"  Converted: {csv_rel} -> {out_rel}")
             return True
             
         except Exception as e:
-            logger.error(f"Error converting CSV to PDF: {e}")
+            _LOGGER.error(f"Error converting CSV to PDF: {e}")
             return False
     
     def _convert_gsheet(
@@ -381,7 +379,7 @@ class FigureConverter:
             df = self._download_sheet_as_dataframe(sheet_id, worksheet)
             
             if df is None:
-                logger.error(f"Failed to download Google Sheet: {sheet_id}")
+                _LOGGER.error(f"Failed to download Google Sheet: {sheet_id}")
                 return False
             
             # Prepare parameters
@@ -391,11 +389,11 @@ class FigureConverter:
             self._df_to_pdf(df, str(output_path), **table_params)
             
             out_rel = '/'.join(output_path.parts[-2:])
-            logger.info(f"  Converted: Google Sheet {sheet_id} -> {out_rel}")
+            _LOGGER.info(f"  Converted: Google Sheet {sheet_id} -> {out_rel}")
             return True
             
         except Exception as e:
-            logger.error(f"Error converting Google Sheet to PDF: {e}")
+            _LOGGER.error(f"Error converting Google Sheet to PDF: {e}")
             return False
     
     def _download_sheet_as_dataframe(
@@ -411,7 +409,7 @@ class FigureConverter:
             pandas DataFrame or None if failed.
         """
         if not self.drive_service:
-            logger.error("Drive service not available for Sheet download")
+            _LOGGER.error("Drive service not available for Sheet download")
             return None
         
         try:
@@ -442,7 +440,7 @@ class FigureConverter:
             return df
             
         except Exception as e:
-            logger.error(f"Error downloading Google Sheet: {e}")
+            _LOGGER.error(f"Error downloading Google Sheet: {e}")
             return None
     
     def _prepare_table_parameters(
@@ -461,7 +459,7 @@ class FigureConverter:
         
         # Start with defaults
         table_params = self.default_table_params.copy()
-        logger.debug(f"  Input params: {params}")
+        _LOGGER.debug(f"  Input params: {params}")
         
         # Extract and convert parameters
         if 'fig_width' in params:
@@ -470,17 +468,17 @@ class FigureConverter:
             if width_str == 'auto':
                 # Use CSS auto for width
                 table_params['fig_width_mm'] = 'auto'
-                logger.debug(f"  Using CSS auto width")
+                _LOGGER.debug(f"  Using CSS auto width")
             elif width_str.endswith('mm'):
                 table_params['fig_width_mm'] = float(width_str[:-2])
-                logger.debug(f"  Set width: {table_params['fig_width_mm']}mm")
+                _LOGGER.debug(f"  Set width: {table_params['fig_width_mm']}mm")
             else:
                 # Assume mm if no unit specified (and not 'auto')
                 try:
                     table_params['fig_width_mm'] = float(width_str)
-                    logger.debug(f"  Set width: {table_params['fig_width_mm']}mm")
+                    _LOGGER.debug(f"  Set width: {table_params['fig_width_mm']}mm")
                 except ValueError:
-                    logger.warning(f"  Invalid width value '{params['fig_width']}', using default")
+                    _LOGGER.warning(f"  Invalid width value '{params['fig_width']}', using default")
                     # Default already in table_params
         
         if 'font-size' in params:
@@ -491,7 +489,7 @@ class FigureConverter:
             else:
                 # Assume pt if no unit specified
                 table_params['font_size_pt'] = float(size_str)
-            logger.debug(f"  Set font-size: {table_params['font_size_pt']}pt")
+            _LOGGER.debug(f"  Set font-size: {table_params['font_size_pt']}pt")
         
         # Extract column/padding params FIRST (needed for height calculation)
         if 'col-names' in params:
@@ -521,16 +519,16 @@ class FigureConverter:
             height_str = str(params['fig_height']).strip().lower()
             if height_str == 'auto':
                 table_params['fig_height_mm'] = 'auto'
-                logger.info(f"  Using CSS auto height")
+                _LOGGER.info(f"  Using CSS auto height")
             elif height_str.endswith('mm'):
                 table_params['fig_height_mm'] = float(height_str[:-2])
-                logger.info(f"  Using explicit height: {table_params['fig_height_mm']}mm")
+                _LOGGER.info(f"  Using explicit height: {table_params['fig_height_mm']}mm")
             else:
                 try:
                     table_params['fig_height_mm'] = float(height_str)
-                    logger.info(f"  Using explicit height: {table_params['fig_height_mm']}mm")
+                    _LOGGER.info(f"  Using explicit height: {table_params['fig_height_mm']}mm")
                 except ValueError:
-                    logger.warning(f"  Invalid height value '{params['fig_height']}', using CSS auto")
+                    _LOGGER.warning(f"  Invalid height value '{params['fig_height']}', using CSS auto")
                     table_params['fig_height_mm'] = 'auto'
         else:
             # Auto-calculate height using actual column widths
@@ -543,9 +541,9 @@ class FigureConverter:
                 page_width, font_size,
                 table_params.get('tr_padding_v', 1), table_params.get('tr_padding_h', 3)
             )
-            logger.info(f"  Auto-calculated height: {table_params['fig_height_mm']:.2f}mm for {len(df)} data rows + header (font: {font_size}pt)")
+            _LOGGER.info(f"  Auto-calculated height: {table_params['fig_height_mm']:.2f}mm for {len(df)} data rows + header (font: {font_size}pt)")
         
-        logger.debug(f"  Final table params: {table_params}")
+        _LOGGER.debug(f"  Final table params: {table_params}")
         return table_params
     
     def _build_table_css(
@@ -644,7 +642,7 @@ class FigureConverter:
         css = self._build_table_css(col_widths, col_alignments, fig_width_mm, fig_height_mm,
                                      font_size_pt, tr_padding_v, tr_padding_h)
 
-        logger.info(f"  Generating PDF with dimensions: {fig_width_mm}mm x {fig_height_mm}mm")
+        _LOGGER.info(f"  Generating PDF with dimensions: {fig_width_mm}mm x {fig_height_mm}mm")
         HTML(string=css + df.to_html(index=False, escape=True)).write_pdf(output_file)
 
     def _find_optimal_height(
@@ -682,7 +680,7 @@ class FigureConverter:
 
         low, high = 10.0, 2000.0
         if not fits_on_one_page(high):
-            logger.warning("Content doesn't fit on 2000mm page")
+            _LOGGER.warning("Content doesn't fit on 2000mm page")
             return high
 
         while high - low > 1.0:
@@ -792,7 +790,7 @@ class FigureConverter:
         # Sort keys for consistent ordering
         sorted_params = json.dumps(params, sort_keys=True)
         digest = hashlib.md5(sorted_params.encode()).hexdigest()
-        logger.debug(f"  Computed params digest: {digest} for params: {sorted_params}")
+        _LOGGER.debug(f"  Computed params digest: {digest} for params: {sorted_params}")
         return digest
     
     def _load_digest(self, file_path: str, doc_id: str, digest_type: str = 'file') -> Optional[str]:

@@ -12,7 +12,7 @@ import tempfile
 
 # Try to import Google Drive dependencies
 try:
-    from markmeld.cloud_cache_manager import CloudCacheManager
+    from markmeld.google_drive import CloudCacheManager
     GOOGLE_DEPS_AVAILABLE = True
 except ImportError:
     GOOGLE_DEPS_AVAILABLE = False

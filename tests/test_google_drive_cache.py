@@ -11,7 +11,7 @@ import tempfile
 # Try to import Google Drive dependencies
 try:
     from markmeld.google_drive import GoogleDriveProcessor
-    from markmeld.cloud_cache_manager import CloudCacheManager
+    from markmeld.google_drive import CloudCacheManager
     GOOGLE_DEPS_AVAILABLE = True
 except ImportError:
     GOOGLE_DEPS_AVAILABLE = False
@@ -21,8 +21,8 @@ except ImportError:
 class TestGoogleDriveDiskCache:
     """Test the disk cache functionality of GoogleDriveProcessor."""
     
-    @patch('markmeld.google_drive.service_account.Credentials.from_service_account_info')
-    @patch('markmeld.google_drive.build')
+    @patch('markmeld.google_drive.processor.service_account.Credentials.from_service_account_info')
+    @patch('markmeld.google_drive.processor.build')
     def test_disk_cache_initialization(self, mock_build, mock_creds):
         """Test that disk cache is properly initialized through cache manager."""
         # Setup mocks
@@ -38,9 +38,9 @@ class TestGoogleDriveDiskCache:
         assert processor.cache_manager.cache_root.is_absolute()
         assert processor.cache_manager.cache_root.name == '.cache'
     
-    @patch('markmeld.google_drive.service_account.Credentials.from_service_account_info')
-    @patch('markmeld.google_drive.build')
-    @patch('markmeld.google_drive.MediaIoBaseDownload')
+    @patch('markmeld.google_drive.processor.service_account.Credentials.from_service_account_info')
+    @patch('markmeld.google_drive.processor.build')
+    @patch('markmeld.google_drive.processor.MediaIoBaseDownload')
     def test_disk_cache_save_and_load(self, mock_downloader_class, mock_build, mock_creds):
         """Test that documents are saved to and loaded from disk cache."""
         # Setup mocks
@@ -88,8 +88,8 @@ class TestGoogleDriveDiskCache:
             
         assert content1 == content2
     
-    @patch('markmeld.google_drive.service_account.Credentials.from_service_account_info')
-    @patch('markmeld.google_drive.build')
+    @patch('markmeld.google_drive.processor.service_account.Credentials.from_service_account_info')
+    @patch('markmeld.google_drive.processor.build')
     def test_disk_cache_disabled(self, mock_build, mock_creds):
         """Test behavior when disk caching is disabled."""
         mock_creds.return_value = MagicMock(service_account_email="test@example.com")
@@ -106,9 +106,9 @@ class TestGoogleDriveDiskCache:
         result = processor._load_from_disk('any_doc_id')
         assert result is None
     
-    @patch('markmeld.google_drive.service_account.Credentials.from_service_account_info')
-    @patch('markmeld.google_drive.build')
-    @patch('markmeld.google_drive.MediaIoBaseDownload')
+    @patch('markmeld.google_drive.processor.service_account.Credentials.from_service_account_info')
+    @patch('markmeld.google_drive.processor.build')
+    @patch('markmeld.google_drive.processor.MediaIoBaseDownload')
     def test_disk_cache_invalidation_on_modification(self, mock_downloader_class, mock_build, mock_creds):
         """Test that disk cache is invalidated when document is modified."""
         mock_creds.return_value = MagicMock(service_account_email="test@example.com")

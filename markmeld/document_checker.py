@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, NamedTuple, Optional, Tuple
 
-logger = logging.getLogger(__name__)
+_LOGGER = logging.getLogger(__name__)
 
 
 class FigureReference(NamedTuple):
@@ -563,7 +563,7 @@ class DocumentChecker:
 
             except Exception as e:
                 # Don't fail validation if label processing has issues
-                logger.debug(f"Label validation error: {e}")
+                _LOGGER.debug(f"Label validation error: {e}")
 
         return violations
 

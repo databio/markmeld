@@ -28,27 +28,16 @@ from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
 # These are misleading as the download actually succeeds
 logging.getLogger('googleapiclient.http').setLevel(logging.ERROR)
 
-# Import utility functions from utilities module
-from .utilities import (
-    sanitize_filename,
-    write_to_file,
-    clean_markdown,
-    clean_escape_characters,
-    remove_embedded_images,
-    strip_bold_from_headings,
-    replace_svg_extensions,
-    extract_csv_paths,
-    update_figure_paths,
-    create_figure_path_mapping,
-)
+# Import utility functions from parent package
+from ..utilities import sanitize_filename, write_to_file
+from .markdown_clean import clean_markdown
+from .figure_paths import extract_csv_paths, update_figure_paths, create_figure_path_mapping
 
-# Import cache manager and figure converter
-from .cloud_cache_manager import CloudCacheManager
+# Import cache manager and figure converter from this subpackage
+from .cache_manager import CloudCacheManager
 from .figure_converter import FigureConverter
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(message)s')
-logger = logging.getLogger(__name__)
+_LOGGER = logging.getLogger(__name__)
 
 
 def handle_drive_errors(func: Any) -> Any:
@@ -67,7 +56,7 @@ def handle_drive_errors(func: Any) -> Any:
         try:
             return func(*args, **kwargs)
         except Exception as e:
-            logger.error(f"Error in {func.__name__}: {e}")
+            _LOGGER.error(f"Error in {func.__name__}: {e}")
             raise
     return wrapper
 
@@ -199,7 +188,7 @@ class GoogleDriveProcessor:
         # Get service account email
         try:
             self.service_account_email = self.credentials.service_account_email
-        except:
+        except Exception:
             self.service_account_email = "unknown"
         
         # SVG processing configuration
@@ -225,7 +214,7 @@ class GoogleDriveProcessor:
 
     def _log_credentials_info(self) -> None:
         """Log information about the credentials being used."""
-        logger.info(f"Google Drive Processor initialized: {self._credentials_info.get('client_email', 'unknown')} ({self._credentials_info.get('project_id', 'unknown')})")
+        _LOGGER.info(f"Google Drive Processor initialized: {self._credentials_info.get('client_email', 'unknown')} ({self._credentials_info.get('project_id', 'unknown')})")
 
     def __repr__(self) -> str:
         """Return string representation of the GoogleDriveProcessor."""
@@ -322,11 +311,11 @@ class GoogleDriveProcessor:
             user_credentials = Credentials(token=access_token)
             user_drive_service = build('drive', 'v3', credentials=user_credentials, cache_discovery=False)
             drive_service = user_drive_service
-            logger.info(f"Updating file {file_id} using user OAuth token")
+            _LOGGER.info(f"Updating file {file_id} using user OAuth token")
         else:
             # Use existing service account credentials
             drive_service = self.drive_service
-            logger.info(f"Updating file {file_id} using service account")
+            _LOGGER.info(f"Updating file {file_id} using service account")
 
         # Update the file
         updated_file = drive_service.files().update(
@@ -335,10 +324,10 @@ class GoogleDriveProcessor:
             fields='id, name, modifiedTime, md5Checksum, size, mimeType'
         ).execute()
 
-        logger.info(f"File updated successfully: {updated_file['name']} (ID: {file_id})")
-        logger.info(f"  Modified time: {updated_file.get('modifiedTime', 'N/A')}")
-        logger.info(f"  MD5 checksum: {updated_file.get('md5Checksum', 'N/A')}")
-        logger.info(f"  Size: {updated_file.get('size', 'N/A')} bytes")
+        _LOGGER.info(f"File updated successfully: {updated_file['name']} (ID: {file_id})")
+        _LOGGER.info(f"  Modified time: {updated_file.get('modifiedTime', 'N/A')}")
+        _LOGGER.info(f"  MD5 checksum: {updated_file.get('md5Checksum', 'N/A')}")
+        _LOGGER.info(f"  Size: {updated_file.get('size', 'N/A')} bytes")
 
         return updated_file
 
@@ -377,7 +366,7 @@ class GoogleDriveProcessor:
         # Save to additional custom path if provided
         if output_path:
             write_to_file(markdown_content, output_path)
-            logger.info(f"Also saved to: {output_path}")
+            _LOGGER.info(f"Also saved to: {output_path}")
         
         # Parse or return raw
         if parse_frontmatter:
@@ -407,8 +396,8 @@ class GoogleDriveProcessor:
             return disk_content
         
         # Need to download from Google Drive (either not cached or cache is outdated)
-        logger.info(f"✗ Changes detected - downloading fresh content from Google Drive...")
-        logger.info(f"  Document ID: {doc_id}")
+        _LOGGER.info(f"✗ Changes detected - downloading fresh content from Google Drive...")
+        _LOGGER.info(f"  Document ID: {doc_id}")
         
         # Check for active changes before downloading
         self._check_for_active_changes(doc_id)
@@ -427,7 +416,7 @@ class GoogleDriveProcessor:
         while not done:
             status, done = downloader.next_chunk()
             if status:
-                logger.info(f"Download {int(status.progress() * 100)}%.")
+                _LOGGER.info(f"Download {int(status.progress() * 100)}%.")
         
         # Get the markdown content as string
         file_content.seek(0)
@@ -439,7 +428,7 @@ class GoogleDriveProcessor:
         # Apply cleaning before caching if requested (default is True)
         if apply_cleaning:
             content = clean_markdown(content)
-            logger.info(f"Applied cleaning to document {doc_id} before caching")
+            _LOGGER.info(f"Applied cleaning to document {doc_id} before caching")
         
         # Save to disk if enabled
         if not skip_disk_save and self.save_to_disk:
@@ -468,14 +457,14 @@ class GoogleDriveProcessor:
                 first_line_title = lines[0][2:].strip()
                 
                 if first_line_title == doc_title:
-                    logger.info(f"Removing auto-added title: '{first_line_title}'")
+                    _LOGGER.info(f"Removing auto-added title: '{first_line_title}'")
                     if lines[1].strip() == '---':
-                        logger.info("Frontmatter block detected")
+                        _LOGGER.info("Frontmatter block detected")
                     content = '\n'.join(lines[1:])
                     if content.startswith('\n'):
                         content = content[1:]
         elif content.strip().startswith('---'):
-            logger.info("Frontmatter block detected")
+            _LOGGER.info("Frontmatter block detected")
         
         return content
     
@@ -524,7 +513,7 @@ class GoogleDriveProcessor:
             return False
             
         except Exception as e:
-            logger.debug(f"Could not check for suggestions using Docs API: {e}")
+            _LOGGER.debug(f"Could not check for suggestions using Docs API: {e}")
             # Fall back to false if we can't check
             return False
     
@@ -630,22 +619,22 @@ class GoogleDriveProcessor:
             
             # Check for suggestions using Google Docs API
             if self._document_has_suggestions(doc_id):
-                logger.warning("")
-                logger.warning("=" * 70)
-                logger.warning("⚠️  WARNING: DOCUMENT HAS SUGGESTED EDITS")
-                logger.warning("=" * 70)
-                logger.warning(f"Document: {doc_name}")
-                logger.warning("")
-                logger.warning("This document contains unresolved suggested edits that")
-                logger.warning("may not be included in the exported version.")
-                logger.warning("")
-                logger.warning("You are building a production PDF from a document with")
-                logger.warning("suggested edits, which is probably not what you want.")
-                logger.warning("")
-                logger.warning("Please review and accept/reject all suggested edits in")
-                logger.warning("Google Docs before generating the final output.")
-                logger.warning("=" * 70)
-                logger.warning("")
+                _LOGGER.warning("")
+                _LOGGER.warning("=" * 70)
+                _LOGGER.warning("⚠️  WARNING: DOCUMENT HAS SUGGESTED EDITS")
+                _LOGGER.warning("=" * 70)
+                _LOGGER.warning(f"Document: {doc_name}")
+                _LOGGER.warning("")
+                _LOGGER.warning("This document contains unresolved suggested edits that")
+                _LOGGER.warning("may not be included in the exported version.")
+                _LOGGER.warning("")
+                _LOGGER.warning("You are building a production PDF from a document with")
+                _LOGGER.warning("suggested edits, which is probably not what you want.")
+                _LOGGER.warning("")
+                _LOGGER.warning("Please review and accept/reject all suggested edits in")
+                _LOGGER.warning("Google Docs before generating the final output.")
+                _LOGGER.warning("=" * 70)
+                _LOGGER.warning("")
             
             # Also check for unresolved comments
             try:
@@ -687,14 +676,14 @@ class GoogleDriveProcessor:
                         unresolved_comments.append(comment)
                 
                 if unresolved_comments:
-                    logger.warning("")
-                    logger.warning("=" * 70)
-                    logger.warning("📝 NOTICE: DOCUMENT HAS UNRESOLVED DISCUSSION COMMENTS")
-                    logger.warning("=" * 70)
-                    logger.warning(f"Document: {doc_name}")
-                    logger.warning(f"")
-                    logger.warning(f"Found {len(unresolved_comments)} unresolved comment(s):")
-                    logger.warning("")
+                    _LOGGER.warning("")
+                    _LOGGER.warning("=" * 70)
+                    _LOGGER.warning("📝 NOTICE: DOCUMENT HAS UNRESOLVED DISCUSSION COMMENTS")
+                    _LOGGER.warning("=" * 70)
+                    _LOGGER.warning(f"Document: {doc_name}")
+                    _LOGGER.warning(f"")
+                    _LOGGER.warning(f"Found {len(unresolved_comments)} unresolved comment(s):")
+                    _LOGGER.warning("")
                     
                     # Show details about each comment (up to 5)
                     for i, comment in enumerate(unresolved_comments[:5], 1):
@@ -722,42 +711,42 @@ class GoogleDriveProcessor:
                                     from datetime import datetime
                                     dt = datetime.fromisoformat(created.replace('Z', '+00:00'))
                                     created_str = dt.strftime('%Y-%m-%d %H:%M')
-                                except:
+                                except Exception:
                                     created_str = created[:10] if len(created) >= 10 else 'Unknown date'
                             else:
                                 created_str = 'Unknown date'
                             
-                            logger.warning(f"  {i}. [{author_name}, {created_str}]")
-                            logger.warning(f"     \"{content}\"")
+                            _LOGGER.warning(f"  {i}. [{author_name}, {created_str}]")
+                            _LOGGER.warning(f"     \"{content}\"")
                             
                             # Safely check for replies
                             replies = comment.get('replies', [])
                             if isinstance(replies, list) and len(replies) > 0:
-                                logger.warning(f"     ({len(replies)} replies in thread)")
-                            logger.warning("")
+                                _LOGGER.warning(f"     ({len(replies)} replies in thread)")
+                            _LOGGER.warning("")
                         except Exception as e:
                             # If we can't process a comment, skip it rather than crash
-                            logger.debug(f"Error processing comment {i}: {e}")
-                            logger.warning(f"  {i}. [Error reading comment details]")
-                            logger.warning("")
+                            _LOGGER.debug(f"Error processing comment {i}: {e}")
+                            _LOGGER.warning(f"  {i}. [Error reading comment details]")
+                            _LOGGER.warning("")
                     
                     if len(unresolved_comments) > 5:
-                        logger.warning(f"  ... and {len(unresolved_comments) - 5} more comment(s)")
-                        logger.warning("")
+                        _LOGGER.warning(f"  ... and {len(unresolved_comments) - 5} more comment(s)")
+                        _LOGGER.warning("")
                     
-                    logger.warning("Note: These are discussion comments, not suggested edits.")
-                    logger.warning("Review these comments to ensure all feedback is addressed.")
-                    logger.warning("=" * 70)
-                    logger.warning("")
+                    _LOGGER.warning("Note: These are discussion comments, not suggested edits.")
+                    _LOGGER.warning("Review these comments to ensure all feedback is addressed.")
+                    _LOGGER.warning("=" * 70)
+                    _LOGGER.warning("")
                     
             except Exception as e:
                 # Comments API failed, skip the check silently
-                logger.debug(f"Could not check for comments: {e}")
+                _LOGGER.debug(f"Could not check for comments: {e}")
                 pass
                 
         except Exception as e:
             # Don't fail the download if the check fails, just log a debug message
-            logger.debug(f"Could not check for active changes: {e}")
+            _LOGGER.debug(f"Could not check for active changes: {e}")
     
     # ====================
     # Changes API Implementation
@@ -783,7 +772,7 @@ class GoogleDriveProcessor:
 
             if not stored_token:
                 # No token means first run or cache was cleared
-                logger.info("  No change token found - first time caching this document")
+                _LOGGER.info("  No change token found - first time caching this document")
                 return True
             
             # Use the stored token to check for changes
@@ -809,14 +798,14 @@ class GoogleDriveProcessor:
                 
                 # Display token info with clear context
                 if remote_token and remote_token != stored_token:
-                    logger.info(f"  Change tokens: {stored_token[:20]}... → {remote_token[:20]}...")
+                    _LOGGER.info(f"  Change tokens: {stored_token[:20]}... → {remote_token[:20]}...")
                     if doc_changed:
-                        logger.info(f"  ✗ This document was modified - downloading fresh copy")
+                        _LOGGER.info(f"  ✗ This document was modified - downloading fresh copy")
                     else:
-                        logger.info(f"  ✓ This document unchanged (other Drive files changed) - using cached version")
+                        _LOGGER.info(f"  ✓ This document unchanged (other Drive files changed) - using cached version")
                 else:
-                    logger.info(f"  Change token: {stored_token[:20]}... (no Drive activity)")
-                    logger.info(f"  ✓ No changes detected - using cached version")
+                    _LOGGER.info(f"  Change token: {stored_token[:20]}... (no Drive activity)")
+                    _LOGGER.info(f"  ✓ No changes detected - using cached version")
                 
                 if doc_changed:
                     return True
@@ -838,16 +827,16 @@ class GoogleDriveProcessor:
             except Exception as e:
                 # Token might be invalid/expired
                 if 'Invalid pageToken' in str(e) or 'invalid' in str(e).lower():
-                    logger.warning(f"  Change token is invalid or expired")
-                    logger.info("  Will download fresh copy and get new token")
+                    _LOGGER.warning(f"  Change token is invalid or expired")
+                    _LOGGER.info("  Will download fresh copy and get new token")
                 else:
-                    logger.warning(f"  Error with change detection: {str(e)[:100]}")
-                    logger.info("  Falling back to re-download for safety")
+                    _LOGGER.warning(f"  Error with change detection: {str(e)[:100]}")
+                    _LOGGER.info("  Falling back to re-download for safety")
                 return True
                 
         except Exception as e:
-            logger.error(f"Error checking for changes via Changes API: {str(e)[:200]}")
-            logger.info("  Falling back to re-download for safety")
+            _LOGGER.error(f"Error checking for changes via Changes API: {str(e)[:200]}")
+            _LOGGER.info("  Falling back to re-download for safety")
             # On error, be safe and assume changed
             return True
     
@@ -863,7 +852,7 @@ class GoogleDriveProcessor:
             ).execute()
             return response.get('startPageToken')
         except Exception as e:
-            logger.error(f"Error getting change token: {e}")
+            _LOGGER.error(f"Error getting change token: {e}")
             return None
     
     # ====================
@@ -879,36 +868,36 @@ class GoogleDriveProcessor:
         Returns:
             Sanitized filename with .md extension.
         """
-        logger.debug(f"_get_doc_filename called with doc_id type={type(doc_id)}, value={doc_id}")
+        _LOGGER.debug(f"_get_doc_filename called with doc_id type={type(doc_id)}, value={doc_id}")
 
         try:
             metadata = self.get_metadata(doc_id)
             doc_name = metadata.get('name', doc_id)
-            logger.debug(f"Got doc_name type={type(doc_name)}, value={doc_name}")
+            _LOGGER.debug(f"Got doc_name type={type(doc_name)}, value={doc_name}")
 
             # Ensure doc_name is a string before passing to sanitize_filename
             if not isinstance(doc_name, str):
-                logger.warning(f"Document name is not a string: {type(doc_name)} - {doc_name}")
+                _LOGGER.warning(f"Document name is not a string: {type(doc_name)} - {doc_name}")
                 doc_name = str(doc_name) if doc_name else doc_id
 
             safe_name = sanitize_filename(doc_name)
-            logger.debug(f"After sanitize_filename: type={type(safe_name)}, value={safe_name}")
+            _LOGGER.debug(f"After sanitize_filename: type={type(safe_name)}, value={safe_name}")
         except Exception as e:
-            logger.warning(f"Could not get metadata for doc {doc_id}: {e}")
+            _LOGGER.warning(f"Could not get metadata for doc {doc_id}: {e}")
             # Ensure doc_id is a string
             safe_name = str(doc_id) if not isinstance(doc_id, str) else doc_id
-            logger.debug(f"Exception path - safe_name type={type(safe_name)}, value={safe_name}")
+            _LOGGER.debug(f"Exception path - safe_name type={type(safe_name)}, value={safe_name}")
 
         # Ensure safe_name is a string before calling endswith
         if not isinstance(safe_name, str):
-            logger.error(f"safe_name is not a string: {type(safe_name)} - {safe_name}")
+            _LOGGER.error(f"safe_name is not a string: {type(safe_name)} - {safe_name}")
             safe_name = str(safe_name)
 
-        logger.debug(f"Before endswith check: type={type(safe_name)}, value={repr(safe_name)}")
+        _LOGGER.debug(f"Before endswith check: type={type(safe_name)}, value={repr(safe_name)}")
         if not safe_name.endswith('.md'):
             safe_name += '.md'
 
-        logger.debug(f"_get_doc_filename returning: {safe_name}")
+        _LOGGER.debug(f"_get_doc_filename returning: {safe_name}")
         return safe_name
     
     def _get_doc_path(self, doc_id: str) -> Path:
@@ -940,7 +929,7 @@ class GoogleDriveProcessor:
         if not doc_path.exists():
             return None
             
-        logger.info(f"Checking for changes in document {doc_id}...")
+        _LOGGER.info(f"Checking for changes in document {doc_id}...")
         
         # Use Changes API to check if document has changed
         has_changed = self.check_for_changes_via_changes_api(doc_id)
@@ -958,15 +947,15 @@ class GoogleDriveProcessor:
                         content = content[1:]
                     # Migrate by re-saving without the comment
                     doc_path.write_text(content, encoding='utf-8')
-                    logger.debug("  Migrated legacy cached file (removed HTML comment)")
+                    _LOGGER.debug("  Migrated legacy cached file (removed HTML comment)")
                 
                 return content
             except Exception as e:
-                logger.error(f"Error loading from disk cache: {e}")
+                _LOGGER.error(f"Error loading from disk cache: {e}")
                 return None
         else:
             # Document has changed, will need to re-download
-            logger.info("  Document has changed - will download fresh copy")
+            _LOGGER.info("  Document has changed - will download fresh copy")
             return None
     
     def _save_to_disk(self, doc_id: str, content: str, is_cleaned: bool = False) -> None:
@@ -986,7 +975,7 @@ class GoogleDriveProcessor:
             
             # Save clean content without HTML comments
             doc_path.write_text(content, encoding='utf-8')
-            logger.info(f"Saved to disk: {doc_path}")
+            _LOGGER.info(f"Saved to disk: {doc_path}")
             
             # Get current change token and save metadata
             try:
@@ -1028,15 +1017,15 @@ class GoogleDriveProcessor:
                 self.cache_manager.save_metadata(doc_id, metadata)
                 
                 if change_token:
-                    logger.info(f"  Saved change token: {change_token[:20]}...")
+                    _LOGGER.info(f"  Saved change token: {change_token[:20]}...")
                 else:
-                    logger.warning(f"  Failed to get change token from Google Drive API - caching may not work correctly")
+                    _LOGGER.warning(f"  Failed to get change token from Google Drive API - caching may not work correctly")
                 
             except Exception as e:
-                logger.warning(f"Error saving metadata (change_token may be lost): {e}")
+                _LOGGER.warning(f"Error saving metadata (change_token may be lost): {e}")
                 
         except Exception as e:
-            logger.error(f"Error saving to disk: {e}")
+            _LOGGER.error(f"Error saving to disk: {e}")
     
     # ====================
     # SVG Processing
@@ -1114,12 +1103,12 @@ class GoogleDriveProcessor:
             doc_metadata = self.get_metadata(doc_id)
             parents = doc_metadata.get('parents', [])
             if parents:
-                logger.info(f"Using document's parent folder: {parents[0]}")
+                _LOGGER.info(f"Using document's parent folder: {parents[0]}")
                 return parents[0]
             else:
-                logger.warning("No parent folder found for document")
+                _LOGGER.warning("No parent folder found for document")
         except Exception as e:
-            logger.error(f"Error getting document parent folder: {e}")
+            _LOGGER.error(f"Error getting document parent folder: {e}")
 
         return None
 
@@ -1144,7 +1133,7 @@ class GoogleDriveProcessor:
             files = response.get('files', [])
             return files[0] if files else None
         except Exception as e:
-            logger.error(f"Error searching for file {filename}: {e}")
+            _LOGGER.error(f"Error searching for file {filename}: {e}")
             return None
     
     def _prepare_document_and_folder(
@@ -1164,7 +1153,7 @@ class GoogleDriveProcessor:
 
         # Extract figure paths with parameters
         figure_data = self.extract_figure_paths(doc_content)
-        logger.info(f"Found {len(figure_data)} figure references in document")
+        _LOGGER.info(f"Found {len(figure_data)} figure references in document")
 
         # Resolve folder ID
         folder_id = self._resolve_folder_id(doc_id, folder_id)
@@ -1177,7 +1166,7 @@ class GoogleDriveProcessor:
             bibliography = doc_post.metadata.get('bibliography')
 
             if bibliography:
-                logger.info(f"Processing bibliography files from frontmatter")
+                _LOGGER.info(f"Processing bibliography files from frontmatter")
                 bibliography_info = self._process_bibliography_files(doc_id, bibliography, folder_id)
 
         return doc_content, figure_data, folder_id, bibliography_info
@@ -1188,17 +1177,17 @@ class GoogleDriveProcessor:
         Args:
             results: Dict with 'processed', 'skipped', and 'failed' lists.
         """
-        logger.info(f"\n=== Figure Processing Complete ===")
-        logger.info(f"✓ Processed: {len(results['processed'])} figures")
-        logger.info(f"⏭ Skipped: {len(results['skipped'])} unchanged figures")
-        logger.info(f"✗ Failed: {len(results['failed'])} figures")
+        _LOGGER.info(f"\n=== Figure Processing Complete ===")
+        _LOGGER.info(f"✓ Processed: {len(results['processed'])} figures")
+        _LOGGER.info(f"⏭ Skipped: {len(results['skipped'])} unchanged figures")
+        _LOGGER.info(f"✗ Failed: {len(results['failed'])} figures")
         
         # List failed conversions for clarity
         if results['failed']:
-            logger.warning(f"\n⚠️  The following {len(results['failed'])} files FAILED to convert to PDF:")
+            _LOGGER.warning(f"\n⚠️  The following {len(results['failed'])} files FAILED to convert to PDF:")
             for failed_file in results['failed']:
-                logger.warning(f"   - {failed_file}")
-            logger.warning(f"   Check the error messages above for details on each failure.")
+                _LOGGER.warning(f"   - {failed_file}")
+            _LOGGER.warning(f"   Check the error messages above for details on each failure.")
     
     def _get_cached_file_or_download(
         self,
@@ -1238,12 +1227,12 @@ class GoogleDriveProcessor:
         if cached_path.exists() and file_info and 'md5Checksum' in file_info:
             stored_digest = self.figure_converter._load_digest(fig_path, doc_id, 'file')
             if stored_digest == file_info['md5Checksum']:
-                logger.info(f"  Using cached {figure_type.upper()}: {cached_path}")
+                _LOGGER.info(f"  Using cached {figure_type.upper()}: {cached_path}")
                 use_cached = True
 
         if not use_cached:
             # Need to download
-            logger.info(f"  Downloading {figure_type.upper()}: {fig_path}")
+            _LOGGER.info(f"  Downloading {figure_type.upper()}: {fig_path}")
             self.download_file(file_info['id'], str(cached_path))
 
         # Record the cached file in metadata (whether newly downloaded or already cached)
@@ -1311,10 +1300,10 @@ class GoogleDriveProcessor:
                 # Return relative path (preserving directory structure from fig_path)
                 return fig_path.replace('.svg', '.pdf')
             else:
-                logger.warning(f"⚠️  PDF CONVERSION FAILED for {fig_path}")
-                logger.warning(f"    SVG file exists at: {source_file}")
-                logger.warning(f"    Expected PDF output: {output_path}")
-                logger.warning(f"    Check inkscape installation and SVG file validity")
+                _LOGGER.warning(f"⚠️  PDF CONVERSION FAILED for {fig_path}")
+                _LOGGER.warning(f"    SVG file exists at: {source_file}")
+                _LOGGER.warning(f"    Expected PDF output: {output_path}")
+                _LOGGER.warning(f"    Check inkscape installation and SVG file validity")
 
                 # Record failed conversion in metadata
                 self.cache_manager.record_conversion(
@@ -1341,9 +1330,9 @@ class GoogleDriveProcessor:
                     status='success'
                 )
             else:
-                logger.warning(f"⚠️  PDF CONVERSION FAILED for {fig_path}")
-                logger.warning(f"    CSV file exists at: {source_file}")
-                logger.warning(f"    Check table_pdf_builder installation")
+                _LOGGER.warning(f"⚠️  PDF CONVERSION FAILED for {fig_path}")
+                _LOGGER.warning(f"    CSV file exists at: {source_file}")
+                _LOGGER.warning(f"    Check table_pdf_builder installation")
 
                 # Record failed conversion in metadata
                 self.cache_manager.record_conversion(
@@ -1385,7 +1374,7 @@ class GoogleDriveProcessor:
             Dict with 'document' (updated content), 'results' (processing summary),
             and 'bibliography_info' (bibliography path and results).
         """
-        logger.info(f"Processing figures for document: {doc_id}")
+        _LOGGER.info(f"Processing figures for document: {doc_id}")
 
         # Prepare document and determine folder (also processes bibliography during same download)
         doc_content, figure_data, folder_id, bibliography_info = self._prepare_document_and_folder(doc_id, folder_id)
@@ -1403,25 +1392,25 @@ class GoogleDriveProcessor:
             # Determine figure type and skip unknown
             figure_type = self.figure_converter.get_figure_type(fig_path)
             if figure_type == 'unknown':
-                logger.info(f"  Skipping unknown file type: {fig_path}")
+                _LOGGER.info(f"  Skipping unknown file type: {fig_path}")
                 continue
             
             # Handle Google Sheets separately
             if figure_type == 'sheet':
                 converted_path = self.figure_converter.convert_figure(fig_path, params, doc_id, None)
                 if converted_path:
-                    logger.info(f"Converted: {fig_path} -> {converted_path}")
+                    _LOGGER.info(f"Converted: {fig_path} -> {converted_path}")
                     results['processed'].append(fig_path)
                     results['mapping'][fig_path] = converted_path
                 else:
-                    logger.error(f"  Failed to convert Google Sheet")
+                    _LOGGER.error(f"  Failed to convert Google Sheet")
                     results['failed'].append(fig_path)
                 continue
             
             # Find file in Drive (skip if not found)
             file_info = self._find_file_in_cache(fig_path, folder_file_cache) if folder_id else None
             if not file_info:
-                logger.error(f"  Failed: File not found in Google Drive")
+                _LOGGER.error(f"  Failed: File not found in Google Drive")
                 results['failed'].append(fig_path)
                 continue
             
@@ -1431,10 +1420,10 @@ class GoogleDriveProcessor:
                     output_path = Path(fig_path)
                     output_path.parent.mkdir(parents=True, exist_ok=True)
                     self.download_file(file_info['id'], str(output_path))
-                    logger.info(f"  Downloaded: {fig_path}")
+                    _LOGGER.info(f"  Downloaded: {fig_path}")
                     results['processed'].append(fig_path)
                 except Exception as e:
-                    logger.error(f"  Error downloading PDF: {e}")
+                    _LOGGER.error(f"  Error downloading PDF: {e}")
                     results['failed'].append(fig_path)
                 continue
             
@@ -1446,14 +1435,14 @@ class GoogleDriveProcessor:
                 if not self.figure_converter.needs_conversion(fig_path, doc_id, output_path, file_info, params):
                     # Use relative path (preserving directory structure from fig_path)
                     relative_path = fig_path.replace('.svg', '.pdf').replace('.csv', '.pdf')
-                    logger.info(f"Cached: {fig_path} -> {relative_path}")
+                    _LOGGER.info(f"Cached: {fig_path} -> {relative_path}")
                     results['skipped'].append(fig_path)
                     results['mapping'][fig_path] = relative_path
 
                     # Ensure cached figures are recorded in metadata
                     # Record source file if it exists
                     source_file_path = self.cache_manager.cache_root / doc_id / fig_path
-                    logger.info(f"  Checking source file: {source_file_path} exists={source_file_path.exists()}")
+                    _LOGGER.info(f"  Checking source file: {source_file_path} exists={source_file_path.exists()}")
                     if source_file_path.exists():
                         self.cache_manager.record_cached_file(
                             doc_id=doc_id,
@@ -1490,21 +1479,21 @@ class GoogleDriveProcessor:
                 converted_path = self._convert_file(fig_path, source_file, file_info, params, doc_id, figure_type, output_path)
                 
                 if converted_path:
-                    logger.info(f"Converted: {fig_path} -> {converted_path}")
+                    _LOGGER.info(f"Converted: {fig_path} -> {converted_path}")
                     results['processed'].append(fig_path)
                     results['mapping'][fig_path] = converted_path
                 else:
-                    logger.error(f"  Failed to convert {figure_type} file")
+                    _LOGGER.error(f"  Failed to convert {figure_type} file")
                     results['failed'].append(fig_path)
                     
             except Exception as e:
-                logger.error(f"  Error processing {fig_path}: {str(e)[:200]}")
+                _LOGGER.error(f"  Error processing {fig_path}: {str(e)[:200]}")
                 results['failed'].append(fig_path)
         
         # Update document with new paths and check for remaining SVGs
-        logger.info(f"DEBUG: Mapping has {len(results['mapping'])} entries:")
+        _LOGGER.info(f"DEBUG: Mapping has {len(results['mapping'])} entries:")
         for old_p, new_p in results['mapping'].items():
-            logger.info(f"  {old_p} -> {new_p}")
+            _LOGGER.info(f"  {old_p} -> {new_p}")
         updated_content = update_figure_paths(doc_content, results['mapping'])
 
         import re
@@ -1518,18 +1507,18 @@ class GoogleDriveProcessor:
             unreplaced_unknown = [svg for svg in remaining_svgs if svg not in failed_set]
 
             if unreplaced_from_failures:
-                logger.warning(f"WARNING: {len(unreplaced_from_failures)} SVG path(s) not replaced due to conversion failures:")
+                _LOGGER.warning(f"WARNING: {len(unreplaced_from_failures)} SVG path(s) not replaced due to conversion failures:")
                 for svg in unreplaced_from_failures[:5]:
-                    logger.warning(f"  Failed: {svg}")
+                    _LOGGER.warning(f"  Failed: {svg}")
                 if len(unreplaced_from_failures) > 5:
-                    logger.warning(f"  ... and {len(unreplaced_from_failures) - 5} more")
+                    _LOGGER.warning(f"  ... and {len(unreplaced_from_failures) - 5} more")
 
             if unreplaced_unknown:
-                logger.warning(f"WARNING: {len(unreplaced_unknown)} SVG path(s) not replaced for unknown reasons:")
+                _LOGGER.warning(f"WARNING: {len(unreplaced_unknown)} SVG path(s) not replaced for unknown reasons:")
                 for svg in unreplaced_unknown[:5]:
-                    logger.warning(f"  Unknown: {svg}")
+                    _LOGGER.warning(f"  Unknown: {svg}")
                 if len(unreplaced_unknown) > 5:
-                    logger.warning(f"  ... and {len(unreplaced_unknown) - 5} more")
+                    _LOGGER.warning(f"  ... and {len(unreplaced_unknown) - 5} more")
         
         # Log processing summary
         self._log_figure_processing_summary(results)
@@ -1540,7 +1529,7 @@ class GoogleDriveProcessor:
             if doc_path.exists():
                 self.cache_manager.enrich_with_figure_references(doc_id, doc_path)
         except Exception as e:
-            logger.warning(f"Failed to enrich metadata with figure references: {e}")
+            _LOGGER.warning(f"Failed to enrich metadata with figure references: {e}")
 
         return {
             'document': updated_content,
@@ -1569,7 +1558,7 @@ class GoogleDriveProcessor:
             Dict with 'csvs' (list of paths found) and 'results' containing
             'processed', 'skipped', and 'failed' lists.
         """
-        logger.info(f"Processing CSV files for document: {doc_id}")
+        _LOGGER.info(f"Processing CSV files for document: {doc_id}")
         
         # Download and read the document
         doc_content = self.download_doc(doc_id, clean=False, parse_frontmatter=False, 
@@ -1577,10 +1566,10 @@ class GoogleDriveProcessor:
         
         # Extract CSV paths
         csv_paths = extract_csv_paths(doc_content)
-        logger.info(f"Found {len(csv_paths)} CSV file references in document")
+        _LOGGER.info(f"Found {len(csv_paths)} CSV file references in document")
         
         if not csv_paths:
-            logger.info("No CSV files to process")
+            _LOGGER.info("No CSV files to process")
             return {'csvs': [], 'results': {'processed': [], 'skipped': [], 'failed': []}}
 
         # Resolve folder ID
@@ -1593,10 +1582,10 @@ class GoogleDriveProcessor:
         results = self._process_csv_files(csv_paths, folder_cache, skip_unchanged, doc_id)
         
         # Summary
-        logger.info(f"\n=== CSV Processing Complete ===")
-        logger.info(f"✓ Processed: {len(results['processed'])} CSV files")
-        logger.info(f"⏭ Skipped: {len(results['skipped'])} unchanged CSV files")
-        logger.info(f"✗ Failed: {len(results['failed'])} CSV files")
+        _LOGGER.info(f"\n=== CSV Processing Complete ===")
+        _LOGGER.info(f"✓ Processed: {len(results['processed'])} CSV files")
+        _LOGGER.info(f"⏭ Skipped: {len(results['skipped'])} unchanged CSV files")
+        _LOGGER.info(f"✗ Failed: {len(results['failed'])} CSV files")
         
         return {
             'csvs': csv_paths,
@@ -1624,13 +1613,13 @@ class GoogleDriveProcessor:
         results = {'processed': [], 'skipped': [], 'failed': []}
         
         for csv_path in csv_paths:
-            logger.info(f"Processing CSV: {csv_path}")
+            _LOGGER.info(f"Processing CSV: {csv_path}")
             
             # Find file in cache
             file_info = self._find_file_in_cache(csv_path, folder_file_cache)
             
             if not file_info:
-                logger.error(f"  Failed: CSV file not found in Google Drive")
+                _LOGGER.error(f"  Failed: CSV file not found in Google Drive")
                 results['failed'].append(csv_path)
                 continue
             
@@ -1646,14 +1635,14 @@ class GoogleDriveProcessor:
             if skip_unchanged and remote_digest:
                 local_digest = self.load_local_digest(csv_path, doc_id) if doc_id else self.load_local_digest(csv_path, 'default')
                 if local_digest == remote_digest and local_path.exists():
-                    logger.info(f"  Skipping (unchanged): {csv_path}")
+                    _LOGGER.info(f"  Skipping (unchanged): {csv_path}")
                     results['skipped'].append(csv_path)
                     continue
             
             # Download CSV file
             try:
                 self.download_file(file_info['id'], str(local_path))
-                logger.info(f"  Downloaded: {csv_path}")
+                _LOGGER.info(f"  Downloaded: {csv_path}")
                 results['processed'].append(csv_path)
                 
                 # Save digest for future cache checks
@@ -1661,7 +1650,7 @@ class GoogleDriveProcessor:
                     self.save_local_digest(csv_path, remote_digest, doc_id) if doc_id else self.save_local_digest(csv_path, remote_digest, 'default')
                     
             except Exception as e:
-                logger.error(f"  Error downloading {csv_path}: {str(e)}")
+                _LOGGER.error(f"  Error downloading {csv_path}: {str(e)}")
                 results['failed'].append(csv_path)
         
         return results
@@ -1716,23 +1705,23 @@ class GoogleDriveProcessor:
         elif isinstance(bibliography, list):
             bib_files = bibliography
         else:
-            logger.warning(f"Unexpected bibliography type: {type(bibliography)}")
+            _LOGGER.warning(f"Unexpected bibliography type: {type(bibliography)}")
             return {'bibliography_path': None, 'results': {'processed': [], 'skipped': [], 'failed': []}}
 
-        logger.info(f"Found {len(bib_files)} bibliography file(s) in frontmatter")
+        _LOGGER.info(f"Found {len(bib_files)} bibliography file(s) in frontmatter")
 
         # Process bibliography files (folder_id already determined by caller)
         results = {'processed': [], 'skipped': [], 'failed': []}
         cached_bib_paths = []
 
         for bib_path in bib_files:
-            logger.info(f"Processing bibliography: {bib_path}")
+            _LOGGER.info(f"Processing bibliography: {bib_path}")
 
             # Search for the bibliography file in the folder
             file_info = self.find_file_in_drive(bib_path, folder_id) if folder_id else None
 
             if not file_info:
-                logger.error(f"  Failed: Bibliography file not found in Google Drive: {bib_path}")
+                _LOGGER.error(f"  Failed: Bibliography file not found in Google Drive: {bib_path}")
                 results['failed'].append(bib_path)
                 continue
 
@@ -1752,7 +1741,7 @@ class GoogleDriveProcessor:
                 # Check if local file has same digest
                 local_digest = self.cache_manager.compute_md5(cached_path)
                 if local_digest == remote_digest:
-                    logger.info(f"  Using cached: {relative_bib_path}")
+                    _LOGGER.info(f"  Using cached: {relative_bib_path}")
                     results['skipped'].append(bib_path)
                     cached_bib_paths.append(relative_bib_path)
 
@@ -1770,7 +1759,7 @@ class GoogleDriveProcessor:
             # Download bibliography file
             try:
                 self.download_file(file_info['id'], str(cached_path))
-                logger.info(f"  Downloaded: {bib_path} -> {cached_path}")
+                _LOGGER.info(f"  Downloaded: {bib_path} -> {cached_path}")
                 results['processed'].append(bib_path)
                 cached_bib_paths.append(relative_bib_path)
 
@@ -1785,14 +1774,14 @@ class GoogleDriveProcessor:
                 )
 
             except Exception as e:
-                logger.error(f"  Error downloading {bib_path}: {str(e)}")
+                _LOGGER.error(f"  Error downloading {bib_path}: {str(e)}")
                 results['failed'].append(bib_path)
 
         # Summary
-        logger.info(f"\n=== Bibliography Processing Complete ===")
-        logger.info(f"✓ Processed: {len(results['processed'])} bibliography files")
-        logger.info(f"⏭ Skipped: {len(results['skipped'])} unchanged bibliography files")
-        logger.info(f"✗ Failed: {len(results['failed'])} bibliography files")
+        _LOGGER.info(f"\n=== Bibliography Processing Complete ===")
+        _LOGGER.info(f"✓ Processed: {len(results['processed'])} bibliography files")
+        _LOGGER.info(f"⏭ Skipped: {len(results['skipped'])} unchanged bibliography files")
+        _LOGGER.info(f"✗ Failed: {len(results['failed'])} bibliography files")
 
         # Return the first successful cached path (or list if multiple)
         if len(cached_bib_paths) == 1:
@@ -1849,7 +1838,7 @@ class GoogleDriveProcessor:
                 # Find subfolder ID
                 subfolder_id = self._find_subfolder_by_name(parent_folder_id, folder_name)
                 if not subfolder_id:
-                    logger.warning(f"Subfolder '{folder_name}' not found")
+                    _LOGGER.warning(f"Subfolder '{folder_name}' not found")
                     continue
                 target_folder_id = subfolder_id
                 cache_key = folder_name
@@ -1865,7 +1854,7 @@ class GoogleDriveProcessor:
             folder_cache[cache_key] = file_map
             folder_counts.append(f"{folder_name or 'root'} ({len(file_map)})")
 
-        logger.info(f"Pre-fetched metadata: {', '.join(folder_counts)}")
+        _LOGGER.info(f"Pre-fetched metadata: {', '.join(folder_counts)}")
 
         return folder_cache
     
@@ -1896,7 +1885,7 @@ class GoogleDriveProcessor:
                 if not page_token:
                     break
             except Exception as e:
-                logger.error(f"Error listing files in folder {folder_id}: {e}")
+                _LOGGER.error(f"Error listing files in folder {folder_id}: {e}")
                 break
         
         return files
@@ -1951,7 +1940,7 @@ class GoogleDriveProcessor:
             folders = response.get('files', [])
             return folders[0]['id'] if folders else None
         except Exception as e:
-            logger.error(f"Error searching for subfolder {subfolder_name}: {e}")
+            _LOGGER.error(f"Error searching for subfolder {subfolder_name}: {e}")
             return None
     
     def _update_document_figure_paths(
@@ -1989,7 +1978,7 @@ class GoogleDriveProcessor:
                 if parents:
                     folder_id = parents[0]
             except Exception as e:
-                logger.debug(f"Could not get parent folder for doc {doc_id}: {e}")
+                _LOGGER.debug(f"Could not get parent folder for doc {doc_id}: {e}")
         
         # Create the path mapping
         path_mapping = create_figure_path_mapping(figure_paths)
@@ -2023,7 +2012,7 @@ class GoogleDriveProcessor:
             - 'csvs': Results from CSV processing
             - 'summary': Overall summary statistics
         """
-        logger.info(f"Processing all assets for document: {doc_id}")
+        _LOGGER.info(f"Processing all assets for document: {doc_id}")
 
         # Resolve folder ID
         folder_id = self._resolve_folder_id(doc_id, folder_id)
@@ -2045,7 +2034,7 @@ class GoogleDriveProcessor:
         }
         
         # Process figures
-        logger.info("\n=== Processing Figures ===")
+        _LOGGER.info("\n=== Processing Figures ===")
         try:
             figure_results = self.process_document_figures(doc_id, folder_id, skip_unchanged)
             results['figures'] = figure_results['results']
@@ -2060,11 +2049,11 @@ class GoogleDriveProcessor:
             results['summary']['figures_failed'] = len(figure_results['results'].get('failed', []))
             
         except Exception as e:
-            logger.error(f"Error processing figures: {e}")
+            _LOGGER.error(f"Error processing figures: {e}")
             results['figures'] = {'error': str(e)}
         
         # Process CSV files
-        logger.info("\n=== Processing CSV Files ===")
+        _LOGGER.info("\n=== Processing CSV Files ===")
         try:
             csv_results = self.process_document_csvs(doc_id, folder_id, skip_unchanged)
             results['csvs'] = csv_results['results']
@@ -2076,31 +2065,31 @@ class GoogleDriveProcessor:
             results['summary']['csvs_failed'] = len(csv_results['results'].get('failed', []))
             
         except Exception as e:
-            logger.error(f"Error processing CSV files: {e}")
+            _LOGGER.error(f"Error processing CSV files: {e}")
             results['csvs'] = {'error': str(e)}
         
         # Print summary
-        logger.info("\n" + "=" * 50)
-        logger.info("ASSET PROCESSING COMPLETE")
-        logger.info("=" * 50)
+        _LOGGER.info("\n" + "=" * 50)
+        _LOGGER.info("ASSET PROCESSING COMPLETE")
+        _LOGGER.info("=" * 50)
         
         if results['summary']['total_figures'] > 0:
-            logger.info(f"📊 Figures:")
-            logger.info(f"   ✓ Processed: {results['summary']['figures_processed']}")
-            logger.info(f"   ⏭ Skipped: {results['summary']['figures_skipped']}")
-            logger.info(f"   ✗ Failed: {results['summary']['figures_failed']}")
-            logger.info(f"   Total: {results['summary']['total_figures']}")
+            _LOGGER.info(f"📊 Figures:")
+            _LOGGER.info(f"   ✓ Processed: {results['summary']['figures_processed']}")
+            _LOGGER.info(f"   ⏭ Skipped: {results['summary']['figures_skipped']}")
+            _LOGGER.info(f"   ✗ Failed: {results['summary']['figures_failed']}")
+            _LOGGER.info(f"   Total: {results['summary']['total_figures']}")
         
         if results['summary']['total_csvs'] > 0:
-            logger.info(f"📁 CSV Files:")
-            logger.info(f"   ✓ Downloaded: {results['summary']['csvs_processed']}")
-            logger.info(f"   ⏭ Skipped: {results['summary']['csvs_skipped']}")
-            logger.info(f"   ✗ Failed: {results['summary']['csvs_failed']}")
-            logger.info(f"   Total: {results['summary']['total_csvs']}")
+            _LOGGER.info(f"📁 CSV Files:")
+            _LOGGER.info(f"   ✓ Downloaded: {results['summary']['csvs_processed']}")
+            _LOGGER.info(f"   ⏭ Skipped: {results['summary']['csvs_skipped']}")
+            _LOGGER.info(f"   ✗ Failed: {results['summary']['csvs_failed']}")
+            _LOGGER.info(f"   Total: {results['summary']['total_csvs']}")
         
         if results['summary']['total_figures'] == 0 and results['summary']['total_csvs'] == 0:
-            logger.info("No assets found to process.")
+            _LOGGER.info("No assets found to process.")
         
-        logger.info("=" * 50)
+        _LOGGER.info("=" * 50)
         
         return results

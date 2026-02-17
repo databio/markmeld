@@ -10,7 +10,7 @@ import unittest
 from unittest.mock import Mock, patch, MagicMock
 import importlib
 
-from markmeld.utilities import extract_csv_paths, update_figure_paths
+from markmeld.google_drive.figure_paths import extract_csv_paths, update_figure_paths
 
 
 class TestGoogleDriveModuleStructure:
@@ -51,8 +51,8 @@ class TestGoogleDriveProcessorFunctionality:
     @pytest.fixture
     def mock_google_deps(self):
         """Mock Google dependencies for testing."""
-        with patch('markmeld.google_drive.service_account') as mock_sa, \
-             patch('markmeld.google_drive.build') as mock_build:
+        with patch('markmeld.google_drive.processor.service_account') as mock_sa, \
+             patch('markmeld.google_drive.processor.build') as mock_build:
 
             # Mock credentials
             mock_creds = Mock()
@@ -102,7 +102,7 @@ class TestGoogleDriveProcessorFunctionality:
     def test_clean_markdown_functionality(self):
         """Test markdown cleaning functions work correctly."""
         try:
-            from markmeld.utilities import clean_escape_characters, strip_bold_from_headings, remove_embedded_images
+            from markmeld.google_drive.markdown_clean import clean_escape_characters, strip_bold_from_headings, remove_embedded_images
         except ImportError:
             pytest.skip("Google dependencies not installed")
         
@@ -204,7 +204,7 @@ class TestGoogleDriveProcessorMocked:
     def test_download_doc_clean_logic(self):
         """Test the markdown cleaning logic without mocking Google APIs."""
         try:
-            from markmeld.utilities import clean_escape_characters
+            from markmeld.google_drive.markdown_clean import clean_escape_characters
         except ImportError:
             pytest.skip("Google dependencies not installed")
         
@@ -224,8 +224,8 @@ class TestGoogleDriveProcessorMocked:
         except ImportError:
             pytest.skip("Google dependencies not installed")
         
-        with patch('markmeld.google_drive.service_account') as mock_sa, \
-             patch('markmeld.google_drive.build') as mock_build:
+        with patch('markmeld.google_drive.processor.service_account') as mock_sa, \
+             patch('markmeld.google_drive.processor.build') as mock_build:
             
             # Setup mocks
             mock_creds = Mock()
@@ -247,8 +247,8 @@ class TestGoogleDriveProcessorMocked:
         except ImportError:
             pytest.skip("Google dependencies not installed")
         
-        with patch('markmeld.google_drive.service_account') as mock_sa, \
-             patch('markmeld.google_drive.build') as mock_build:
+        with patch('markmeld.google_drive.processor.service_account') as mock_sa, \
+             patch('markmeld.google_drive.processor.build') as mock_build:
             
             # Setup mocks
             mock_creds = Mock()
@@ -314,8 +314,8 @@ class TestGoogleDriveCSVFunctionality:
         except ImportError:
             pytest.skip("Google dependencies not installed")
         
-        with patch('markmeld.google_drive.service_account') as mock_sa, \
-             patch('markmeld.google_drive.build') as mock_build:
+        with patch('markmeld.google_drive.processor.service_account') as mock_sa, \
+             patch('markmeld.google_drive.processor.build') as mock_build:
             
             # Setup mocks
             mock_creds = Mock()
@@ -353,8 +353,8 @@ class TestGoogleDriveCSVFunctionality:
         except ImportError:
             pytest.skip("Google dependencies not installed")
 
-        with patch('markmeld.google_drive.service_account') as mock_sa, \
-             patch('markmeld.google_drive.build') as mock_build:
+        with patch('markmeld.google_drive.processor.service_account') as mock_sa, \
+             patch('markmeld.google_drive.processor.build') as mock_build:
 
             # Setup mocks
             mock_creds = Mock()
@@ -394,9 +394,9 @@ class TestGoogleDriveCSVFunctionality:
         for method in processor_methods:
             assert hasattr(GoogleDriveProcessor, method), f"Missing CSV method: {method}"
 
-        # Check for extract_csv_paths in utilities module
-        from markmeld import utilities
-        assert hasattr(utilities, 'extract_csv_paths'), "Missing extract_csv_paths in utilities"
+        # Check for extract_csv_paths in google_drive subpackage
+        from markmeld.google_drive import figure_paths
+        assert hasattr(figure_paths, 'extract_csv_paths'), "Missing extract_csv_paths in figure_paths"
     
     def test_csv_pattern_matching(self):
         """Test various CSV reference patterns."""
@@ -405,8 +405,8 @@ class TestGoogleDriveCSVFunctionality:
         except ImportError:
             pytest.skip("Google dependencies not installed")
         
-        with patch('markmeld.google_drive.service_account') as mock_sa, \
-             patch('markmeld.google_drive.build') as mock_build:
+        with patch('markmeld.google_drive.processor.service_account') as mock_sa, \
+             patch('markmeld.google_drive.processor.build') as mock_build:
             
             # Setup mocks
             mock_creds = Mock()
@@ -446,8 +446,8 @@ class TestCleanedContentCaching(unittest.TestCase):
         except ImportError:
             pytest.skip("Google dependencies not installed")
         
-        with patch('markmeld.google_drive.service_account') as mock_sa, \
-             patch('markmeld.google_drive.build') as mock_build:
+        with patch('markmeld.google_drive.processor.service_account') as mock_sa, \
+             patch('markmeld.google_drive.processor.build') as mock_build:
             
             # Setup mocks
             mock_creds = Mock()
@@ -473,11 +473,11 @@ class TestCleanedContentCaching(unittest.TestCase):
             mock_downloader = Mock()
             mock_downloader.next_chunk.side_effect = [(Mock(progress=lambda: 1.0), True)]
             
-            with patch('markmeld.google_drive.MediaIoBaseDownload') as mock_downloader_class:
+            with patch('markmeld.google_drive.processor.MediaIoBaseDownload') as mock_downloader_class:
                 mock_downloader_class.return_value = mock_downloader
                 
                 with patch.object(processor, '_remove_auto_title', return_value=raw_content):
-                    with patch('markmeld.google_drive.io.BytesIO') as mock_io:
+                    with patch('markmeld.google_drive.processor.io.BytesIO') as mock_io:
                         mock_file = Mock()
                         mock_file.read.return_value = raw_content.encode('utf-8')
                         mock_file.seek = Mock()

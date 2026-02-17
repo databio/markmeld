@@ -24,7 +24,7 @@ def get_pass_secret(pass_secret_name: str) -> Optional[str]:
         )
         return result.stdout.strip()
     except subprocess.CalledProcessError as e:
-        print(f"Error retrieving secret from pass: {e}")
+        _LOGGER.error(f"Error retrieving secret from pass: {e}")
         return None
 
 
@@ -83,11 +83,11 @@ class APIHandler:
             if response.status_code == 200:
                 return response.json()
             else:
-                print(f"Error: {response.status_code}")
-                print(response.text)
+                _LOGGER.error(f"API error: {response.status_code}")
+                _LOGGER.error(response.text)
                 return None
         except requests.RequestException as e:
-            print(f"Error making API request: {e}")
+            _LOGGER.error(f"API request failed: {e}")
             return None
 
     def fetch_note(self, note_id: str) -> Optional[Dict]:
@@ -100,7 +100,7 @@ class APIHandler:
             The note data as a dictionary if successful, None otherwise.
         """
         if not self.token:
-            print("Failed to retrieve the token. Must authenticate first!")
+            _LOGGER.error("Failed to retrieve the token. Must authenticate first!")
             return None
 
         url = f"{self.api_base}/notes/{note_id}"
@@ -112,11 +112,11 @@ class APIHandler:
             if response.status_code == 200:
                 return response.json()
             else:
-                print(f"Error: {response.status_code}")
-                print(response.text)
+                _LOGGER.error(f"API error: {response.status_code}")
+                _LOGGER.error(response.text)
                 return None
         except requests.RequestException as e:
-            print(f"Error making API request: {e}")
+            _LOGGER.error(f"API request failed: {e}")
             return None
 
     def fetch_note_content(self, note_id: str) -> Optional[str]:
