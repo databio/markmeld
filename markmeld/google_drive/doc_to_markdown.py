@@ -37,15 +37,33 @@ def doc_to_markdown(doc: Dict[str, Any]) -> str:
     content = body.get("content", [])
 
     parts: List[str] = []
+    in_frontmatter = False
     for element in content:
         if "paragraph" in element:
             text = _convert_paragraph(element["paragraph"])
-            # Skip paragraphs that produced no visible content
-            # (e.g., all elements were suggested deletions)
-            if text.strip():
-                # Strip trailing newline — we control spacing via join
-                parts.append(text.rstrip("\n"))
+            if not text.strip():
+                continue
+
+            stripped = text.rstrip("\n")
+
+            # Track YAML frontmatter blocks (--- delimited) to avoid
+            # inserting blank lines between frontmatter fields
+            if stripped == "---":
+                in_frontmatter = not in_frontmatter
+                parts.append(stripped)
+                continue
+
+            if in_frontmatter:
+                # Frontmatter lines: no blank line separation
+                parts.append(stripped)
+            else:
+                # Body paragraphs: need blank line separation for markdown
+                if parts and not parts[-1] == "":
+                    parts.append("")
+                parts.append(stripped)
         elif "table" in element:
+            if parts and not parts[-1] == "":
+                parts.append("")
             parts.append(_convert_table(element["table"]).rstrip("\n"))
         elif "sectionBreak" in element:
             continue
