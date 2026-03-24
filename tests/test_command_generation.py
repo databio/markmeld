@@ -134,7 +134,8 @@ class TestDefaultCommandGeneration:
 
         # Count occurrences
         filter_count = command.count("--lua-filter")
-        assert filter_count == 3, f"Expected 3 --lua-filter flags, found {filter_count}"
+        # 3 from config + 1 bundled change-marker
+        assert filter_count == 4, f"Expected 4 --lua-filter flags, found {filter_count}"
 
         # Verify order
         figczar_pos = command.find("figczar")
@@ -255,8 +256,9 @@ class TestDefaultCommandGeneration:
         assert "--bibliography" in command, f"--bibliography flag missing: {command}"
         assert "--csl" in command, f"--csl flag missing: {command}"
         assert "--lua-filter" in command, f"--lua-filter flags missing: {command}"
-        assert command.count("--lua-filter") == 2, \
-            f"Expected 2 --lua-filter flags, found {command.count('--lua-filter')}"
+        # 2 from config + 1 bundled change-marker
+        assert command.count("--lua-filter") == 3, \
+            f"Expected 3 --lua-filter flags, found {command.count('--lua-filter')}"
         assert "--citeproc" in command, f"--citeproc flag missing: {command}"
         assert "-o " in command, f"-o flag missing: {command}"
 
