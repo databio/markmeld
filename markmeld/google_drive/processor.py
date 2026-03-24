@@ -509,7 +509,25 @@ class GoogleDriveProcessor:
         # Remove auto-added title (same logic as the export path)
         content = self._remove_auto_title(content, doc_id)
 
+        # Inject mark_changes: true into frontmatter so the change_marker
+        # Lua filter will render [text]{.changed} spans in color.
+        content = self._inject_mark_changes(content)
+
         return content
+
+    @staticmethod
+    def _inject_mark_changes(content: str) -> str:
+        """Inject mark_changes: true into YAML frontmatter.
+
+        If the content has frontmatter (starts with ---), adds mark_changes: true.
+        If no frontmatter exists, prepends a frontmatter block with it.
+        """
+        if content.startswith('---'):
+            # Insert after the opening ---
+            lines = content.split('\n', 1)
+            return lines[0] + '\nmark_changes: true\n' + lines[1]
+        else:
+            return '---\nmark_changes: true\n---\n' + content
 
 
     def _document_has_suggestions(self, doc_id: str) -> bool:
