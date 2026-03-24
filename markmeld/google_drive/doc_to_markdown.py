@@ -39,17 +39,24 @@ def doc_to_markdown(doc: Dict[str, Any]) -> str:
     parts: List[str] = []
     for element in content:
         if "paragraph" in element:
-            parts.append(_convert_paragraph(element["paragraph"]))
+            text = _convert_paragraph(element["paragraph"])
+            # Skip paragraphs that produced no visible content
+            # (e.g., all elements were suggested deletions)
+            if text.strip():
+                parts.append(text)
         elif "table" in element:
             parts.append(_convert_table(element["table"]))
         elif "sectionBreak" in element:
-            # Section breaks don't produce visible markdown
             continue
         elif "tableOfContents" in element:
-            # Skip table of contents
             continue
 
-    return "\n".join(parts)
+    result = "\n".join(parts)
+    # Collapse runs of 3+ newlines to 2 (blank line), which fixes
+    # double-spaced YAML frontmatter from per-line paragraphs.
+    import re
+    result = re.sub(r'\n{3,}', '\n\n', result)
+    return result
 
 
 def _convert_paragraph(paragraph: Dict[str, Any]) -> str:
