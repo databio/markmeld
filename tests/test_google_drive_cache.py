@@ -126,7 +126,10 @@ class TestGoogleDriveDiskCache:
             credentials_dict={'type': 'service_account', 'project_id': 'test', 'client_email': 'test@example.com'},
             save_to_disk=True
         )
-        
+
+        # Mock suggestion detection to return False (test the standard export path)
+        processor._document_has_suggestions = MagicMock(return_value=False)
+
         # Initial metadata
         processor.get_metadata = MagicMock(return_value={
             'name': 'test_document',

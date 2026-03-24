@@ -73,10 +73,10 @@ class TestActiveChangesDetection:
         with patch('markmeld.google_drive.processor._LOGGER') as mock_logger:
             processor._check_for_active_changes('test_doc_id')
             
-            # Verify warning was logged
-            warning_calls = [call for call in mock_logger.warning.call_args_list 
-                           if 'DOCUMENT HAS SUGGESTED EDITS' in str(call)]
-            assert len(warning_calls) > 0, "Expected warning about suggested edits"
+            # Verify info was logged about using Docs API with change markers
+            info_calls = [call for call in mock_logger.info.call_args_list
+                        if 'change markers' in str(call)]
+            assert len(info_calls) > 0, "Expected info about using Docs API with change markers"
     
     @patch('markmeld.google_drive.processor.service_account.Credentials')
     @patch('markmeld.google_drive.processor.build')
