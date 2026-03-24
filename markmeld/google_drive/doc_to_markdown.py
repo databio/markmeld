@@ -43,20 +43,16 @@ def doc_to_markdown(doc: Dict[str, Any]) -> str:
             # Skip paragraphs that produced no visible content
             # (e.g., all elements were suggested deletions)
             if text.strip():
-                parts.append(text)
+                # Strip trailing newline — we control spacing via join
+                parts.append(text.rstrip("\n"))
         elif "table" in element:
-            parts.append(_convert_table(element["table"]))
+            parts.append(_convert_table(element["table"]).rstrip("\n"))
         elif "sectionBreak" in element:
             continue
         elif "tableOfContents" in element:
             continue
 
-    result = "\n".join(parts)
-    # Collapse runs of 3+ newlines to 2 (blank line), which fixes
-    # double-spaced YAML frontmatter from per-line paragraphs.
-    import re
-    result = re.sub(r'\n{3,}', '\n\n', result)
-    return result
+    return "\n".join(parts)
 
 
 def _convert_paragraph(paragraph: Dict[str, Any]) -> str:
@@ -71,15 +67,25 @@ def _convert_paragraph(paragraph: Dict[str, Any]) -> str:
     style = paragraph.get("paragraphStyle", {}).get("namedStyleType", "NORMAL_TEXT")
     elements = paragraph.get("elements", [])
 
+    # Check if this paragraph is entirely a suggested insertion
+    all_insertion = elements and all(
+        bool(
+            elem.get("suggestedInsertionIds")
+            or (elem.get("textRun", {}).get("suggestedInsertionIds"))
+        )
+        or (elem.get("textRun", {}).get("content", "").strip() == "")
+        for elem in elements
+    )
+
     # Build the text content from all runs
     text = ""
     for elem in elements:
         text += _convert_element(elem)
 
-    # Apply heading prefix
+    # Apply heading prefix — but not if the entire paragraph is a suggested
+    # insertion, which means it's replacement text that shouldn't be a heading
     prefix = _HEADING_MAP.get(style, "")
-    if prefix:
-        # Strip trailing newline for heading lines, re-add after prefix
+    if prefix and not all_insertion:
         text = text.rstrip("\n")
         return f"{prefix}{text}\n"
 
