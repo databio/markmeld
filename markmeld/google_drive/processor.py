@@ -111,7 +111,10 @@ class GoogleDriveProcessor:
         """
         # Set default scopes
         if scopes is None:
-            scopes = ['https://www.googleapis.com/auth/drive.readonly']
+            scopes = [
+                'https://www.googleapis.com/auth/drive.readonly',
+                'https://www.googleapis.com/auth/documents.readonly',
+            ]
         
         # Track credential source for logging
         self._credentials_source = None
@@ -553,8 +556,9 @@ class GoogleDriveProcessor:
             return False
             
         except Exception as e:
-            _LOGGER.debug(f"Could not check for suggestions using Docs API: {e}")
-            # Fall back to false if we can't check
+            _LOGGER.warning(f"Could not check for suggestions using Docs API: {e}")
+            _LOGGER.warning("Falling back to standard export (suggestions will not be marked).")
+            _LOGGER.warning("Ensure the Google Docs API is enabled and documents.readonly scope is included.")
             return False
     
     def _check_element_for_suggestions(self, element: Dict[str, Any]) -> bool:
