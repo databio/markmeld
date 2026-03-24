@@ -398,15 +398,15 @@ class GoogleDriveProcessor:
         Returns:
             Markdown content as string.
         """
-        # Check if document has suggestions — determines which download path to use
+        # Check if document has suggestions — use Docs API path if so
         has_suggestions = self._document_has_suggestions(doc_id)
 
-        # Check disk cache if enabled (uses separate cache file for change-tracked docs)
+        # Check disk cache
         disk_content = self._load_from_disk(doc_id, changed=has_suggestions)
         if disk_content is not None:
             return disk_content
 
-        # Need to download from Google Drive (either not cached or cache is outdated)
+        # Need to download from Google Drive
         _LOGGER.info(f"✗ Changes detected - downloading fresh content from Google Drive...")
         _LOGGER.info(f"  Document ID: {doc_id}")
 
@@ -414,13 +414,11 @@ class GoogleDriveProcessor:
             _LOGGER.info("Document has suggestions — using Docs API with change markers")
             content = self._download_with_changes(doc_id)
         else:
-            # Standard export path via files.export
             request = self.drive_service.files().export_media(
                 fileId=doc_id,
                 mimeType='text/markdown'
             )
 
-            # Download the file into memory
             file_content = io.BytesIO()
             downloader = MediaIoBaseDownload(file_content, request)
             done = False
@@ -430,19 +428,14 @@ class GoogleDriveProcessor:
                 if status:
                     _LOGGER.info(f"Download {int(status.progress() * 100)}%.")
 
-            # Get the markdown content as string
             file_content.seek(0)
             content = file_content.read().decode('utf-8')
-
-            # Handle auto-added document title
             content = self._remove_auto_title(content, doc_id)
 
-        # Apply cleaning before caching if requested (default is True)
         if apply_cleaning:
             content = clean_markdown(content)
             _LOGGER.info(f"Applied cleaning to document {doc_id} before caching")
 
-        # Save to disk if enabled (separate cache file for change-tracked docs)
         if not skip_disk_save and self.save_to_disk:
             self._save_to_disk(doc_id, content, is_cleaned=apply_cleaning, changed=has_suggestions)
 

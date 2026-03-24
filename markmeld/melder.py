@@ -658,13 +658,6 @@ class Target:
             for filter_ref in filters_list:
                 options_array.append(f'--lua-filter "{filter_ref}"')
 
-        # Always include the bundled change-marker filter. It's a no-op
-        # unless mark_changes: true appears in the document frontmatter.
-        from pathlib import Path
-        change_marker_filter = Path(__file__).parent / "filters" / "change-marker" / "change_marker.lua"
-        if change_marker_filter.exists():
-            options_array.append(f'--lua-filter "{change_marker_filter}"')
-
         if "output_file" in meta:
             options_array.append('-o "{output_file}"')
 
