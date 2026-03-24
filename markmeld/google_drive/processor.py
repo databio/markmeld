@@ -31,6 +31,7 @@ logging.getLogger('googleapiclient.http').setLevel(logging.ERROR)
 # Import utility functions from parent package
 from ..utilities import sanitize_filename, write_to_file
 from .markdown_clean import clean_markdown
+from .doc_to_markdown import doc_to_markdown
 from .figure_paths import extract_csv_paths, update_figure_paths, create_figure_path_mapping
 
 # Import cache manager and figure converter from this subpackage
@@ -382,6 +383,10 @@ class GoogleDriveProcessor:
         Internal method that handles caching logic. Caches cleaned content
         by default instead of raw content.
 
+        When the document has suggestions, uses the Docs API with
+        suggestionsViewMode='SUGGESTIONS_INLINE' to produce markdown with
+        [text]{.changed} markers instead of the standard Drive export.
+
         Args:
             doc_id: The Google Doc ID.
             skip_disk_save: Whether to skip saving to disk.
@@ -390,50 +395,54 @@ class GoogleDriveProcessor:
         Returns:
             Markdown content as string.
         """
-        # Check disk cache if enabled
-        disk_content = self._load_from_disk(doc_id)
+        # Check if document has suggestions — determines which download path to use
+        has_suggestions = self._document_has_suggestions(doc_id)
+
+        # Check disk cache if enabled (uses separate cache file for change-tracked docs)
+        disk_content = self._load_from_disk(doc_id, changed=has_suggestions)
         if disk_content is not None:
             return disk_content
-        
+
         # Need to download from Google Drive (either not cached or cache is outdated)
         _LOGGER.info(f"✗ Changes detected - downloading fresh content from Google Drive...")
         _LOGGER.info(f"  Document ID: {doc_id}")
-        
-        # Check for active changes before downloading
-        self._check_for_active_changes(doc_id)
-        
-        # Export the document as markdown
-        request = self.drive_service.files().export_media(
-            fileId=doc_id,
-            mimeType='text/markdown'
-        )
-        
-        # Download the file into memory
-        file_content = io.BytesIO()
-        downloader = MediaIoBaseDownload(file_content, request)
-        done = False
-        
-        while not done:
-            status, done = downloader.next_chunk()
-            if status:
-                _LOGGER.info(f"Download {int(status.progress() * 100)}%.")
-        
-        # Get the markdown content as string
-        file_content.seek(0)
-        content = file_content.read().decode('utf-8')
-        
-        # Handle auto-added document title
-        content = self._remove_auto_title(content, doc_id)
-        
+
+        if has_suggestions:
+            _LOGGER.info("Document has suggestions — using Docs API with change markers")
+            content = self._download_with_changes(doc_id)
+        else:
+            # Standard export path via files.export
+            request = self.drive_service.files().export_media(
+                fileId=doc_id,
+                mimeType='text/markdown'
+            )
+
+            # Download the file into memory
+            file_content = io.BytesIO()
+            downloader = MediaIoBaseDownload(file_content, request)
+            done = False
+
+            while not done:
+                status, done = downloader.next_chunk()
+                if status:
+                    _LOGGER.info(f"Download {int(status.progress() * 100)}%.")
+
+            # Get the markdown content as string
+            file_content.seek(0)
+            content = file_content.read().decode('utf-8')
+
+            # Handle auto-added document title
+            content = self._remove_auto_title(content, doc_id)
+
         # Apply cleaning before caching if requested (default is True)
         if apply_cleaning:
             content = clean_markdown(content)
             _LOGGER.info(f"Applied cleaning to document {doc_id} before caching")
-        
-        # Save to disk if enabled
+
+        # Save to disk if enabled (separate cache file for change-tracked docs)
         if not skip_disk_save and self.save_to_disk:
-            self._save_to_disk(doc_id, content, is_cleaned=apply_cleaning)
-        
+            self._save_to_disk(doc_id, content, is_cleaned=apply_cleaning, changed=has_suggestions)
+
         return content
     
     def _remove_auto_title(self, content: str, doc_id: str) -> str:
@@ -467,8 +476,39 @@ class GoogleDriveProcessor:
             _LOGGER.info("Frontmatter block detected")
         
         return content
-    
-    
+
+
+    def _download_with_changes(self, doc_id: str) -> str:
+        """Download a Google Doc via the Docs API and convert to markdown with change markers.
+
+        Uses documents.get(suggestionsViewMode='SUGGESTIONS_INLINE') to get structured
+        JSON, then converts to markdown where suggested insertions become [text]{.changed}
+        and suggested deletions are dropped.
+
+        Args:
+            doc_id: The Google Doc ID.
+
+        Returns:
+            Markdown string with change markers.
+        """
+        # Build Google Docs service if not already available
+        if not hasattr(self, 'docs_service'):
+            self.docs_service = build('docs', 'v1', credentials=self.credentials, cache_discovery=False)
+
+        _LOGGER.info(f"Fetching document via Docs API with inline suggestions...")
+        doc = self.docs_service.documents().get(
+            documentId=doc_id,
+            suggestionsViewMode='SUGGESTIONS_INLINE'
+        ).execute()
+
+        content = doc_to_markdown(doc)
+
+        # Remove auto-added title (same logic as the export path)
+        content = self._remove_auto_title(content, doc_id)
+
+        return content
+
+
     def _document_has_suggestions(self, doc_id: str) -> bool:
         """Check if a Google Doc has any suggested edits.
 
@@ -619,22 +659,13 @@ class GoogleDriveProcessor:
             
             # Check for suggestions using Google Docs API
             if self._document_has_suggestions(doc_id):
-                _LOGGER.warning("")
-                _LOGGER.warning("=" * 70)
-                _LOGGER.warning("⚠️  WARNING: DOCUMENT HAS SUGGESTED EDITS")
-                _LOGGER.warning("=" * 70)
-                _LOGGER.warning(f"Document: {doc_name}")
-                _LOGGER.warning("")
-                _LOGGER.warning("This document contains unresolved suggested edits that")
-                _LOGGER.warning("may not be included in the exported version.")
-                _LOGGER.warning("")
-                _LOGGER.warning("You are building a production PDF from a document with")
-                _LOGGER.warning("suggested edits, which is probably not what you want.")
-                _LOGGER.warning("")
-                _LOGGER.warning("Please review and accept/reject all suggested edits in")
-                _LOGGER.warning("Google Docs before generating the final output.")
-                _LOGGER.warning("=" * 70)
-                _LOGGER.warning("")
+                _LOGGER.info("")
+                _LOGGER.info("=" * 70)
+                _LOGGER.info("Document has suggested edits — using Docs API with change markers")
+                _LOGGER.info(f"Document: {doc_name}")
+                _LOGGER.info("Suggested insertions will be marked with [text]{.changed}")
+                _LOGGER.info("=" * 70)
+                _LOGGER.info("")
             
             # Also check for unresolved comments
             try:
@@ -859,14 +890,15 @@ class GoogleDriveProcessor:
     # Disk Cache Operations
     # ====================
     
-    def _get_doc_filename(self, doc_id: str) -> str:
+    def _get_doc_filename(self, doc_id: str, changed: bool = False) -> str:
         """Generate a filename for saving a document to disk.
 
         Args:
             doc_id: The Google Doc ID.
+            changed: If True, return the change-tracked variant filename.
 
         Returns:
-            Sanitized filename with .md extension.
+            Sanitized filename with .md extension (or .changed.md for change-tracked).
         """
         _LOGGER.debug(f"_get_doc_filename called with doc_id type={type(doc_id)}, value={doc_id}")
 
@@ -894,38 +926,46 @@ class GoogleDriveProcessor:
             safe_name = str(safe_name)
 
         _LOGGER.debug(f"Before endswith check: type={type(safe_name)}, value={repr(safe_name)}")
-        if not safe_name.endswith('.md'):
-            safe_name += '.md'
+        if changed:
+            if safe_name.endswith('.md'):
+                safe_name = safe_name[:-3] + '.changed.md'
+            else:
+                safe_name += '.changed.md'
+        else:
+            if not safe_name.endswith('.md'):
+                safe_name += '.md'
 
         _LOGGER.debug(f"_get_doc_filename returning: {safe_name}")
         return safe_name
-    
-    def _get_doc_path(self, doc_id: str) -> Path:
+
+    def _get_doc_path(self, doc_id: str, changed: bool = False) -> Path:
         """Get the full path where a document would be saved on disk.
 
         Args:
             doc_id: The Google Doc ID.
+            changed: If True, return the change-tracked variant path.
 
         Returns:
             Full Path to the document cache location.
         """
-        return self.cache_manager.get_cache_path(doc_id, 'docs', self._get_doc_filename(doc_id))
+        return self.cache_manager.get_cache_path(doc_id, 'docs', self._get_doc_filename(doc_id, changed=changed))
 
-    def _load_from_disk(self, doc_id: str) -> Optional[str]:
+    def _load_from_disk(self, doc_id: str, changed: bool = False) -> Optional[str]:
         """Try to load a document from disk cache.
 
         Checks if the cached version is still valid using the Changes API.
 
         Args:
             doc_id: The Google Doc ID.
+            changed: If True, look for the change-tracked variant.
 
         Returns:
             Cached content if valid, None if cache miss or document changed.
         """
         if not self.save_to_disk:
             return None
-        
-        doc_path = self.cache_manager.get_cache_path(doc_id, 'docs', self._get_doc_filename(doc_id))
+
+        doc_path = self.cache_manager.get_cache_path(doc_id, 'docs', self._get_doc_filename(doc_id, changed=changed))
         if not doc_path.exists():
             return None
             
@@ -958,21 +998,22 @@ class GoogleDriveProcessor:
             _LOGGER.info("  Document has changed - will download fresh copy")
             return None
     
-    def _save_to_disk(self, doc_id: str, content: str, is_cleaned: bool = False) -> None:
+    def _save_to_disk(self, doc_id: str, content: str, is_cleaned: bool = False, changed: bool = False) -> None:
         """Save document content to disk and update metadata.
 
         Args:
             doc_id: The Google Doc ID.
             content: The markdown content to save.
             is_cleaned: Whether the content has been cleaned.
+            changed: If True, save as the change-tracked variant (.changed.md).
         """
         if not self.save_to_disk:
             return
         
-        doc_path = self._get_doc_path(doc_id)
+        doc_path = self._get_doc_path(doc_id, changed=changed)
         try:
             doc_path.parent.mkdir(parents=True, exist_ok=True)
-            
+
             # Save clean content without HTML comments
             doc_path.write_text(content, encoding='utf-8')
             _LOGGER.info(f"Saved to disk: {doc_path}")
