@@ -517,17 +517,26 @@ class GoogleDriveProcessor:
 
     @staticmethod
     def _inject_mark_changes(content: str) -> str:
-        """Inject mark_changes: true into YAML frontmatter.
+        """Ensure mark_changes: true is in the YAML frontmatter.
 
-        If the content has frontmatter (starts with ---), adds mark_changes: true.
-        If no frontmatter exists, prepends a frontmatter block with it.
+        Replaces any existing mark_changes: false, or adds mark_changes: true.
+        Handles the case where the document already has the field set to false.
         """
+        import re
+        # Replace existing mark_changes: false/no with true
+        if re.search(r'^mark_changes:\s*(false|no)\s*$', content, re.MULTILINE):
+            return re.sub(
+                r'^mark_changes:\s*(false|no)\s*$',
+                'mark_changes: true',
+                content,
+                flags=re.MULTILINE
+            )
+        # Add to existing frontmatter
         if content.startswith('---'):
-            # Insert after the opening ---
             lines = content.split('\n', 1)
             return lines[0] + '\nmark_changes: true\n' + lines[1]
-        else:
-            return '---\nmark_changes: true\n---\n' + content
+        # No frontmatter — create one
+        return '---\nmark_changes: true\n---\n' + content
 
 
     def _document_has_suggestions(self, doc_id: str) -> bool:
