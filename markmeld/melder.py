@@ -990,6 +990,7 @@ class MarkdownMelder:
         report: bool = True,
         input_file: Optional[str] = None,
         output_file: Optional[str] = None,
+        vardata: Optional[List[str]] = None,
     ) -> Union[Target, Dict[int, Target], None]:
         """Build a target by processing inputs and running the command.
 
@@ -1004,6 +1005,7 @@ class MarkdownMelder:
             report: If True, log build results.
             input_file: Override content source with an external file path.
             output_file: Override output file path.
+            vardata: Optional list of "key=value" strings for CLI variable overrides.
 
         Returns:
             Target object with build results, dict of Target objects for loop
@@ -1011,7 +1013,7 @@ class MarkdownMelder:
         """
         from pathlib import Path
 
-        tgt = Target(self.cfg, target_name)
+        tgt = Target(self.cfg, target_name, vardata=vardata)
         _LOGGER.info(
             f"MM | Building target: {tgt.target_name} from file {tgt.meta['_cfg_file_path']}"
         )
