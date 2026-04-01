@@ -353,6 +353,7 @@ def main(test_args: Optional[Dict[str, Any]] = None) -> None:
         report=False,
         input_file=args.input,
         output_file=args.output,
+        vardata=args.vars,
     )
 
     # Check if build failed before attempting to use built_target
