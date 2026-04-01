@@ -44,6 +44,8 @@ def clean_markdown(
     if fix_latex_chars:
         markdown_content = check_and_fix_latex_incompatible_chars(markdown_content)
 
+    markdown_content = ensure_blank_lines_before_headings(markdown_content)
+
     return markdown_content
 
 
@@ -141,6 +143,27 @@ def strip_bold_from_headings(markdown_content: str) -> str:
     return '\n'.join(cleaned_lines)
 
 
+def ensure_blank_lines_before_headings(markdown_content: str) -> str:
+    """Ensure blank lines before markdown headings.
+
+    Markdown requires a blank line before headings for proper parsing.
+    Google Docs exports often omit these blank lines.
+
+    Args:
+        markdown_content: Markdown content with potentially missing blank lines.
+
+    Returns:
+        Content with blank lines inserted before heading lines.
+    """
+    lines = markdown_content.split('\n')
+    result = []
+    for i, line in enumerate(lines):
+        if line.startswith('#') and i > 0 and result and result[-1].strip() != '':
+            result.append('')
+        result.append(line)
+    return '\n'.join(result)
+
+
 def replace_svg_extensions(markdown_content: str) -> str:
     """Replace .svg extensions with .pdf in markdown image syntax.
 
@@ -186,6 +209,7 @@ def check_and_fix_latex_incompatible_chars(markdown_content: str) -> str:
         '\u2026': '...',         # U+2026 HORIZONTAL ELLIPSIS -> three dots
         '\u2013': '--',          # U+2013 EN DASH -> double hyphen
         '\u2014': '---',         # U+2014 EM DASH -> triple hyphen
+        '\u000B': '\n',          # U+000B VERTICAL TAB -> newline
         '\u00A0': ' ',           # U+00A0 NO-BREAK SPACE -> regular space
         '\u200B': '',            # U+200B ZERO WIDTH SPACE -> remove
         '\u2010': '-',           # U+2010 HYPHEN -> hyphen-minus
@@ -213,6 +237,22 @@ def check_and_fix_latex_incompatible_chars(markdown_content: str) -> str:
         '\u03C0': '$\\pi$',      # U+03C0 GREEK SMALL LETTER PI
         '\u03C3': '$\\sigma$',   # U+03C3 GREEK SMALL LETTER SIGMA
         '\u03C6': '$\\phi$',     # U+03C6 GREEK SMALL LETTER PHI
+        '\u03BC': '$\\mu$',      # U+03BC GREEK SMALL LETTER MU
+        '\u2080': '$_0$',        # U+2080 SUBSCRIPT ZERO
+        '\u2081': '$_1$',        # U+2081 SUBSCRIPT ONE
+        '\u2082': '$_2$',        # U+2082 SUBSCRIPT TWO
+        '\u2083': '$_3$',        # U+2083 SUBSCRIPT THREE
+        '\u2084': '$_4$',        # U+2084 SUBSCRIPT FOUR
+        '\u2085': '$_5$',        # U+2085 SUBSCRIPT FIVE
+        '\u2086': '$_6$',        # U+2086 SUBSCRIPT SIX
+        '\u2087': '$_7$',        # U+2087 SUBSCRIPT SEVEN
+        '\u2088': '$_8$',        # U+2088 SUBSCRIPT EIGHT
+        '\u2089': '$_9$',        # U+2089 SUBSCRIPT NINE
+        '\u2192': '$\\rightarrow$',  # U+2192 RIGHTWARDS ARROW
+        '\u2713': '$\\checkmark$',   # U+2713 CHECK MARK
+        '\u2717': '$\\times$',       # U+2717 BALLOT X
+        '\u00B2': '$^2$',        # U+00B2 SUPERSCRIPT TWO
+        '\u00B3': '$^3$',        # U+00B3 SUPERSCRIPT THREE
     }
 
     # Track what we find and fix

@@ -874,7 +874,8 @@ class FigureConverter:
         """
         # Pattern to find markdown images with optional parameters
         # Matches: ![alt](path){.param=value .param2="value"}
-        inline_pattern = r'!\[[^\]]*\]\(([^)]+)\)(\{[^}]*\})?'
+        # Alt text may contain nested [...] spans (e.g., from tracked changes: [text]{.changed})
+        inline_pattern = r'!\[(?:[^\[\]]|\[[^\]]*\])*\]\(([^)]+)\)(\{[^}]*\})?'
         
         # Find reference-style images: [ref]: path
         ref_pattern = r'^\[[^\]]+\]:\s*(.+)$'

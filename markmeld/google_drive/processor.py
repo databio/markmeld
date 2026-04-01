@@ -414,23 +414,7 @@ class GoogleDriveProcessor:
             _LOGGER.info("Document has suggestions — using Docs API with change markers")
             content = self._download_with_changes(doc_id)
         else:
-            request = self.drive_service.files().export_media(
-                fileId=doc_id,
-                mimeType='text/markdown'
-            )
-
-            file_content = io.BytesIO()
-            downloader = MediaIoBaseDownload(file_content, request)
-            done = False
-
-            while not done:
-                status, done = downloader.next_chunk()
-                if status:
-                    _LOGGER.info(f"Download {int(status.progress() * 100)}%.")
-
-            file_content.seek(0)
-            content = file_content.read().decode('utf-8')
-            content = self._remove_auto_title(content, doc_id)
+            content = self._download_first_tab(doc_id)
 
         if apply_cleaning:
             content = clean_markdown(content)
@@ -473,6 +457,29 @@ class GoogleDriveProcessor:
         
         return content
 
+
+    def _download_first_tab(self, doc_id: str) -> str:
+        """Download a Google Doc via the Docs API, first tab only.
+
+        Uses documents.get() which returns only the first tab in the body field,
+        then converts to markdown via doc_to_markdown.
+
+        Args:
+            doc_id: The Google Doc ID.
+
+        Returns:
+            Markdown string.
+        """
+        if not hasattr(self, 'docs_service'):
+            self.docs_service = build('docs', 'v1', credentials=self.credentials, cache_discovery=False)
+
+        _LOGGER.info(f"Fetching document via Docs API (first tab only)...")
+        doc = self.docs_service.documents().get(documentId=doc_id).execute()
+
+        content = doc_to_markdown(doc)
+        content = self._remove_auto_title(content, doc_id)
+
+        return content
 
     def _download_with_changes(self, doc_id: str) -> str:
         """Download a Google Doc via the Docs API and convert to markdown with change markers.
