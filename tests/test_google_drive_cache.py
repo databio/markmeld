@@ -70,12 +70,13 @@ class TestGoogleDriveDiskCache:
         })
         
         # First download - should save to disk
+        processor._document_has_suggestions = MagicMock(return_value=False)
         with patch('io.BytesIO') as mock_bytesio:
             mock_file = MagicMock()
             mock_file.read.return_value = b"# Test\n\nContent"
             mock_file.seek = MagicMock()
             mock_bytesio.return_value = mock_file
-            
+
             content1 = processor._download_raw_markdown('test_doc_id')
             
         # Check that the document was downloaded
@@ -138,21 +139,22 @@ class TestGoogleDriveDiskCache:
         })
         
         # First download
+        processor._document_has_suggestions = MagicMock(return_value=False)
         with patch('io.BytesIO') as mock_bytesio:
             mock_file = MagicMock()
             mock_file.read.return_value = b"# Original\n\nContent"
             mock_file.seek = MagicMock()
             mock_bytesio.return_value = mock_file
-            
+
             content1 = processor._download_raw_markdown('test_doc_id')
-        
+
         # Change metadata to simulate modification
         processor.get_metadata = MagicMock(return_value={
             'name': 'test_document',
             'modifiedTime': '2024-01-01T11:00:00Z',  # Changed time
             'md5Checksum': 'def456'  # Changed checksum
         })
-        
+
         # Second download should re-download due to modification
         # The _load_from_disk method should detect the change and return None
         with patch('io.BytesIO') as mock_bytesio:

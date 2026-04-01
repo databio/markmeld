@@ -475,14 +475,15 @@ class TestCleanedContentCaching(unittest.TestCase):
             
             with patch('markmeld.google_drive.processor.MediaIoBaseDownload') as mock_downloader_class:
                 mock_downloader_class.return_value = mock_downloader
-                
-                with patch.object(processor, '_remove_auto_title', return_value=raw_content):
+
+                with patch.object(processor, '_remove_auto_title', return_value=raw_content), \
+                     patch.object(processor, '_document_has_suggestions', return_value=False):
                     with patch('markmeld.google_drive.processor.io.BytesIO') as mock_io:
                         mock_file = Mock()
                         mock_file.read.return_value = raw_content.encode('utf-8')
                         mock_file.seek = Mock()
                         mock_io.return_value = mock_file
-                        
+
                         # Call _download_raw_markdown with default apply_cleaning=True
                         result = processor._download_raw_markdown('test_doc_id')
                         

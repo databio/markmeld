@@ -75,7 +75,7 @@ class TestActiveChangesDetection:
             
             # Verify info was logged about using Docs API with change markers
             info_calls = [call for call in mock_logger.info.call_args_list
-                        if 'change markers' in str(call)]
+                        if 'suggested edits' in str(call) or 'change markers' in str(call)]
             assert len(info_calls) > 0, "Expected info about using Docs API with change markers"
     
     @patch('markmeld.google_drive.processor.service_account.Credentials')

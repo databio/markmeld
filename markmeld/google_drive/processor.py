@@ -416,6 +416,7 @@ class GoogleDriveProcessor:
         else:
             content = self._download_first_tab(doc_id)
 
+
         if apply_cleaning:
             content = clean_markdown(content)
             _LOGGER.info(f"Applied cleaning to document {doc_id} before caching")
@@ -668,6 +669,7 @@ class GoogleDriveProcessor:
                 _LOGGER.info("Document has suggested edits — using Docs API with change markers")
                 _LOGGER.info(f"Document: {doc_name}")
                 _LOGGER.info("Suggested insertions will be marked with [text]{.changed}")
+                _LOGGER.info("Suggested deletions will be omitted")
                 _LOGGER.info("=" * 70)
                 _LOGGER.info("")
             
@@ -1013,7 +1015,7 @@ class GoogleDriveProcessor:
         """
         if not self.save_to_disk:
             return
-        
+
         doc_path = self._get_doc_path(doc_id, changed=changed)
         try:
             doc_path.parent.mkdir(parents=True, exist_ok=True)
