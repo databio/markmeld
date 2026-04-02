@@ -203,7 +203,7 @@ local function handle_output_mode(doc)
       end
     end
     if refs_div then
-      doc.blocks = refs_div.content
+      doc.blocks = {refs_div}
     else
       doc.blocks = {}
     end
