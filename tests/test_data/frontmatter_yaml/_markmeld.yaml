@@ -1,0 +1,8 @@
+targets:
+  manuscript:
+    jinja_template: template.jinja
+    data:
+      md_files:
+        manuscript: manuscript.md
+      yaml_files:
+        frontmatter_manuscript: _manuscript.yaml

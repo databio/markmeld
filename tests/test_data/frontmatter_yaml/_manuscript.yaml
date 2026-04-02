@@ -1,0 +1,13 @@
+title: "Test Paper Title From YAML"
+short_title: "Test Paper"
+abstract: "This is the abstract from _manuscript.yaml."
+author:
+- name: Jane Doe
+  affiliation: 1
+- name: John Smith
+  affiliation: 2
+institutions:
+- key: 1
+  name: University of Testing
+- key: 2
+  name: Institute of Verification
