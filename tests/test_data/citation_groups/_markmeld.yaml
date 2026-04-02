@@ -1,0 +1,45 @@
+citation_groups:
+  grant:
+    - project_summary
+    - project_description
+    - references_cited
+
+targets:
+  project_summary:
+    suppress-bibliography: true
+    jinja_template: generic.jinja
+    csl: "{mm-csl-biomed-central}"
+    bibdb: references.bib
+    output_file: out/project_summary.pdf
+    data:
+      md_files:
+        content: src/project_summary.md
+
+  project_description:
+    suppress-bibliography: true
+    jinja_template: generic.jinja
+    csl: "{mm-csl-biomed-central}"
+    bibdb: references.bib
+    output_file: out/project_description.pdf
+    data:
+      md_files:
+        content: src/project_description.md
+
+  references_cited:
+    bibliography-only: true
+    jinja_template: generic.jinja
+    csl: "{mm-csl-biomed-central}"
+    bibdb: references.bib
+    output_file: out/references_cited.pdf
+    data:
+      md_files:
+        content: src/references_cited.md
+
+  budget_justification:
+    jinja_template: generic.jinja
+    csl: "{mm-csl-biomed-central}"
+    bibdb: references.bib
+    output_file: out/budget_justification.pdf
+    data:
+      md_files:
+        content: src/budget_justification.md

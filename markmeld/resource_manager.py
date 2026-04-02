@@ -59,6 +59,7 @@ class ResourceManager:
                     # Map filter directory names to their main .lua files
                     lua_file_mapping = {
                         "change-marker": "change_marker.lua",
+                        "consistent-citations": "consistent-citations.lua",
                         "figczar": "figczar.lua",
                         "multi-refs": "multi-refs.lua",
                         "supplemental-labels": "supplemental_labels.lua",

@@ -352,6 +352,9 @@ def process_data(
                         "ext": get_file_extension(v),
                     }
                     vars_temp[k] = yaml_dict
+                    # Keyed yaml files starting with "frontmatter" merge into global frontmatter
+                    if k[:11] == "frontmatter":
+                        frontmatter_temp.update(yaml_dict)
                 data["_raw"][k] = yaml.dump(yaml_dict)
 
     for k, v in yaml_content.items():
@@ -648,7 +651,24 @@ class Target:
         if "csl" in meta:
             options_array.append('--csl "{csl}"')
 
-        if "citeproc" in meta and meta["citeproc"]:
+        # Citation group targets: add the consistent-citations Lua filter
+        # and skip --citeproc (the filter handles citeproc internally)
+        has_citation_group = "_citation_group_sources" in meta and meta["_citation_group_sources"]
+
+        if has_citation_group:
+            from .resource_manager import get_filter_path
+            filter_path = get_filter_path("consistent-citations")
+            if filter_path:
+                options_array.append(f'--lua-filter "{filter_path}"')
+                # Add citation_group_sources as metadata
+                for source_path in meta["_citation_group_sources"]:
+                    options_array.append(f'--metadata=citation_group_sources:{source_path}')
+                # Add suppress-bibliography and bibliography-only metadata if set
+                if meta.get("suppress-bibliography"):
+                    options_array.append('--metadata=suppress-bibliography:true')
+                if meta.get("bibliography-only"):
+                    options_array.append('--metadata=bibliography-only:true')
+        elif "citeproc" in meta and meta["citeproc"]:
             options_array.append('--citeproc')
 
         if "lua_filters" in meta and meta["lua_filters"]:
@@ -799,6 +819,12 @@ class MarkdownMelder:
         _LOGGER.info("Initializing MarkdownMelder...")
         self.cfg = cfg
         self.target_objects = {}
+        # Build citation group lookup: target_name -> group_name
+        self._citation_group_map = {}
+        if "citation_groups" in cfg:
+            for group_name, target_list in cfg["citation_groups"].items():
+                for tgt_name in target_list:
+                    self._citation_group_map[tgt_name] = group_name
 
     def get_cache_root(self) -> str:
         """
@@ -982,6 +1008,176 @@ class MarkdownMelder:
             _LOGGER.error(f"Full traceback:\n{traceback.format_exc()}")
             return None
 
+    def _resolve_citation_group_sources(self, target_name: str) -> Optional[List[str]]:
+        """Resolve absolute file paths for all markdown sources in a target's citation group.
+
+        Args:
+            target_name: Name of the target to resolve group sources for.
+
+        Returns:
+            List of absolute file paths to markdown source files for all targets
+            in the citation group, in group order. Returns None if the target is
+            not in a citation group.
+        """
+        if target_name not in self._citation_group_map:
+            return None
+
+        group_name = self._citation_group_map[target_name]
+        group_targets = self.cfg["citation_groups"][group_name]
+        source_paths = []
+
+        for sibling_name in group_targets:
+            if sibling_name not in self.cfg.get("targets", {}):
+                _LOGGER.warning(f"Citation group target '{sibling_name}' not found in config")
+                continue
+            sibling_cfg = self.cfg["targets"][sibling_name]
+            data_block = sibling_cfg.get("data", {})
+            md_files = data_block.get("md_files", {})
+
+            # Get the workpath for resolving relative paths
+            workpath = sibling_cfg.get("_workpath", os.path.dirname(self.cfg.get("_cfg_file_path", "")))
+
+            for key, md_path in md_files.items():
+                if os.path.isabs(md_path):
+                    abs_path = md_path
+                else:
+                    abs_path = os.path.normpath(os.path.join(workpath, md_path))
+                if os.path.exists(abs_path):
+                    source_paths.append(abs_path)
+                else:
+                    _LOGGER.warning(f"Citation group source file not found: {abs_path}")
+
+        return source_paths if source_paths else None
+
+    def _run_pandoc_citation_group(self, markdown_content: str, tgt: "Target") -> str:
+        """Run pandoc with the consistent-citations filter for citation group processing.
+
+        This is used when print_only=True to still process citations consistently.
+        Pipes the markdown through pandoc with the Lua filter, outputting plain text.
+
+        Args:
+            markdown_content: Rendered markdown content to process.
+            tgt: Target object with metadata.
+
+        Returns:
+            Pandoc-processed output as plain text.
+        """
+        import subprocess
+        import tempfile
+
+        from .resource_manager import get_filter_path
+
+        filter_path = get_filter_path("consistent-citations")
+        if not filter_path:
+            _LOGGER.error("consistent-citations filter not found")
+            return markdown_content
+
+        citation_group_sources = tgt.meta.get("_citation_group_sources", [])
+        workpath = tgt.meta.get("_workpath", ".")
+
+        # Build pandoc command for plain text output with citation processing
+        cmd_parts = ["pandoc", "--from=markdown", "--to=plain"]
+        cmd_parts.append(f'--lua-filter="{filter_path}"')
+
+        # Add bibliography if specified
+        if "bibdb" in tgt.meta:
+            bibdb = tgt.meta["bibdb"]
+            if not os.path.isabs(bibdb):
+                bibdb = os.path.normpath(os.path.join(workpath, bibdb))
+            cmd_parts.append(f'--bibliography="{bibdb}"')
+
+        # Add CSL if specified
+        if "csl" in tgt.meta:
+            csl = tgt.meta["csl"]
+            if not os.path.isabs(csl):
+                csl = os.path.normpath(os.path.join(workpath, csl))
+            cmd_parts.append(f'--csl="{csl}"')
+
+        # Add citation_group_sources as metadata
+        for source_path in citation_group_sources:
+            cmd_parts.append(f'--metadata=citation_group_sources:{source_path}')
+
+        # Add suppress-bibliography and bibliography-only as metadata if set
+        if tgt.meta.get("suppress-bibliography"):
+            cmd_parts.append('--metadata=suppress-bibliography:true')
+        if tgt.meta.get("bibliography-only"):
+            cmd_parts.append('--metadata=bibliography-only:true')
+
+        cmd = " ".join(cmd_parts)
+        _LOGGER.info(f"MM | Citation group pandoc command: {cmd}")
+
+        # Determine cwd
+        if os.path.isdir(workpath):
+            cwd = workpath
+        else:
+            cwd = os.path.dirname(workpath)
+
+        p = subprocess.Popen(
+            cmd, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, cwd=cwd
+        )
+        stdout, stderr = p.communicate(input=markdown_content.encode())
+
+        if p.returncode != 0:
+            _LOGGER.error(f"Pandoc citation group processing failed: {stderr.decode('utf-8', errors='replace')}")
+            return markdown_content
+
+        if stderr:
+            _LOGGER.debug(f"Pandoc stderr: {stderr.decode('utf-8', errors='replace')}")
+
+        return stdout.decode('utf-8', errors='replace')
+
+    def _run_pandoc_citeproc(self, markdown_content: str, tgt: "Target") -> str:
+        """Run pandoc with --citeproc for normal citation processing.
+
+        Used in print_only mode for targets that have a bibliography but are
+        not in a citation group.
+
+        Args:
+            markdown_content: Rendered markdown content to process.
+            tgt: Target object with metadata.
+
+        Returns:
+            Pandoc-processed output as plain text.
+        """
+        import subprocess
+
+        workpath = tgt.meta.get("_workpath", ".")
+
+        cmd_parts = ["pandoc", "--from=markdown", "--to=plain", "--citeproc"]
+
+        if "bibdb" in tgt.meta:
+            bibdb = tgt.meta["bibdb"]
+            if not os.path.isabs(bibdb):
+                bibdb = os.path.normpath(os.path.join(workpath, bibdb))
+            cmd_parts.append(f'--bibliography="{bibdb}"')
+
+        if "csl" in tgt.meta:
+            csl = tgt.meta["csl"]
+            if not os.path.isabs(csl):
+                csl = os.path.normpath(os.path.join(workpath, csl))
+            cmd_parts.append(f'--csl="{csl}"')
+
+        cmd = " ".join(cmd_parts)
+        _LOGGER.info(f"MM | Citeproc pandoc command: {cmd}")
+
+        if os.path.isdir(workpath):
+            cwd = workpath
+        else:
+            cwd = os.path.dirname(workpath)
+
+        p = subprocess.Popen(
+            cmd, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, cwd=cwd
+        )
+        stdout, stderr = p.communicate(input=markdown_content.encode())
+
+        if p.returncode != 0:
+            _LOGGER.error(f"Pandoc citeproc processing failed: {stderr.decode('utf-8', errors='replace')}")
+            return markdown_content
+
+        return stdout.decode('utf-8', errors='replace')
+
     def build_target(
         self,
         target_name: str,
@@ -1017,6 +1213,15 @@ class MarkdownMelder:
         _LOGGER.info(
             f"MM | Building target: {tgt.target_name} from file {tgt.meta['_cfg_file_path']}"
         )
+
+        # Inject citation group sources if this target is in a citation group
+        citation_group_sources = self._resolve_citation_group_sources(target_name)
+        if citation_group_sources:
+            tgt.meta["_citation_group_sources"] = citation_group_sources
+            # Rebuild the command now that we have citation group info
+            # (the original command was built in Target.__init__ before injection)
+            tgt.meta["command"] = Target._build_default_command(tgt.meta)
+            _LOGGER.info(f"MM | Citation group sources for '{target_name}': {citation_group_sources}")
 
         # Inject ad-hoc input file into target data
         if input_file:
@@ -1144,8 +1349,19 @@ class MarkdownMelder:
             tgt.returncode = 0
         elif print_only:
             # Case 2: print_only means just render but run no command.
-            # return print(tpl.render(data))  # one time
             tgt.melded_output = self.render_template(tgt.melded_input, tgt)
+            # If this target is in a citation group, run pandoc with the
+            # consistent-citations filter to produce processed output
+            if tgt.meta.get("_citation_group_sources"):
+                tgt.melded_output = self._run_pandoc_citation_group(
+                    tgt.melded_output, tgt
+                )
+            elif tgt.meta.get("bibdb"):
+                # For targets with bibliography, run pandoc with citeproc
+                # to resolve citations even in print_only mode
+                tgt.melded_output = self._run_pandoc_citeproc(
+                    tgt.melded_output, tgt
+                )
             tgt.returncode = 0
         elif vardump:
             tgt.melded_output = tgt.melded_input
