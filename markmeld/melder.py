@@ -6,6 +6,7 @@ import re
 import sys
 import time
 import yaml
+from pathlib import Path
 
 from copy import deepcopy
 from typing import Any, Dict, List, NamedTuple, Optional, Tuple, Union
@@ -1388,7 +1389,21 @@ class MarkdownMelder:
                                     _LOGGER.warning(line)
                     except Exception as e:
                         _LOGGER.debug(f"Could not analyze figure references: {e}")
-                
+
+                # Convert local SVG figures to PDF before passing to pandoc
+                if tgt.melded_output and isinstance(tgt.melded_output, str):
+                    try:
+                        from .figure_conversion import process_local_figures
+                        tgt.melded_output = process_local_figures(
+                            tgt.melded_output,
+                            defpath=tgt.meta['_defpath'],
+                            cache_dir=Path(tgt.meta.get('_workpath', '.')),
+                        )
+                    except Exception as e:
+                        _LOGGER.warning(f"Could not process local figures: {e}")
+                        import traceback
+                        _LOGGER.warning(traceback.format_exc())
+
                 tgt.returncode, tgt.stdout, tgt.stderr = run_cmd(
                     cmd_fmt, tgt.melded_output.encode(), tgt.meta["_workpath"]
                 )

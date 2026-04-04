@@ -19,6 +19,18 @@ import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from ..figure_conversion import (
+    build_table_css as _shared_build_table_css,
+    compute_params_digest as _shared_compute_params_digest,
+    convert_csv as _shared_convert_csv,
+    convert_svg as _shared_convert_svg,
+    df_to_pdf as _shared_df_to_pdf,
+    extract_figure_paths as _shared_extract_figure_paths,
+    find_optimal_height as _shared_find_optimal_height,
+    parse_figure_parameters as _shared_parse_figure_parameters,
+    prepare_table_parameters as _shared_prepare_table_parameters,
+)
+
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -230,116 +242,14 @@ class FigureConverter:
         return True
     
     def convert_svg(self, svg_path: str, output_path: Path) -> bool:
-        """Convert SVG to PDF using inkscape.
-
-        Args:
-            svg_path: Path to SVG file.
-            output_path: Path for output PDF.
-
-        Returns:
-            True if successful, False otherwise.
-        """
-        try:
-            # Ensure output directory exists
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            
-            # Run Inkscape conversion
-            cmd = [
-                self.inkscape_command,
-                "--batch-process",
-                "--export-type=pdf",
-                f"--export-filename={output_path}",
-                svg_path
-            ]
-            
-            _LOGGER.info(f"  Converting SVG to PDF: {svg_path}")
-            
-            # Set environment to avoid X11/DBus issues
-            env = os.environ.copy()
-            env['DISPLAY'] = ''
-            
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=60,
-                env=env
-            )
-            
-            if result.returncode != 0:
-                _LOGGER.error(f"❌ Inkscape conversion failed with return code {result.returncode}")
-                _LOGGER.error(f"   Command: {' '.join(cmd)}")
-                if result.stderr:
-                    _LOGGER.error(f"   Error output: {result.stderr[:500]}")
-                if result.stdout:
-                    _LOGGER.debug(f"   Output: {result.stdout[:500]}")
-                return False
-            
-            if not output_path.exists():
-                _LOGGER.error(f"❌ PDF file was not created at {output_path}")
-                _LOGGER.error(f"   SVG source: {svg_path}")
-                _LOGGER.error(f"   Check if Inkscape completed successfully")
-                return False
-            
-            # Log with relative paths for readability
-            svg_rel = '/'.join(Path(svg_path).parts[-2:])
-            out_rel = '/'.join(output_path.parts[-2:])
-            _LOGGER.info(f"  Converted: {svg_rel} -> {out_rel}")
-            return True
-            
-        except subprocess.TimeoutExpired:
-            _LOGGER.error(f"❌ Inkscape conversion timed out after 60 seconds")
-            _LOGGER.error(f"   SVG file: {svg_path}")
-            _LOGGER.error(f"   This may indicate a complex or corrupted SVG file")
-            return False
-        except FileNotFoundError:
-            _LOGGER.error(f"❌ Inkscape not found: '{self.inkscape_command}'")
-            _LOGGER.error(f"   Please install Inkscape: sudo apt-get install inkscape (Ubuntu/Debian)")
-            _LOGGER.error(f"   Or: brew install inkscape (macOS)")
-            return False
-        except Exception as e:
-            _LOGGER.error(f"❌ Unexpected error in SVG conversion: {e}")
-            _LOGGER.error(f"   SVG file: {svg_path}")
-            return False
+        """Convert SVG to PDF using inkscape. Delegates to shared helper."""
+        return _shared_convert_svg(svg_path, output_path)
     
     def convert_csv(
         self, csv_path: str, output_path: Path, params: Dict[str, Any]
     ) -> bool:
-        """Convert CSV to PDF using weasyprint.
-
-        Args:
-            csv_path: Path to CSV file.
-            output_path: Path for output PDF.
-            params: Table formatting parameters.
-
-        Returns:
-            True if successful, False otherwise.
-        """
-        try:
-            import pandas as pd
-            from weasyprint import HTML
-            
-            # Ensure output directory exists
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            
-            # Load CSV
-            df = pd.read_csv(csv_path)
-            
-            # Prepare parameters
-            table_params = self._prepare_table_parameters(params, df)
-            
-            # Convert to PDF
-            self._df_to_pdf(df, str(output_path), **table_params)
-            
-            # Log with relative paths for readability
-            csv_rel = '/'.join(Path(csv_path).parts[-2:])
-            out_rel = '/'.join(output_path.parts[-2:])
-            _LOGGER.info(f"  Converted: {csv_rel} -> {out_rel}")
-            return True
-            
-        except Exception as e:
-            _LOGGER.error(f"Error converting CSV to PDF: {e}")
-            return False
+        """Convert CSV to PDF using weasyprint. Delegates to shared helper."""
+        return _shared_convert_csv(csv_path, output_path, params)
     
     def _convert_gsheet(
         self,
@@ -446,106 +356,9 @@ class FigureConverter:
     def _prepare_table_parameters(
         self, params: Dict[str, Any], df: Any
     ) -> Dict[str, Any]:
-        """Prepare table parameters for PDF generation.
+        """Prepare table parameters. Delegates to shared helper."""
+        return _shared_prepare_table_parameters(params, df)
 
-        Args:
-            params: Parameters from markdown.
-            df: pandas DataFrame.
-
-        Returns:
-            Dictionary of parameters for table PDF builder.
-        """
-        import pandas as pd
-        
-        # Start with defaults
-        table_params = self.default_table_params.copy()
-        _LOGGER.debug(f"  Input params: {params}")
-        
-        # Extract and convert parameters
-        if 'fig_width' in params:
-            # Convert width like "174mm", "174", or "auto"
-            width_str = str(params['fig_width']).strip().lower()
-            if width_str == 'auto':
-                # Use CSS auto for width
-                table_params['fig_width_mm'] = 'auto'
-                _LOGGER.debug(f"  Using CSS auto width")
-            elif width_str.endswith('mm'):
-                table_params['fig_width_mm'] = float(width_str[:-2])
-                _LOGGER.debug(f"  Set width: {table_params['fig_width_mm']}mm")
-            else:
-                # Assume mm if no unit specified (and not 'auto')
-                try:
-                    table_params['fig_width_mm'] = float(width_str)
-                    _LOGGER.debug(f"  Set width: {table_params['fig_width_mm']}mm")
-                except ValueError:
-                    _LOGGER.warning(f"  Invalid width value '{params['fig_width']}', using default")
-                    # Default already in table_params
-        
-        if 'font-size' in params:
-            # Convert font size like "6pt" or "6" to float
-            size_str = str(params['font-size'])
-            if size_str.endswith('pt'):
-                table_params['font_size_pt'] = float(size_str[:-2])
-            else:
-                # Assume pt if no unit specified
-                table_params['font_size_pt'] = float(size_str)
-            _LOGGER.debug(f"  Set font-size: {table_params['font_size_pt']}pt")
-        
-        # Extract column/padding params FIRST (needed for height calculation)
-        if 'col-names' in params:
-            table_params['colnames'] = params['col-names'].split(',')
-        else:
-            table_params['colnames'] = list(df.columns)
-
-        if 'col-widths' in params:
-            widths = params['col-widths'].split(',')
-            table_params['col_widths'] = [float(w.strip()) for w in widths]
-        else:
-            n_cols = len(df.columns)
-            table_params['col_widths'] = [100.0 / n_cols] * n_cols
-
-        if 'col-align' in params:
-            table_params['col_alignments'] = params['col-align'].split(',')
-        else:
-            table_params['col_alignments'] = ['left'] * len(df.columns)
-
-        if 'padding-v' in params:
-            table_params['tr_padding_v'] = float(params['padding-v'])
-        if 'padding-h' in params:
-            table_params['tr_padding_h'] = float(params['padding-h'])
-
-        # NOW handle height (explicit or auto-calculated)
-        if 'fig_height' in params:
-            height_str = str(params['fig_height']).strip().lower()
-            if height_str == 'auto':
-                table_params['fig_height_mm'] = 'auto'
-                _LOGGER.info(f"  Using CSS auto height")
-            elif height_str.endswith('mm'):
-                table_params['fig_height_mm'] = float(height_str[:-2])
-                _LOGGER.info(f"  Using explicit height: {table_params['fig_height_mm']}mm")
-            else:
-                try:
-                    table_params['fig_height_mm'] = float(height_str)
-                    _LOGGER.info(f"  Using explicit height: {table_params['fig_height_mm']}mm")
-                except ValueError:
-                    _LOGGER.warning(f"  Invalid height value '{params['fig_height']}', using CSS auto")
-                    table_params['fig_height_mm'] = 'auto'
-        else:
-            # Auto-calculate height using actual column widths
-            font_size = table_params.get('font_size_pt', 6)
-            page_width = table_params.get('fig_width_mm', 174)
-            if page_width == 'auto':
-                page_width = 174
-            table_params['fig_height_mm'] = self._find_optimal_height(
-                df, table_params['col_widths'], table_params['col_alignments'],
-                page_width, font_size,
-                table_params.get('tr_padding_v', 1), table_params.get('tr_padding_h', 3)
-            )
-            _LOGGER.info(f"  Auto-calculated height: {table_params['fig_height_mm']:.2f}mm for {len(df)} data rows + header (font: {font_size}pt)")
-        
-        _LOGGER.debug(f"  Final table params: {table_params}")
-        return table_params
-    
     def _build_table_css(
         self,
         col_widths: List[float],
@@ -556,41 +369,11 @@ class FigureConverter:
         tr_padding_v: float,
         tr_padding_h: float,
     ) -> str:
-        """Build CSS for table rendering.
-
-        Args:
-            col_widths: List of column widths as percentages.
-            col_alignments: List of column alignments.
-            page_width_mm: Page width in millimeters.
-            page_height_mm: Page height in millimeters.
-            font_size_pt: Font size in points.
-            tr_padding_v: Vertical padding in pixels.
-            tr_padding_h: Horizontal padding in pixels.
-
-        Returns:
-            CSS string for table styling.
-        """
-        # Column-specific CSS
-        col_css = ""
-        for i, (w, align) in enumerate(zip(col_widths, col_alignments)):
-            col_css += f"th:nth-child({i+1}), td:nth-child({i+1}) {{ width: {w}%; text-align: {align}; box-sizing: border-box; }}\n"
-
-        # Format dimensions
-        def fmt(val):
-            return 'auto' if val == 'auto' else f"{val}mm"
-
-        width_css, height_css = fmt(page_width_mm), fmt(page_height_mm)
-        page_size = "auto" if width_css == 'auto' and height_css == 'auto' else f"{width_css} {height_css}"
-
-        return f"""<style>
-          @page {{ size: {page_size}; margin: 0; }}
-          body {{ font-family: Helvetica, Arial, sans-serif; font-size: {font_size_pt}pt; margin: 2mm; }}
-          table {{ border-collapse: collapse; width: 100%; table-layout: fixed; padding: 0; }}
-          th, td {{ border: 0; padding: {tr_padding_v}px {tr_padding_h}px; word-wrap: break-word; }}
-          th {{ background-color: #ccc; color: black; font-weight: bold; }}
-          tr:nth-child(even) {{ background-color: #f2f2f2; }}
-          {col_css}
-        </style>"""
+        """Build CSS for table rendering. Delegates to shared helper."""
+        return _shared_build_table_css(
+            col_widths, col_alignments, page_width_mm, page_height_mm,
+            font_size_pt, tr_padding_v, tr_padding_h
+        )
 
     def _df_to_pdf(
         self,
@@ -605,45 +388,11 @@ class FigureConverter:
         tr_padding_v: float = 1,
         tr_padding_h: float = 3,
     ) -> None:
-        """Convert DataFrame to PDF using weasyprint.
-
-        Args:
-            df: pandas DataFrame to convert.
-            output_file: Output PDF file path.
-            colnames: Column header names.
-            col_widths: Column widths as percentages.
-            col_alignments: Column text alignments.
-            fig_width_mm: Page width in millimeters.
-            fig_height_mm: Page height (auto-calculated if None).
-            font_size_pt: Font size in points.
-            tr_padding_v: Vertical cell padding in pixels.
-            tr_padding_h: Horizontal cell padding in pixels.
-
-        Raises:
-            ValueError: If column counts don't match.
-        """
-        from weasyprint import HTML
-
-        if len(df.columns) != len(colnames):
-            raise ValueError("Number of column names does not match DataFrame columns")
-        if len(col_widths) != len(colnames):
-            raise ValueError("Number of column widths does not match number of columns")
-        if len(col_alignments) != len(colnames):
-            raise ValueError("Number of column alignments does not match number of columns")
-
-        # Auto-calculate height if not provided
-        if fig_height_mm is None:
-            page_width = fig_width_mm if fig_width_mm != 'auto' else 174
-            fig_height_mm = self._find_optimal_height(
-                df, col_widths, col_alignments, page_width, font_size_pt, tr_padding_v, tr_padding_h
-            )
-
-        df.columns = colnames
-        css = self._build_table_css(col_widths, col_alignments, fig_width_mm, fig_height_mm,
-                                     font_size_pt, tr_padding_v, tr_padding_h)
-
-        _LOGGER.info(f"  Generating PDF with dimensions: {fig_width_mm}mm x {fig_height_mm}mm")
-        HTML(string=css + df.to_html(index=False, escape=True)).write_pdf(output_file)
+        """Convert DataFrame to PDF. Delegates to shared helper."""
+        _shared_df_to_pdf(
+            df, output_file, colnames, col_widths, col_alignments,
+            fig_width_mm, fig_height_mm, font_size_pt, tr_padding_v, tr_padding_h
+        )
 
     def _find_optimal_height(
         self,
@@ -655,42 +404,11 @@ class FigureConverter:
         tr_padding_v: float,
         tr_padding_h: float,
     ) -> float:
-        """Find minimum page height that fits content on one page.
-
-        Uses binary search to find optimal height.
-
-        Args:
-            df: pandas DataFrame.
-            col_widths: Column widths as percentages.
-            col_alignments: Column text alignments.
-            page_width_mm: Page width in millimeters.
-            font_size_pt: Font size in points.
-            tr_padding_v: Vertical padding in pixels.
-            tr_padding_h: Horizontal padding in pixels.
-
-        Returns:
-            Optimal page height in millimeters.
-        """
-        from weasyprint import HTML
-
-        def fits_on_one_page(height_mm: float) -> bool:
-            css = self._build_table_css(col_widths, col_alignments, page_width_mm, height_mm,
-                                         font_size_pt, tr_padding_v, tr_padding_h)
-            return len(HTML(string=css + df.to_html(index=False, escape=True)).render().pages) == 1
-
-        low, high = 10.0, 2000.0
-        if not fits_on_one_page(high):
-            _LOGGER.warning("Content doesn't fit on 2000mm page")
-            return high
-
-        while high - low > 1.0:
-            mid = (low + high) / 2
-            if fits_on_one_page(mid):
-                high = mid
-            else:
-                low = mid
-
-        return high * 1.02  # Small buffer for safety
+        """Find optimal page height. Delegates to shared helper."""
+        return _shared_find_optimal_height(
+            df, col_widths, col_alignments, page_width_mm,
+            font_size_pt, tr_padding_v, tr_padding_h
+        )
 
     def _guess_pdf_height_mm(
         self,
@@ -699,30 +417,21 @@ class FigureConverter:
         df: Any = None,
         page_width_mm: float = 174,
     ) -> float:
-        """Estimate page height for table.
-
-        Uses binary search if DataFrame provided, otherwise formula-based.
-
-        Args:
-            n_rows: Number of data rows.
-            font_size_pt: Font size in points.
-            df: Optional pandas DataFrame for accurate calculation.
-            page_width_mm: Page width in millimeters.
-
-        Returns:
-            Estimated page height in millimeters.
-        """
+        """Estimate page height for table."""
         if df is not None:
-            # Use accurate binary search
             n_cols = len(df.columns)
             col_widths = [100.0 / n_cols] * n_cols
             col_alignments = ['left'] * n_cols
-            return self._find_optimal_height(df, col_widths, col_alignments,
-                                              page_width_mm, font_size_pt, 1, 3)
+            return _shared_find_optimal_height(
+                df, col_widths, col_alignments, page_width_mm, font_size_pt, 1, 3
+            )
         else:
-            # Formula fallback (for tests without df)
             slope = 2.64 + (font_size_pt - 6) * 0.353
             return (slope * n_rows + 2.5) * 1.10
+
+    def compute_params_digest(self, params: Dict[str, Any]) -> str:
+        """Compute params digest. Delegates to shared helper."""
+        return _shared_compute_params_digest(params)
     
     def get_output_path(self, source_path: str, doc_id: str, figure_type: str) -> Path:
         """Determine the output path for converted figure.
@@ -777,22 +486,6 @@ class FigureConverter:
         else:
             return source_path
 
-    def compute_params_digest(self, params: Dict[str, Any]) -> str:
-        """
-        Compute a digest for a parameter dictionary.
-        
-        Args:
-            params: Parameters dictionary
-            
-        Returns:
-            MD5 digest of the parameters
-        """
-        # Sort keys for consistent ordering
-        sorted_params = json.dumps(params, sort_keys=True)
-        digest = hashlib.md5(sorted_params.encode()).hexdigest()
-        _LOGGER.debug(f"  Computed params digest: {digest} for params: {sorted_params}")
-        return digest
-    
     def _load_digest(self, file_path: str, doc_id: str, digest_type: str = 'file') -> Optional[str]:
         """
         Load stored digest for a file.
@@ -829,93 +522,39 @@ class FigureConverter:
         self.cache_manager.save_digest(doc_id, identifier, digest)
     
     def parse_figure_parameters(self, param_string: str) -> dict:
-        """
-        Parse figure parameters from markdown syntax.
-        
-        Handles various parameter formats:
-        - Simple values: width=174mm
-        - Quoted values: width="174mm"
-        - Lists: col-widths="20,5,8,30,26,3"
-        - Nested values: col-align="left,center,right"
-        
-        Args:
-            param_string: String containing parameters like '{width=174mm font-size=6pt}'
-            
-        Returns:
-            Dictionary of parsed parameters
-        """
-        params = {}
-        if not param_string:
-            return params
-        
-        # Remove outer braces if present
-        param_string = param_string.strip()
-        if param_string.startswith('{') and param_string.endswith('}'):
-            param_string = param_string[1:-1].strip()
-        
-        # Pattern to match parameters: name=value or name="value with spaces"
-        # No dot prefix required
-        pattern = r'([a-zA-Z0-9_-]+)=(?:"([^"]+)"|([^\s}]+))'
-        
-        for match in re.finditer(pattern, param_string):
-            key = match.group(1)
-            # Use quoted value if present, otherwise unquoted value
-            value = match.group(2) if match.group(2) else match.group(3)
-            params[key] = value
-        
-        return params
+        """Parse figure parameters from markdown syntax. Delegates to shared helper."""
+        return _shared_parse_figure_parameters(param_string)
     
     def extract_figure_paths(self, markdown_content: str) -> List[Tuple[str, Dict[str, Any]]]:
+        """Extract all figure paths and their parameters from markdown content.
+
+        Delegates to shared helper, then adds Google Drive-specific patterns
+        (CSV {} syntax, Google Sheets URLs).
         """
-        Extract all figure paths and their parameters from markdown content.
-        
-        Returns:
-            List of tuples (path, parameters_dict)
-        """
-        # Pattern to find markdown images with optional parameters
-        # Matches: ![alt](path){.param=value .param2="value"}
-        # Alt text may contain nested [...] spans (e.g., from tracked changes: [text]{.changed})
-        inline_pattern = r'!\[(?:[^\[\]]|\[[^\]]*\])*\]\(([^)]+)\)(\{[^}]*\})?'
-        
-        # Find reference-style images: [ref]: path
-        ref_pattern = r'^\[[^\]]+\]:\s*(.+)$'
-        
-        figures = []
-        
-        # Process inline images
-        for match in re.finditer(inline_pattern, markdown_content):
-            path = match.group(1)
-            params_str = match.group(2) if match.group(2) else ""
-            params = self.parse_figure_parameters(params_str)
-            figures.append((path, params))
-        
-        # Process reference-style images (these typically don't have parameters)
-        for match in re.finditer(ref_pattern, markdown_content, re.MULTILINE):
-            path = match.group(1)
-            figures.append((path, {}))
-        
-        # Also look for CSV files with {csv/...} syntax
+        # Get base figures from shared extractor
+        figures = _shared_extract_figure_paths(markdown_content)
+
+        # Also look for CSV files with {csv/...} syntax (Drive-specific)
         csv_pattern = r'\{(csv/[^}]+\.csv)\}'
         for match in re.finditer(csv_pattern, markdown_content):
             path = match.group(1)
-            # CSVs in {} syntax don't have parameters
             figures.append((path, {}))
-        
-        # Filter out URLs and data URIs, keep only local paths and Google Sheets
-        local_figures = []
-        for path, params in figures:
-            if not path.startswith(('http://', 'https://', 'data:')):
-                local_figures.append((path, params))
-            elif 'docs.google.com/spreadsheets' in path:
-                # Keep Google Sheets URLs
-                local_figures.append((path, params))
-        
+
+        # Re-add Google Sheets URLs that the shared extractor filters out
+        inline_pattern = r'!\[(?:[^\[\]]|\[[^\]]*\])*\]\(([^)]+)\)(\{[^}]*\})?'
+        for match in re.finditer(inline_pattern, markdown_content):
+            path = match.group(1)
+            if 'docs.google.com/spreadsheets' in path:
+                params_str = match.group(2) if match.group(2) else ""
+                params = _shared_parse_figure_parameters(params_str)
+                figures.append((path, params))
+
         # Remove duplicates while preserving order
         seen = set()
         unique_figures = []
-        for path, params in local_figures:
+        for path, params in figures:
             if path not in seen:
                 seen.add(path)
                 unique_figures.append((path, params))
-        
+
         return unique_figures
