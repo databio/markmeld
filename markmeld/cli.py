@@ -9,6 +9,7 @@ import logmuse
 import os
 import subprocess
 import sys
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 from ubiquerg import VersionInHelpParser
@@ -173,6 +174,93 @@ def build_argparser() -> argparse.ArgumentParser:
     return parser
 
 
+def build_csv2pdf_argparser() -> argparse.ArgumentParser:
+    """Build the argument parser for the `mm csv2pdf` subcommand."""
+    parser = argparse.ArgumentParser(
+        prog="mm csv2pdf",
+        description="Render a CSV file as a styled PDF table.",
+    )
+    parser.add_argument("input", help="Input CSV file path")
+    parser.add_argument("output", help="Output PDF file path")
+    parser.add_argument(
+        "-w", "--width",
+        help="Page width (e.g. 174mm, or 'auto')",
+    )
+    parser.add_argument(
+        "--height",
+        help="Page height (e.g. 50mm, or 'auto'; default auto-fits content)",
+    )
+    parser.add_argument(
+        "-f", "--font-size",
+        help="Font size (e.g. 6pt or 6)",
+    )
+    parser.add_argument(
+        "--col-names",
+        help="Comma-separated column header overrides",
+    )
+    parser.add_argument(
+        "--col-widths",
+        help="Comma-separated column width percentages (e.g. 20,30,50)",
+    )
+    parser.add_argument(
+        "--col-align",
+        help="Comma-separated column alignments (e.g. left,center,right)",
+    )
+    parser.add_argument(
+        "--padding-v",
+        help="Vertical cell padding in pixels",
+    )
+    parser.add_argument(
+        "--padding-h",
+        help="Horizontal cell padding in pixels",
+    )
+    return parser
+
+
+def csv2pdf_main(argv) -> int:
+    """Run the `mm csv2pdf` subcommand: render a CSV as a styled PDF table.
+
+    Maps CLI arguments to the parameter names used in markdown figure syntax,
+    then calls the same `prepare_table_parameters` / `df_to_pdf` pipeline used
+    during document builds.
+    """
+    import pandas as pd
+    from .figure_conversion import prepare_table_parameters, df_to_pdf
+
+    parser = build_csv2pdf_argparser()
+    args = parser.parse_args(argv)
+
+    logmuse.init_logger(name="markmeld", level="INFO", devmode=True)
+
+    params: Dict[str, Any] = {}
+    if args.width is not None:
+        params["fig_width"] = args.width
+    if args.height is not None:
+        params["fig_height"] = args.height
+    if args.font_size is not None:
+        params["font-size"] = args.font_size
+    if args.col_names is not None:
+        params["col-names"] = args.col_names
+    if args.col_widths is not None:
+        params["col-widths"] = args.col_widths
+    if args.col_align is not None:
+        params["col-align"] = args.col_align
+    if args.padding_v is not None:
+        params["padding-v"] = args.padding_v
+    if args.padding_h is not None:
+        params["padding-h"] = args.padding_h
+
+    df = pd.read_csv(args.input)
+    table_params = prepare_table_parameters(params, df)
+
+    output_path = Path(args.output)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    df_to_pdf(df, str(output_path), **table_params)
+
+    print(f"Wrote {output_path}")
+    return 0
+
+
 def main(test_args: Optional[Dict[str, Any]] = None) -> None:
     """Run the markmeld command-line interface.
 
@@ -187,6 +275,9 @@ def main(test_args: Optional[Dict[str, Any]] = None) -> None:
         ConfigError: If config file is missing or invalid.
         TargetError: If target doesn't exist or has configuration issues.
     """
+    if test_args is None and len(sys.argv) > 1 and sys.argv[1] == "csv2pdf":
+        sys.exit(csv2pdf_main(sys.argv[2:]))
+
     parser = logmuse.add_logging_options(build_argparser())
     args, _ = parser.parse_known_args()
     if test_args:
