@@ -76,6 +76,9 @@ function deepcopy(orig, copies)
             end
             setmetatable(copy, deepcopy(getmetatable(orig), copies))
         end
+    elseif orig_type == 'userdata' and orig.clone then
+        -- pandoc 3.x AST elements are userdata; use their built-in clone()
+        copy = orig:clone()
     else -- number, string, boolean, etc
         copy = orig
     end
@@ -119,10 +122,16 @@ end
 
 
 local function run_citeproc (doc)
-  if PANDOC_VERSION >= '2.11' then
+  -- Use in-process citeproc to avoid spawning subprocess that inherits filter chain
+  if PANDOC_VERSION >= {2,19,1} then
+    -- pandoc.utils.citeproc runs in-process (no subprocess, no filter chain inheritance)
+    return pandoc.utils.citeproc(doc)
+  elseif PANDOC_VERSION >= '2.11' then
+    -- Fallback for older pandoc versions (spawns subprocess)
     local args = {'--from=json', '--to=json', '--citeproc'}
     return run_json_filter(doc, 'pandoc', args)
   else
+    -- Legacy pandoc-citeproc for very old versions
     return run_json_filter(doc, 'pandoc-citeproc', {FORMAT, '-q'})
   end
 end
@@ -170,7 +179,7 @@ end
 local function recurse(content)
   for k,v in pairs(content) do
     -- print(k, type(v))
-    if type(v) == 'table' then
+    if type(v) == 'table' or type(v) == 'userdata' then
       if v.mode then
       -- if v.mode and (v.mode == "NormalCitation" or v.mode == "AuthorInText") then
         -- print("Found a ref", dump(v.id), dump(v))
@@ -241,6 +250,7 @@ end
 --- Final cleanup: prevent external --citeproc from running after this filter
 --- This makes the filter work correctly even if --citeproc is called after it
 --- We clear the bibliography and references metadata so external citeproc has nothing to process
+--- Set multiref_keep_bibliography: true in metadata to disable this behavior
 local function final_cleanup(doc)
   -- Remove top-level refs div if present
   local cleaned_blocks = pandoc.List()
@@ -255,9 +265,15 @@ local function final_cleanup(doc)
 
   -- Clear bibliography metadata to prevent external citeproc from re-processing
   -- Our refs are already embedded in multi-refs divs, so we don't need citeproc anymore
-  doc.meta.bibliography = nil
-  doc.meta.references = nil
-  print("Cleared bibliography metadata to prevent external --citeproc from re-processing")
+  -- Users can set multiref_keep_bibliography: true to disable this clearing
+  if not (meta['multiref_keep_bibliography'] and meta['multiref_keep_bibliography']) then
+    doc.meta.bibliography = nil
+    doc.meta.references = nil
+    print("Cleared bibliography metadata to prevent external --citeproc from re-processing")
+    print("(Set multiref_keep_bibliography: true to disable this behavior)")
+  else
+    print("Keeping bibliography metadata (multiref_keep_bibliography is set)")
+  end
 
   return doc
 end

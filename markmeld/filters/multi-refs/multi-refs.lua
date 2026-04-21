@@ -76,6 +76,9 @@ function deepcopy(orig, copies)
             end
             setmetatable(copy, deepcopy(getmetatable(orig), copies))
         end
+    elseif orig_type == 'userdata' and orig.clone then
+        -- pandoc 3.x AST elements are userdata; use their built-in clone()
+        copy = orig:clone()
     else -- number, string, boolean, etc
         copy = orig
     end
@@ -176,7 +179,7 @@ end
 local function recurse(content)
   for k,v in pairs(content) do
     -- print(k, type(v))
-    if type(v) == 'table' then
+    if type(v) == 'table' or type(v) == 'userdata' then
       if v.mode then
       -- if v.mode and (v.mode == "NormalCitation" or v.mode == "AuthorInText") then
         -- print("Found a ref", dump(v.id), dump(v))

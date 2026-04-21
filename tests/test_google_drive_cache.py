@@ -40,54 +40,37 @@ class TestGoogleDriveDiskCache:
     
     @patch('markmeld.google_drive.processor.service_account.Credentials.from_service_account_info')
     @patch('markmeld.google_drive.processor.build')
-    @patch('markmeld.google_drive.processor.MediaIoBaseDownload')
-    def test_disk_cache_save_and_load(self, mock_downloader_class, mock_build, mock_creds):
+    def test_disk_cache_save_and_load(self, mock_build, mock_creds, tmp_path):
         """Test that documents are saved to and loaded from disk cache."""
-        # Setup mocks
         mock_creds.return_value = MagicMock(service_account_email="test@example.com")
-        mock_service = MagicMock()
-        mock_build.return_value = mock_service
-        
-        # Mock the download process
-        mock_downloader = MagicMock()
-        mock_downloader.next_chunk.return_value = (None, True)
-        mock_downloader_class.return_value = mock_downloader
-        
-        # Mock export_media to return bytes
-        mock_request = MagicMock()
-        mock_service.files().export_media.return_value = mock_request
-        
+        mock_build.return_value = MagicMock()
+
         processor = GoogleDriveProcessor(
             credentials_dict={'type': 'service_account', 'project_id': 'test', 'client_email': 'test@example.com'},
-            save_to_disk=True
+            save_to_disk=True,
+            cache_root=str(tmp_path / ".cache"),
         )
-        
-        # Mock get_metadata
+
         processor.get_metadata = MagicMock(return_value={
             'name': 'test_document',
             'modifiedTime': '2024-01-01T10:00:00Z',
             'md5Checksum': 'abc123'
         })
-        
-        # First download - should save to disk
         processor._document_has_suggestions = MagicMock(return_value=False)
-        with patch('io.BytesIO') as mock_bytesio:
-            mock_file = MagicMock()
-            mock_file.read.return_value = b"# Test\n\nContent"
-            mock_file.seek = MagicMock()
-            mock_bytesio.return_value = mock_file
+        processor._download_first_tab = MagicMock(return_value="# Test\n\nContent")
+        processor.get_current_change_token = MagicMock(return_value="token_v1")
+        processor.check_for_changes_via_changes_api = MagicMock(return_value=False)
 
-            content1 = processor._download_raw_markdown('test_doc_id')
-            
-        # Check that the document was downloaded
+        # First download triggers _download_first_tab and saves to disk
+        content1 = processor._download_raw_markdown('test_doc_id')
         assert content1 is not None
-        
-        # Second download - should load from disk if cache is valid
-        # Mock _load_from_disk to simulate loading from cache
-        with patch.object(processor, '_load_from_disk', return_value="# Test\n\nContent"):
-            content2 = processor._download_raw_markdown('test_doc_id')
-            
-        assert content1 == content2
+        assert "Test" in content1
+        assert processor._download_first_tab.call_count == 1
+
+        # Second download should load from disk and skip _download_first_tab
+        content2 = processor._download_raw_markdown('test_doc_id')
+        assert content2 == content1
+        assert processor._download_first_tab.call_count == 1  # Still 1 — served from cache
     
     @patch('markmeld.google_drive.processor.service_account.Credentials.from_service_account_info')
     @patch('markmeld.google_drive.processor.build')
@@ -109,63 +92,37 @@ class TestGoogleDriveDiskCache:
     
     @patch('markmeld.google_drive.processor.service_account.Credentials.from_service_account_info')
     @patch('markmeld.google_drive.processor.build')
-    @patch('markmeld.google_drive.processor.MediaIoBaseDownload')
-    def test_disk_cache_invalidation_on_modification(self, mock_downloader_class, mock_build, mock_creds):
+    def test_disk_cache_invalidation_on_modification(self, mock_build, mock_creds, tmp_path):
         """Test that disk cache is invalidated when document is modified."""
         mock_creds.return_value = MagicMock(service_account_email="test@example.com")
-        mock_service = MagicMock()
-        mock_build.return_value = mock_service
-        
-        mock_downloader = MagicMock()
-        mock_downloader.next_chunk.return_value = (None, True)
-        mock_downloader_class.return_value = mock_downloader
-        
-        mock_request = MagicMock()
-        mock_service.files().export_media.return_value = mock_request
-        
+        mock_build.return_value = MagicMock()
+
         processor = GoogleDriveProcessor(
             credentials_dict={'type': 'service_account', 'project_id': 'test', 'client_email': 'test@example.com'},
-            save_to_disk=True
+            save_to_disk=True,
+            cache_root=str(tmp_path / ".cache"),
         )
 
-        # Mock suggestion detection to return False (test the standard export path)
         processor._document_has_suggestions = MagicMock(return_value=False)
-
-        # Initial metadata
         processor.get_metadata = MagicMock(return_value={
             'name': 'test_document',
             'modifiedTime': '2024-01-01T10:00:00Z',
             'md5Checksum': 'abc123'
         })
-        
-        # First download
-        processor._document_has_suggestions = MagicMock(return_value=False)
-        with patch('io.BytesIO') as mock_bytesio:
-            mock_file = MagicMock()
-            mock_file.read.return_value = b"# Original\n\nContent"
-            mock_file.seek = MagicMock()
-            mock_bytesio.return_value = mock_file
+        processor.get_current_change_token = MagicMock(return_value="token_v1")
 
-            content1 = processor._download_raw_markdown('test_doc_id')
+        # First download: cache empty, so _download_first_tab is called
+        processor._download_first_tab = MagicMock(return_value="# Original\n\nContent")
+        processor.check_for_changes_via_changes_api = MagicMock(return_value=False)
 
-        # Change metadata to simulate modification
-        processor.get_metadata = MagicMock(return_value={
-            'name': 'test_document',
-            'modifiedTime': '2024-01-01T11:00:00Z',  # Changed time
-            'md5Checksum': 'def456'  # Changed checksum
-        })
+        content1 = processor._download_raw_markdown('test_doc_id')
+        assert "Original" in content1
 
-        # Second download should re-download due to modification
-        # The _load_from_disk method should detect the change and return None
-        with patch('io.BytesIO') as mock_bytesio:
-            mock_file = MagicMock()
-            mock_file.read.return_value = b"# Modified\n\nContent"
-            mock_file.seek = MagicMock()
-            mock_bytesio.return_value = mock_file
+        # Simulate a document modification: changes API now reports a change
+        processor._download_first_tab = MagicMock(return_value="# Modified\n\nContent")
+        processor.check_for_changes_via_changes_api = MagicMock(return_value=True)
 
-            content2 = processor._download_raw_markdown('test_doc_id')
-
-        # Content should be different after modification
+        content2 = processor._download_raw_markdown('test_doc_id')
         assert "Modified" in content2
 
 
