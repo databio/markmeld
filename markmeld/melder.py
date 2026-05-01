@@ -1343,7 +1343,8 @@ class MarkdownMelder:
             # Raw = No subprocess stdin printing. (so, it doesn't render anything)
             cmd_fmt = format_command(tgt)
             tgt.melded_output = None
-            tgt.returncode, tgt.stdout, tgt.stderr = run_cmd(cmd_fmt, None, tgt.meta["_workpath"])
+            raw_cwd = tgt.meta.get("_defpath", tgt.meta["_workpath"])
+            tgt.returncode, tgt.stdout, tgt.stderr = run_cmd(cmd_fmt, None, raw_cwd)
         elif "type" in tgt.meta and tgt.meta["type"] == "meta":
             # Meta = No command, it's a meta-target used for prebuilds or something else
             tgt.melded_output = None
