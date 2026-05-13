@@ -205,6 +205,36 @@ def test_meta_target():
     os.remove(test_path)
 
 
+def test_postprocess():
+    """Test that postprocess runs shell commands in _workpath after build"""
+    cfg = markmeld.load_config_wrapper("tests/test_data/postprocess_test/_markmeld.yaml")
+    mm = markmeld.MarkdownMelder(cfg)
+
+    test_dir = "tests/test_data/postprocess_test"
+    marker_path = f"{test_dir}/postprocess_marker.txt"
+    output_path = f"{test_dir}/out/output.txt"
+
+    # Clean up any previous test artifacts
+    if os.path.isfile(marker_path):
+        os.remove(marker_path)
+    if os.path.isfile(output_path):
+        os.remove(output_path)
+
+    res = mm.build_target("test_postprocess", print_only=False)
+
+    # Postprocess should have created the marker file in _workpath
+    assert os.path.isfile(marker_path), "postprocess should create marker file"
+    # Postprocess should have appended to output file
+    assert os.path.isfile(output_path), "output file should exist"
+    with open(output_path) as f:
+        content = f.read()
+    assert "postprocessed" in content, "postprocess should append to output"
+
+    # Clean up
+    os.remove(marker_path)
+    os.remove(output_path)
+
+
 def test_default_command_with_lua_filters():
     """Test that lua_filters array generates correct pandoc command"""
     from markmeld.melder import Target

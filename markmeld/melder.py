@@ -1262,6 +1262,12 @@ class MarkdownMelder:
         # Run command...
         result = self.run_command_for_target(tgt, print_only, vardump)
 
+        # Run postprocess commands (shell commands in _workpath)
+        if "postprocess" in tgt.meta and tgt.meta["postprocess"] and result.returncode == 0:
+            postprocess_result = self.run_postprocess(result)
+            if not postprocess_result:
+                return result
+
         # Finally, run any postbuilds
         postbuild_results = self.build_side_targets(tgt, "postbuild")
         if not postbuild_results:
@@ -1273,6 +1279,51 @@ class MarkdownMelder:
             result.report(print_output=print_only, dump_output=vardump)
         
         return result
+
+    def run_postprocess(self, tgt: Target) -> bool:
+        """Run postprocess shell commands for a target.
+
+        Postprocess commands run in _workpath (the output directory) after
+        the main build completes. This allows post-processing of build outputs
+        (e.g., splitting PDFs) without needing separate targets.
+
+        Args:
+            tgt: Target object with postprocess commands in meta.
+
+        Returns:
+            True if postprocess succeeded, False otherwise.
+        """
+        postprocess_cmd = tgt.meta["postprocess"]
+        workpath = tgt.meta.get("_workpath", ".")
+
+        _LOGGER.info(f"MM | Running postprocess for target: {tgt.target_name}")
+        _LOGGER.info(f"MM | Postprocess command: {postprocess_cmd}")
+        _LOGGER.info(f"MM | Postprocess working directory: {workpath}")
+
+        # Format command with target variables (like {today}, etc.)
+        from .utilities import MyTemplate
+        cmd_formatted = MyTemplate(postprocess_cmd).safe_substitute(**tgt.meta)
+
+        returncode, stdout, stderr = run_cmd(cmd_formatted, None, workpath)
+
+        if stdout:
+            tgt.stdout += f"\n[postprocess stdout]\n{stdout}"
+        if stderr:
+            tgt.stderr += f"\n[postprocess stderr]\n{stderr}"
+
+        if returncode != 0:
+            tgt.add_message(
+                f"Postprocess failed with return code {returncode}",
+                "fail"
+            )
+            tgt.returncode = returncode
+            return False
+
+        tgt.add_message(
+            f"Postprocess completed successfully",
+            "success"
+        )
+        return True
 
     def build_side_targets(self, tgt: Target, side_list_key: str = "prebuild") -> bool:
         """Build side targets (prebuilds or postbuilds) for a target.

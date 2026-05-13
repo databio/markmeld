@@ -1,0 +1,13 @@
+version: 1
+
+targets:
+  test_postprocess:
+    jinja_template: templates/simple.jinja
+    output_file: out/output.txt
+    command: "cat > out/output.txt"
+    postprocess: |
+      touch postprocess_marker.txt
+      echo "postprocessed" >> out/output.txt
+    data:
+      md_content:
+        content: "# Test Content"
