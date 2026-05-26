@@ -1449,7 +1449,7 @@ class MarkdownMelder:
                         tgt.melded_output = process_local_figures(
                             tgt.melded_output,
                             defpath=tgt.meta['_defpath'],
-                            cache_dir=Path(tgt.meta.get('_workpath', '.')),
+                            cache_dir=Path(tgt.meta['_cache_root']).parent if '_cache_root' in tgt.meta else Path(tgt.meta.get('_workpath', '.')),
                         )
                     except Exception as e:
                         _LOGGER.warning(f"Could not process local figures: {e}")
