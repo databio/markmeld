@@ -58,8 +58,9 @@ class TestGoogleDriveDiskCache:
         })
         processor._document_has_suggestions = MagicMock(return_value=False)
         processor._download_first_tab = MagicMock(return_value="# Test\n\nContent")
-        processor.get_current_change_token = MagicMock(return_value="token_v1")
-        processor.check_for_changes_via_changes_api = MagicMock(return_value=False)
+
+        # get_metadata returns a constant modifiedTime, so the second build
+        # sees an unchanged Doc and serves from cache.
 
         # First download triggers _download_first_tab and saves to disk
         content1 = processor._download_raw_markdown('test_doc_id')
@@ -109,21 +110,82 @@ class TestGoogleDriveDiskCache:
             'modifiedTime': '2024-01-01T10:00:00Z',
             'md5Checksum': 'abc123'
         })
-        processor.get_current_change_token = MagicMock(return_value="token_v1")
 
         # First download: cache empty, so _download_first_tab is called
         processor._download_first_tab = MagicMock(return_value="# Original\n\nContent")
-        processor.check_for_changes_via_changes_api = MagicMock(return_value=False)
 
         content1 = processor._download_raw_markdown('test_doc_id')
         assert "Original" in content1
 
-        # Simulate a document modification: changes API now reports a change
+        # Simulate a document modification: the Doc's modifiedTime advances,
+        # so _document_has_changed reports a change and we re-download.
         processor._download_first_tab = MagicMock(return_value="# Modified\n\nContent")
-        processor.check_for_changes_via_changes_api = MagicMock(return_value=True)
+        processor.get_metadata = MagicMock(return_value={
+            'name': 'test_document',
+            'modifiedTime': '2024-06-18T12:00:00Z',
+            'md5Checksum': 'def456'
+        })
 
         content2 = processor._download_raw_markdown('test_doc_id')
         assert "Modified" in content2
+
+
+@pytest.mark.skipif(not GOOGLE_DEPS_AVAILABLE, reason="Google Drive dependencies not available")
+class TestDocumentHasChanged:
+    """Test the modifiedTime-based change detection."""
+
+    def _make_processor(self, mock_build, mock_creds):
+        mock_creds.return_value = MagicMock(service_account_email="test@example.com")
+        mock_build.return_value = MagicMock()
+        return GoogleDriveProcessor(
+            credentials_dict={'type': 'service_account', 'project_id': 'test', 'client_email': 'test@example.com'},
+        )
+
+    @patch('markmeld.google_drive.processor.service_account.Credentials.from_service_account_info')
+    @patch('markmeld.google_drive.processor.build')
+    def test_no_stored_metadata_returns_true(self, mock_build, mock_creds):
+        """No stored metadata -> treat as changed (force download)."""
+        processor = self._make_processor(mock_build, mock_creds)
+        processor.cache_manager.load_metadata = MagicMock(return_value=None)
+        processor.get_metadata = MagicMock(return_value={'modifiedTime': '2024-01-01T10:00:00Z'})
+
+        assert processor._document_has_changed('doc_id') is True
+
+    @patch('markmeld.google_drive.processor.service_account.Credentials.from_service_account_info')
+    @patch('markmeld.google_drive.processor.build')
+    def test_matching_modified_time_returns_false(self, mock_build, mock_creds):
+        """Matching modifiedTime -> unchanged (cache hit)."""
+        processor = self._make_processor(mock_build, mock_creds)
+        processor.cache_manager.load_metadata = MagicMock(return_value={
+            'document': {'modified_time': '2024-01-01T10:00:00Z'}
+        })
+        processor.get_metadata = MagicMock(return_value={'modifiedTime': '2024-01-01T10:00:00Z'})
+
+        assert processor._document_has_changed('doc_id') is False
+
+    @patch('markmeld.google_drive.processor.service_account.Credentials.from_service_account_info')
+    @patch('markmeld.google_drive.processor.build')
+    def test_differing_modified_time_returns_true(self, mock_build, mock_creds):
+        """Differing modifiedTime -> changed (re-download)."""
+        processor = self._make_processor(mock_build, mock_creds)
+        processor.cache_manager.load_metadata = MagicMock(return_value={
+            'document': {'modified_time': '2024-01-01T10:00:00Z'}
+        })
+        processor.get_metadata = MagicMock(return_value={'modifiedTime': '2024-06-18T12:00:00Z'})
+
+        assert processor._document_has_changed('doc_id') is True
+
+    @patch('markmeld.google_drive.processor.service_account.Credentials.from_service_account_info')
+    @patch('markmeld.google_drive.processor.build')
+    def test_get_metadata_error_fails_open(self, mock_build, mock_creds):
+        """get_metadata raising -> fail open (assume changed)."""
+        processor = self._make_processor(mock_build, mock_creds)
+        processor.cache_manager.load_metadata = MagicMock(return_value={
+            'document': {'modified_time': '2024-01-01T10:00:00Z'}
+        })
+        processor.get_metadata = MagicMock(side_effect=RuntimeError("Drive API down"))
+
+        assert processor._document_has_changed('doc_id') is True
 
 
 def test_cache_manager_resolves_absolute_path():

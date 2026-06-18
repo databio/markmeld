@@ -62,6 +62,7 @@ class ResourceManager:
                         "consistent-citations": "consistent-citations.lua",
                         "figczar": "figczar.lua",
                         "multi-refs": "multi-refs.lua",
+                        "supplement": "supplement.lua",
                         "supplemental-labels": "supplemental_labels.lua",
                     }
 

@@ -5,7 +5,7 @@ file operations, including:
 - Downloading and cleaning Google Docs as markdown
 - Processing SVG and CSV files with PDF conversion
 - Managing disk cache for efficient re-downloads
-- Detecting document changes via the Google Drive Changes API
+- Detecting document changes by comparing Drive modifiedTime
 """
 
 import frontmatter
@@ -69,7 +69,7 @@ class GoogleDriveProcessor:
     - Downloading Google Docs and converting them to clean markdown
     - Processing SVG/CSV files from Google Drive and converting them to PDFs
     - Disk caching of documents to avoid redundant downloads
-    - Change detection via the Google Drive Changes API
+    - Change detection by comparing the Doc's Drive modifiedTime
 
     Attributes:
         credentials: Google service account credentials.
@@ -406,8 +406,13 @@ class GoogleDriveProcessor:
         if disk_content is not None:
             return disk_content
 
-        # Need to download from Google Drive
-        _LOGGER.info(f"✗ Changes detected - downloading fresh content from Google Drive...")
+        # Need to download from Google Drive. Distinguish a cache miss (no
+        # cached copy yet) from an actual change since the last build.
+        doc_path = self._get_doc_path(doc_id, changed=has_suggestions)
+        if doc_path.exists():
+            _LOGGER.info(f"✗ Doc changed since last build - downloading fresh content from Google Drive...")
+        else:
+            _LOGGER.info(f"⬇ No cached copy yet - downloading content from Google Drive...")
         _LOGGER.info(f"  Document ID: {doc_id}")
 
         if has_suggestions:
@@ -786,112 +791,49 @@ class GoogleDriveProcessor:
             _LOGGER.debug(f"Could not check for active changes: {e}")
     
     # ====================
-    # Changes API Implementation
+    # Change Detection (modifiedTime)
     # ====================
-    
-    def check_for_changes_via_changes_api(self, doc_id: str) -> bool:
-        """Check if a document has changed using the Google Drive Changes API.
 
-        Uses stored change tokens to efficiently detect changes without
-        re-downloading the entire document.
+    def _document_has_changed(self, doc_id: str) -> bool:
+        """Check if a Google Doc has changed since it was last cached.
+
+        Compares the document's Drive ``modifiedTime`` against the value stored
+        in cache metadata. Unlike the Drive Changes API, ``modifiedTime``
+        reflects ANY edit to the file regardless of who made it or whether the
+        file lives in the service account's own change feed — which is exactly
+        what is needed for docs owned by the user and merely shared with the
+        service account.
 
         Args:
             doc_id: The ID of the document to check.
 
         Returns:
-            True if the document has changed, False if not.
+            True if the document has changed (or we cannot tell), False if the
+            cached copy is still current. Fails open: any API error returns True
+            so we re-download rather than serve stale content.
         """
-        try:
-            # Load metadata to get stored change token
-            metadata = self.cache_manager.load_metadata(doc_id)
-            # v3.x format with nested structure
-            stored_token = metadata.get('document', {}).get('change_token') if metadata else None
+        metadata = self.cache_manager.load_metadata(doc_id)
+        stored_mtime = metadata.get('document', {}).get('modified_time') if metadata else None
 
-            if not stored_token:
-                # No token means first run or cache was cleared
-                _LOGGER.info("  No change token found - first time caching this document")
-                return True
-            
-            # Use the stored token to check for changes
-            try:
-                # List changes since the stored token
-                response = self.drive_service.changes().list(
-                    pageToken=stored_token,
-                    spaces='drive',
-                    includeRemoved=True,
-                    fields='nextPageToken, newStartPageToken, changes(fileId, removed)'
-                ).execute()
-                
-                # Get the new/remote token
-                remote_token = response.get('newStartPageToken') or response.get('nextPageToken')
-                
-                # Check if our document is in the changes list
-                changes = response.get('changes', [])
-                doc_changed = False
-                for change in changes:
-                    if change.get('fileId') == doc_id:
-                        doc_changed = True
-                        break
-                
-                # Display token info with clear context
-                if remote_token and remote_token != stored_token:
-                    _LOGGER.info(f"  Change tokens: {stored_token[:20]}... → {remote_token[:20]}...")
-                    if doc_changed:
-                        _LOGGER.info(f"  ✗ This document was modified - downloading fresh copy")
-                    else:
-                        _LOGGER.info(f"  ✓ This document unchanged (other Drive files changed) - using cached version")
-                else:
-                    _LOGGER.info(f"  Change token: {stored_token[:20]}... (no Drive activity)")
-                    _LOGGER.info(f"  ✓ No changes detected - using cached version")
-                
-                if doc_changed:
-                    return True
-                
-                # Update the token to the latest (for next check)
-                if remote_token and remote_token != stored_token:
-                    # Save the new token for next time (update in place to preserve metadata)
-                    if 'document' in metadata:
-                        metadata['document']['change_token'] = remote_token
-                    else:
-                        # Create minimal v3.x structure if missing
-                        metadata['document'] = self.cache_manager._init_document_metadata()
-                        metadata['document']['doc_id'] = doc_id
-                        metadata['document']['change_token'] = remote_token
-                    self.cache_manager.save_metadata(doc_id, metadata)
-                
-                return False
-                
-            except Exception as e:
-                # Token might be invalid/expired
-                if 'Invalid pageToken' in str(e) or 'invalid' in str(e).lower():
-                    _LOGGER.warning(f"  Change token is invalid or expired")
-                    _LOGGER.info("  Will download fresh copy and get new token")
-                else:
-                    _LOGGER.warning(f"  Error with change detection: {str(e)[:100]}")
-                    _LOGGER.info("  Falling back to re-download for safety")
-                return True
-                
-        except Exception as e:
-            _LOGGER.error(f"Error checking for changes via Changes API: {str(e)[:200]}")
-            _LOGGER.info("  Falling back to re-download for safety")
-            # On error, be safe and assume changed
+        if not stored_mtime:
+            # No stored metadata / no modifiedTime: first run or cleared cache.
+            _LOGGER.info("  No stored modifiedTime - treating as changed (first build or cleared cache)")
             return True
-    
-    def get_current_change_token(self) -> Optional[str]:
-        """Get a fresh change token for the current state of the drive.
 
-        Returns:
-            The current change token, or None if an error occurs.
-        """
         try:
-            response = self.drive_service.changes().getStartPageToken(
-                supportsAllDrives=False
-            ).execute()
-            return response.get('startPageToken')
+            live_mtime = self.get_metadata(doc_id).get('modifiedTime')
         except Exception as e:
-            _LOGGER.error(f"Error getting change token: {e}")
-            return None
-    
+            # Fail open: re-download rather than risk serving a stale copy.
+            _LOGGER.warning(f"  Could not fetch modifiedTime ({str(e)[:100]}) - assuming changed (fail open)")
+            return True
+
+        changed = live_mtime != stored_mtime
+        if changed:
+            _LOGGER.info(f"  modifiedTime changed: stored {stored_mtime} -> live {live_mtime} - will re-download")
+        else:
+            _LOGGER.info(f"  modifiedTime unchanged ({stored_mtime}) - using cached version")
+        return changed
+
     # ====================
     # Disk Cache Operations
     # ====================
@@ -959,7 +901,8 @@ class GoogleDriveProcessor:
     def _load_from_disk(self, doc_id: str, changed: bool = False) -> Optional[str]:
         """Try to load a document from disk cache.
 
-        Checks if the cached version is still valid using the Changes API.
+        Checks if the cached version is still valid by comparing the Doc's
+        Drive ``modifiedTime`` against the cached value.
 
         Args:
             doc_id: The Google Doc ID.
@@ -974,11 +917,11 @@ class GoogleDriveProcessor:
         doc_path = self.cache_manager.get_cache_path(doc_id, 'docs', self._get_doc_filename(doc_id, changed=changed))
         if not doc_path.exists():
             return None
-            
+
         _LOGGER.info(f"Checking for changes in document {doc_id}...")
-        
-        # Use Changes API to check if document has changed
-        has_changed = self.check_for_changes_via_changes_api(doc_id)
+
+        # Compare Drive modifiedTime against the cached value
+        has_changed = self._document_has_changed(doc_id)
         
         if not has_changed:
             # Document hasn't changed, load from cache
@@ -1024,13 +967,12 @@ class GoogleDriveProcessor:
             doc_path.write_text(content, encoding='utf-8')
             _LOGGER.info(f"Saved to disk: {doc_path}")
             
-            # Get current change token and save metadata
+            # Record modifiedTime and save metadata. The cached modifiedTime is
+            # the change-detection signal: a later build compares it against the
+            # Doc's live modifiedTime to decide whether to re-download.
             try:
                 # Get document metadata
                 doc_metadata = self.get_metadata(doc_id)
-                
-                # Get current change token
-                change_token = self.get_current_change_token()
 
                 # Load existing metadata or create new v3.0 structure
                 metadata = self.cache_manager.load_metadata(doc_id)
@@ -1045,12 +987,12 @@ class GoogleDriveProcessor:
 
                 # Update document metadata
                 parents = doc_metadata.get('parents', [])
+                modified_time = doc_metadata.get('modifiedTime', '')
                 metadata['document'].update({
                     'doc_id': doc_id,
                     'doc_name': doc_metadata.get('name', 'Unknown'),
-                    'change_token': change_token,
                     'cleaned_state': 'cleaned' if is_cleaned else 'raw',
-                    'modified_time': doc_metadata.get('modifiedTime', ''),
+                    'modified_time': modified_time,
                     'folder_id': parents[0] if parents else None,
                     'filename': doc_path.name,
                     'source_path': f"docs/{doc_path.name}",
@@ -1062,14 +1004,14 @@ class GoogleDriveProcessor:
                 # Update stats and save
                 self.cache_manager._update_cache_stats(metadata)
                 self.cache_manager.save_metadata(doc_id, metadata)
-                
-                if change_token:
-                    _LOGGER.info(f"  Saved change token: {change_token[:20]}...")
+
+                if modified_time:
+                    _LOGGER.info(f"  Saved modifiedTime: {modified_time}")
                 else:
-                    _LOGGER.warning(f"  Failed to get change token from Google Drive API - caching may not work correctly")
-                
+                    _LOGGER.warning(f"  No modifiedTime from Google Drive API - cache invalidation may not work correctly")
+
             except Exception as e:
-                _LOGGER.warning(f"Error saving metadata (change_token may be lost): {e}")
+                _LOGGER.warning(f"Error saving metadata (modifiedTime may be lost): {e}")
                 
         except Exception as e:
             _LOGGER.error(f"Error saving to disk: {e}")

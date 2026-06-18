@@ -157,7 +157,6 @@ class CloudCacheManager:
         return {
             'doc_id': None,
             'doc_name': None,
-            'change_token': None,
             'cleaned_state': None,
             'modified_time': None,
             'folder_id': None,
@@ -327,7 +326,7 @@ class CloudCacheManager:
         """Save document metadata to cache as v3.2 format.
 
         Merges provided metadata with existing cached metadata to prevent
-        partial updates from corrupting existing data (like change_token).
+        partial updates from corrupting existing data (like modified_time).
 
         Args:
             doc_id: The document ID.

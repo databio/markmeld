@@ -44,9 +44,33 @@ def clean_markdown(
     if fix_latex_chars:
         markdown_content = check_and_fix_latex_incompatible_chars(markdown_content)
 
+    markdown_content = collapse_blank_lines_in_code_fences(markdown_content)
+
     markdown_content = ensure_blank_lines_before_headings(markdown_content)
 
     return markdown_content
+
+
+def collapse_blank_lines_in_code_fences(markdown_content: str) -> str:
+    """Remove blank lines inside fenced code blocks.
+
+    Google Docs exports each line of a code block as a separate paragraph, so
+    the markdown exporter inserts a blank line between every line. Inside a
+    ``` fence pandoc preserves those verbatim, rendering the code double-spaced.
+    Strip blank lines between code lines so fenced blocks render tight.
+    """
+    fence_re = re.compile(r"^\s*(`{3,}|~{3,})")
+    out = []
+    in_fence = False
+    for line in markdown_content.split("\n"):
+        if fence_re.match(line):
+            in_fence = not in_fence
+            out.append(line)
+        elif in_fence and line.strip() == "":
+            continue  # drop paragraph-separator blank line inside a code fence
+        else:
+            out.append(line)
+    return "\n".join(out)
 
 
 def clean_escape_characters(markdown_content: str) -> str:
