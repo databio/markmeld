@@ -108,6 +108,47 @@ Variables use Python's `string.Template.safe_substitute()`, which means:
 - Variables can contain other variables (recursive expansion up to 5 levels)
 - Both `{variable}` syntax is supported
 
+## Authormark author source
+
+A target (or the project root config) can pull its author/affiliation/CRediT
+block from the [authormark](https://authormark.databio.org) service instead of
+maintaining an inline author YAML block. Add a single key:
+
+```yaml
+# at the target level (or top level of _markmeld.yaml)
+authormark: bkb52l34jb523jk5bkdbj3        # a capability slug
+# or a full capability URL:
+# authormark: https://authormark.databio.org/p/bkb52l34jb523jk5bkdbj3
+```
+
+At build time, `MarkdownMelder.preprocess_authormark` fetches the server-rendered
+markmeld block and injects its top-level keys (`authors`, `affiliations`,
+`author_contributions`, `byline_latex`, `title`, `affiliations_latex`, ...) into
+the target's `data.variables`. Because `variables:` has high precedence, these
+values override any leftover inline author block — authormark is the single
+source of truth when the key is set.
+
+**Base URL resolution** (highest first): `authormark_base_url` in config →
+`MM_AUTHORMARK_BASE_URL` env var → the deployed default. A bare slug is joined
+with the resolved base URL; a full URL is used directly.
+
+**Caching:** the [`authormark-client`](https://pypi) `DirCache` lives under
+`<cache_root>/authormark/` and is validated against the cheap `/p/<slug>/modified`
+endpoint, so unchanged papers are not re-downloaded. Pass `--force-refresh` (or
+`force_refresh=True` to `build_target`) to bypass the cache.
+
+**Failure handling:** an empty key, a 404, or an unreachable service with no
+cache cause `build_target` to return `None` (same as a failed google-doc
+preprocess). If the service is unreachable but a cached block exists, the cached
+block is used with a warning.
+
+**Migration:** delete the inline author YAML block from the source document and
+add the one `authormark:` key. No dual-path reconciliation is kept.
+
+**Dependency:** the `authormark-client` package is an optional extra
+(`pip install markmeld[authormark]` or `pip install authormark-client`). It is
+imported lazily, only when the `authormark:` key is present.
+
 ## Testing
 
 Tests are in `tests/` and use pytest. Key test files:

@@ -19,7 +19,15 @@ import logging
 from ubiquerg import expandpath
 from ubiquerg import is_url
 
-from .const import GOOGLE_DOCS_KEY, TARGET_TYPE_KEY, GOOGLE_DOC_TARGET_TYPE
+from .const import (
+    GOOGLE_DOCS_KEY,
+    TARGET_TYPE_KEY,
+    GOOGLE_DOC_TARGET_TYPE,
+    AUTHORMARK_KEY,
+    AUTHORMARK_BASE_URL_KEY,
+    AUTHORMARK_BASE_URL_ENV,
+    AUTHORMARK_DEFAULT_BASE_URL,
+)
 from .exceptions import *
 from .utilities import *
 from .api_handler import APIHandler
@@ -38,6 +46,7 @@ _LOGGER = logging.getLogger(__name__)
 
 class MarkdownResult(NamedTuple):
     """Result of parsing a markdown source."""
+
     key: str
     content: str
     raw: str
@@ -50,10 +59,13 @@ tpl_generic = """
 """
 
 
-
-
 @pass_environment
-def datetimeformat(environment: Any, value: Any, to_format: str = "%Y-%m-%d", from_format: str = "%Y-%m-%d") -> str:
+def datetimeformat(
+    environment: Any,
+    value: Any,
+    to_format: str = "%Y-%m-%d",
+    from_format: str = "%Y-%m-%d",
+) -> str:
     """Format a date/time value from one format to another.
 
     A Jinja2 filter that converts date strings between different formats.
@@ -149,10 +161,7 @@ def get_frontmatter_formats(frontmatter: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _parse_markdown_source(
-    key: str,
-    post: Any,
-    path: Optional[str] = None,
-    ext: str = "md"
+    key: str, post: Any, path: Optional[str] = None, ext: str = "md"
 ) -> MarkdownResult:
     """Parse a markdown source into a structured result.
 
@@ -183,7 +192,7 @@ def process_data(
     data_block: Dict[str, Any],
     filepath: str,
     frontmatter_base: Optional[Dict[str, Any]] = None,
-    frontmatter_overrides: Optional[Dict[str, Any]] = None
+    frontmatter_overrides: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Process a data block and extract metadata from all sources.
 
@@ -291,11 +300,14 @@ def process_data(
                 data[k] = ""  # Populate with empty values
                 data["_raw"][k] = {}
                 continue
-        _apply_markdown_result(_parse_markdown_source(
-            k, p,
-            path=os.path.relpath(v, os.path.dirname(filepath)),
-            ext=get_file_extension(v),
-        ))
+        _apply_markdown_result(
+            _parse_markdown_source(
+                k,
+                p,
+                path=os.path.relpath(v, os.path.dirname(filepath)),
+                ext=get_file_extension(v),
+            )
+        )
 
     for k, v in remote_notes.items():
         _LOGGER.info(f"MM | Processing remote note {k}:{v}")
@@ -311,15 +323,15 @@ def process_data(
         if not v:
             data[k] = v
             continue
-        
+
         if isinstance(v, str):
             p = frontmatter.loads(v)
         elif isinstance(v, dict):
-            content_str = v.get('content', '')
+            content_str = v.get("content", "")
             p = frontmatter.loads(content_str)
-            if 'frontmatter' in v and isinstance(v['frontmatter'], dict):
-                p.metadata.update(v['frontmatter'])
-        elif hasattr(v, 'content') and hasattr(v, 'metadata'):
+            if "frontmatter" in v and isinstance(v["frontmatter"], dict):
+                p.metadata.update(v["frontmatter"])
+        elif hasattr(v, "content") and hasattr(v, "metadata"):
             p = v
         else:
             _LOGGER.warning(f"Unsupported content type for {k}: {type(v)}")
@@ -446,7 +458,12 @@ def assess_variable_matches(template_source: str, provided_vars: dict) -> dict:
         template_vars = meta.find_undeclared_variables(parsed)
     except Exception as e:
         _LOGGER.warning(f"Could not parse template for variable analysis: {e}")
-        return {'template_vars': set(), 'provided_vars': set(), 'missing': set(), 'unused': set()}
+        return {
+            "template_vars": set(),
+            "provided_vars": set(),
+            "missing": set(),
+            "unused": set(),
+        }
 
     provided_keys = set(provided_vars.keys())
 
@@ -454,14 +471,14 @@ def assess_variable_matches(template_source: str, provided_vars: dict) -> dict:
     unused = provided_keys - template_vars
 
     # Filter out internal/special variables that start with underscore
-    missing = {v for v in missing if not v.startswith('_')}
-    unused = {v for v in unused if not v.startswith('_')}
+    missing = {v for v in missing if not v.startswith("_")}
+    unused = {v for v in unused if not v.startswith("_")}
 
     return {
-        'template_vars': template_vars,
-        'provided_vars': provided_keys,
-        'missing': missing,
-        'unused': unused
+        "template_vars": template_vars,
+        "provided_vars": provided_keys,
+        "missing": missing,
+        "unused": unused,
     }
 
 
@@ -488,18 +505,21 @@ def load_template(cfg: Dict[str, Any]) -> Optional[Template]:
 
     jinja_tpl = None
     root = cfg["mm_templates"] if "mm_templates" in cfg else None
-    
+
     # Substitute variables in jinja_template path
     jinja_template_raw = cfg["jinja_template"]
     from .utilities import MyTemplate
+
     jinja_template_substituted = MyTemplate(jinja_template_raw).safe_substitute(**cfg)
-    
+
     # If it's an absolute path after substitution, use it directly
     # Otherwise, make it absolute relative to the config file
     if os.path.isabs(jinja_template_substituted):
         jinja_tpl = jinja_template_substituted
     else:
-        jinja_tpl = make_abspath(jinja_template_substituted, cfg["_cfg_file_path"], root)
+        jinja_tpl = make_abspath(
+            jinja_template_substituted, cfg["_cfg_file_path"], root
+        )
     _LOGGER.info(f"MM | jinja template: {jinja_tpl}")
     # # if os.path.isfile(cfg["md_template"]):
     # #     jinja_tpl = cfg["md_template"]
@@ -533,6 +553,72 @@ def load_template(cfg: Dict[str, Any]) -> Optional[Template]:
     return t
 
 
+def resolve_authormark_source(
+    slug_or_url: str, cfg: Optional[Dict[str, Any]] = None
+) -> Tuple[str, str]:
+    """Resolve an ``authormark:`` config value into a (base_url, slug) pair.
+
+    The config value is either a bare capability slug
+    (``bkb52l34jb523jk5bkdbj3``) or a full capability URL
+    (``https://<host>/p/<slug>``). When it is a bare slug, the base URL is
+    resolved from configuration in this precedence order:
+
+        1. ``authormark_base_url`` in the config (highest)
+        2. the ``MM_AUTHORMARK_BASE_URL`` environment variable
+        3. a hardcoded default pointing at the deployed authormark host
+
+    Args:
+        slug_or_url: The raw ``authormark:`` config value.
+        cfg: The project/root config dict (used to read ``authormark_base_url``).
+
+    Returns:
+        A tuple of ``(base_url, slug)`` where ``base_url`` has no trailing
+        slash and ``slug`` is the bare capability slug.
+
+    Raises:
+        ValueError: If ``slug_or_url`` is empty/None, or a URL is given that
+            does not look like a ``/p/<slug>`` capability URL.
+    """
+    if cfg is None:
+        cfg = {}
+
+    if not slug_or_url or not str(slug_or_url).strip():
+        raise ValueError("authormark key present but empty.")
+
+    value = str(slug_or_url).strip()
+
+    if is_url(value):
+        # Full capability URL: split into base + slug. The capability path is
+        # ``/p/<slug>`` (optionally with an extension like ``.yaml``).
+        from urllib.parse import urlsplit
+
+        parts = urlsplit(value)
+        path = parts.path.rstrip("/")
+        marker = "/p/"
+        if marker not in path:
+            raise ValueError(
+                f"authormark URL does not look like a capability URL "
+                f"(expected '/p/<slug>'): {value}"
+            )
+        prefix, _, tail = path.partition(marker)
+        slug = tail.split("/")[0]
+        # Strip any trailing extension (.yaml/.json/.tex/...) from the slug.
+        if "." in slug:
+            slug = slug.split(".", 1)[0]
+        if not slug:
+            raise ValueError(f"Could not extract a slug from authormark URL: {value}")
+        base_url = f"{parts.scheme}://{parts.netloc}{prefix}".rstrip("/")
+        return base_url, slug
+
+    # Bare slug: resolve the base URL from config/env/default.
+    base_url = (
+        cfg.get(AUTHORMARK_BASE_URL_KEY)
+        or os.environ.get(AUTHORMARK_BASE_URL_ENV)
+        or AUTHORMARK_DEFAULT_BASE_URL
+    )
+    return base_url.rstrip("/"), value
+
+
 class Target:
     """Represents a single build target in markmeld.
 
@@ -556,7 +642,7 @@ class Target:
         self,
         root_cfg: Optional[Dict[str, Any]] = None,
         target_name: Optional[str] = None,
-        vardata: Optional[List[str]] = None
+        vardata: Optional[List[str]] = None,
     ) -> None:
         """Initialize a Target object.
 
@@ -622,11 +708,13 @@ class Target:
         # Inject embedded resource variables EARLY (before command generation)
         # This allows user variables containing resource references to be expanded
         from .resource_manager import inject_resource_variables
+
         meta = inject_resource_variables(meta)
 
         # Expand template variables in meta values (e.g., bibdb: "{mm-csl-nature}")
         # before the pandoc command is generated
         from .utilities import expand_dict_templates
+
         expand_dict_templates(meta)
 
         if "command" not in meta:
@@ -654,23 +742,28 @@ class Target:
 
         # Citation group targets: add the consistent-citations Lua filter
         # and skip --citeproc (the filter handles citeproc internally)
-        has_citation_group = "_citation_group_sources" in meta and meta["_citation_group_sources"]
+        has_citation_group = (
+            "_citation_group_sources" in meta and meta["_citation_group_sources"]
+        )
 
         if has_citation_group:
             from .resource_manager import get_filter_path
+
             filter_path = get_filter_path("consistent-citations")
             if filter_path:
                 options_array.append(f'--lua-filter "{filter_path}"')
                 # Add citation_group_sources as metadata
                 for source_path in meta["_citation_group_sources"]:
-                    options_array.append(f'--metadata=citation_group_sources:{source_path}')
+                    options_array.append(
+                        f"--metadata=citation_group_sources:{source_path}"
+                    )
                 # Add suppress-bibliography and bibliography-only metadata if set
                 if meta.get("suppress-bibliography"):
-                    options_array.append('--metadata=suppress-bibliography:true')
+                    options_array.append("--metadata=suppress-bibliography:true")
                 if meta.get("bibliography-only"):
-                    options_array.append('--metadata=bibliography-only:true')
+                    options_array.append("--metadata=bibliography-only:true")
         elif "citeproc" in meta and meta["citeproc"]:
-            options_array.append('--citeproc')
+            options_array.append("--citeproc")
 
         if "lua_filters" in meta and meta["lua_filters"]:
             filters_list = meta["lua_filters"]
@@ -720,7 +813,7 @@ class Target:
         color_red = "\x1b[31;20m"
         color_reset = "\x1b[0m"
         color_green = "\x1b[32;20m"
-        
+
         # Report any messages collected during build
         for item in self.messages:
             if item["status"] == "fail":
@@ -742,15 +835,19 @@ class Target:
 
         # Report success/failure
         if self.returncode != 0:
-            _LOGGER.error(f"{color_red}Building target '{self.target_name}' failed.{color_reset}")
+            _LOGGER.error(
+                f"{color_red}Building target '{self.target_name}' failed.{color_reset}"
+            )
             return
-        
+
         # Report output location
         if "output_file" in self.meta and self.meta["output_file"]:
-            _LOGGER.info(f"Target '{self.target_name}' built successfully -> {self.meta['output_file']}")
+            _LOGGER.info(
+                f"Target '{self.target_name}' built successfully -> {self.meta['output_file']}"
+            )
         else:
             _LOGGER.info(f"Target '{self.target_name}' built successfully")
-        
+
         _LOGGER.info(f"Return code: {self.returncode}")
 
     def resolve_target_inheritance(self, target_name: str) -> Dict[str, Any]:
@@ -835,10 +932,14 @@ class MarkdownMelder:
             Path to cache root directory (defaults to ".cache" if not configured)
         """
         cache_root = self.cfg.get("_cache_root", ".cache")
-        _LOGGER.debug(f"get_cache_root() returning: {cache_root} (found in config: {'_cache_root' in self.cfg})")
+        _LOGGER.debug(
+            f"get_cache_root() returning: {cache_root} (found in config: {'_cache_root' in self.cfg})"
+        )
         return cache_root
 
-    def _update_bibliography_path(self, content: str, cached_bib_path: Union[str, List[str]]) -> str:
+    def _update_bibliography_path(
+        self, content: str, cached_bib_path: Union[str, List[str]]
+    ) -> str:
         """Update the bibliography path in document frontmatter to the cached file.
 
         Args:
@@ -856,7 +957,7 @@ class MarkdownMelder:
 
         # Update the bibliography field to point to the cached file
         if cached_bib_path:
-            post.metadata['bibliography'] = cached_bib_path
+            post.metadata["bibliography"] = cached_bib_path
             _LOGGER.debug(f"Updated bibliography path to: {cached_bib_path}")
 
         # Convert back to string with frontmatter
@@ -908,32 +1009,41 @@ class MarkdownMelder:
         try:
             # Extract Google Doc configuration
             if "data" not in tgt.meta or GOOGLE_DOCS_KEY not in tgt.meta["data"]:
-                _LOGGER.error(f"Google Doc target missing 'data.{GOOGLE_DOCS_KEY}' configuration")
+                _LOGGER.error(
+                    f"Google Doc target missing 'data.{GOOGLE_DOCS_KEY}' configuration"
+                )
                 return None
-            
+
             google_docs = tgt.meta["data"][GOOGLE_DOCS_KEY]
-            
+
             # google_docs should now be a dict like:
             # { "manuscript": "doc_id_1", "data": "doc_id_2" }
             if not isinstance(google_docs, dict):
-                _LOGGER.error(f"Google Doc target 'data.{GOOGLE_DOCS_KEY}' must be a dictionary mapping variable names to document IDs")
+                _LOGGER.error(
+                    f"Google Doc target 'data.{GOOGLE_DOCS_KEY}' must be a dictionary mapping variable names to document IDs"
+                )
                 return None
-            
+
             if not google_docs:
-                _LOGGER.error(f"Google Doc target 'data.{GOOGLE_DOCS_KEY}' dictionary is empty")
+                _LOGGER.error(
+                    f"Google Doc target 'data.{GOOGLE_DOCS_KEY}' dictionary is empty"
+                )
                 return None
-            
+
             force_refresh = tgt.meta.get("force_refresh", False)
 
             # Initialize Google Drive processor with cache root
             from .google_drive import GoogleDriveProcessor
+
             cache_root = self.get_cache_root()
             _LOGGER.info(f"MM | Using cache root from config: {cache_root}")
-            _LOGGER.debug(f"MM | Initializing GoogleDriveProcessor with cache_root: {cache_root}")
+            _LOGGER.debug(
+                f"MM | Initializing GoogleDriveProcessor with cache_root: {cache_root}"
+            )
             gdp = GoogleDriveProcessor(cache_root=cache_root)
 
             md_content = {}
-            
+
             # Process each Google Doc
             for var_name, doc_id in google_docs.items():
                 if not doc_id:
@@ -943,71 +1053,211 @@ class MarkdownMelder:
 
                 # Ensure doc_id is a string (handle tuple/list configurations)
                 if not isinstance(doc_id, str):
-                    _LOGGER.error(f"Document ID for '{var_name}' must be a string, got {type(doc_id)}: {doc_id}")
-                    raise ValueError(f"Document ID for '{var_name}' must be a string, got {type(doc_id)}: {doc_id}")
+                    _LOGGER.error(
+                        f"Document ID for '{var_name}' must be a string, got {type(doc_id)}: {doc_id}"
+                    )
+                    raise ValueError(
+                        f"Document ID for '{var_name}' must be a string, got {type(doc_id)}: {doc_id}"
+                    )
 
                 _LOGGER.info(f"MM | Fetching Google Doc '{var_name}': {doc_id}")
 
                 # Process document, figures, and bibliography in one pass
-                _LOGGER.info(f"MM | Processing document '{var_name}' and all associated figures/CSVs/bibliography...")
+                _LOGGER.info(
+                    f"MM | Processing document '{var_name}' and all associated figures/CSVs/bibliography..."
+                )
                 result = gdp.process_document_figures(
                     doc_id,
                     None,  # No folder_id needed - method will find parent folder automatically
-                    skip_unchanged=(not force_refresh)
+                    skip_unchanged=(not force_refresh),
                 )
 
                 # Store content using the variable name as the key
-                md_content[var_name] = result['document']
+                md_content[var_name] = result["document"]
 
                 # Log figure processing results
-                if 'results' in result:
-                    results = result['results']
-                    if results.get('processed'):
-                        _LOGGER.info(f"MM | Processed {len(results['processed'])} figures/CSVs for '{var_name}'")
-                    if results.get('skipped'):
-                        _LOGGER.info(f"MM | Skipped {len(results['skipped'])} unchanged figures/CSVs for '{var_name}'")
-                    if results.get('failed'):
-                        _LOGGER.warning(f"MM | Failed to process {len(results['failed'])} figures/CSVs for '{var_name}'")
+                if "results" in result:
+                    results = result["results"]
+                    if results.get("processed"):
+                        _LOGGER.info(
+                            f"MM | Processed {len(results['processed'])} figures/CSVs for '{var_name}'"
+                        )
+                    if results.get("skipped"):
+                        _LOGGER.info(
+                            f"MM | Skipped {len(results['skipped'])} unchanged figures/CSVs for '{var_name}'"
+                        )
+                    if results.get("failed"):
+                        _LOGGER.warning(
+                            f"MM | Failed to process {len(results['failed'])} figures/CSVs for '{var_name}'"
+                        )
 
                 # Extract bibliography info (processed during same document download)
-                bib_result = result.get('bibliography_info', {})
+                bib_result = result.get("bibliography_info", {})
 
-                if bib_result and bib_result.get('bibliography_path'):
+                if bib_result and bib_result.get("bibliography_path"):
                     # Update the frontmatter to point to the cached bibliography
-                    _LOGGER.info(f"MM | Updating bibliography path to cached location...")
-                    md_content[var_name] = self._update_bibliography_path(md_content[var_name], bib_result['bibliography_path'])
+                    _LOGGER.info(
+                        f"MM | Updating bibliography path to cached location..."
+                    )
+                    md_content[var_name] = self._update_bibliography_path(
+                        md_content[var_name], bib_result["bibliography_path"]
+                    )
 
                     # Log bibliography processing results
-                    if 'results' in bib_result:
-                        bib_results = bib_result['results']
-                        if bib_results.get('processed'):
-                            _LOGGER.info(f"MM | Downloaded {len(bib_results['processed'])} bibliography files for '{var_name}'")
-                        if bib_results.get('skipped'):
-                            _LOGGER.info(f"MM | Used cached {len(bib_results['skipped'])} bibliography files for '{var_name}'")
-                        if bib_results.get('failed'):
-                            _LOGGER.warning(f"MM | Failed to download {len(bib_results['failed'])} bibliography files for '{var_name}'")
+                    if "results" in bib_result:
+                        bib_results = bib_result["results"]
+                        if bib_results.get("processed"):
+                            _LOGGER.info(
+                                f"MM | Downloaded {len(bib_results['processed'])} bibliography files for '{var_name}'"
+                            )
+                        if bib_results.get("skipped"):
+                            _LOGGER.info(
+                                f"MM | Used cached {len(bib_results['skipped'])} bibliography files for '{var_name}'"
+                            )
+                        if bib_results.get("failed"):
+                            _LOGGER.warning(
+                                f"MM | Failed to download {len(bib_results['failed'])} bibliography files for '{var_name}'"
+                            )
 
             # Transform target data: preserve existing fields (like variables),
             # remove processed google_docs, add md_content
             existing_data = tgt.meta.get("data", {})
-            _LOGGER.info(f"MM | Existing data keys before transform: {list(existing_data.keys())}")
+            _LOGGER.info(
+                f"MM | Existing data keys before transform: {list(existing_data.keys())}"
+            )
             if "variables" in existing_data:
                 _LOGGER.info(f"MM | Preserving variables: {existing_data['variables']}")
             existing_data.pop(GOOGLE_DOCS_KEY, None)  # Remove processed google_docs
-            tgt.meta["data"] = deep_update(existing_data, {"md_content": md_content}, warn_override=False)
-            _LOGGER.info(f"MM | Final data keys after transform: {list(tgt.meta['data'].keys())}")
-            
+            tgt.meta["data"] = deep_update(
+                existing_data, {"md_content": md_content}, warn_override=False
+            )
+            _LOGGER.info(
+                f"MM | Final data keys after transform: {list(tgt.meta['data'].keys())}"
+            )
+
             # Remove the type field so it processes as a normal target
             del tgt.meta[TARGET_TYPE_KEY]
-            
+
             _LOGGER.info("MM | Google Doc preprocessing complete")
             return tgt
-            
+
         except Exception as e:
             _LOGGER.error(f"Error preprocessing Google Doc: {e}")
             import traceback
+
             _LOGGER.error(f"Full traceback:\n{traceback.format_exc()}")
             return None
+
+    def preprocess_authormark(self, tgt: Target) -> Optional[Target]:
+        """Fetch a paper's author block from authormark and inject it as data.
+
+        When a target (or the project root config) has an ``authormark:`` key,
+        the author/affiliation/CRediT graph is fetched at build time from the
+        authormark service and merged into the target's ``data.variables`` block
+        under the same top-level names a manuscript template already uses for an
+        inline author YAML block (``authors``, ``affiliations``,
+        ``author_contributions``, ``byline_latex``, ``title``,
+        ``affiliations_latex``, ...).
+
+        Routing through ``variables:`` gives these keys high precedence, so when
+        ``authormark:`` is set authormark is the single source of truth and any
+        leftover inline author block is overridden.
+
+        The client's ``/modified``-based cache (a :class:`DirCache` co-located
+        with the rest of markmeld's cache) keeps build-to-build fetches cheap;
+        ``force_refresh`` on the target meta bypasses the cache.
+
+        Args:
+            tgt: Target object whose meta (or the root config) carries an
+                ``authormark`` key.
+
+        Returns:
+            Modified Target object with the author variables injected, or None
+            on failure (consistent with ``preprocess_google_doc``).
+        """
+        # Lazy import so markmeld does not hard-require authormark-client unless
+        # the authormark key is actually used (mirrors the google_drive import).
+        try:
+            from authormark_client import AuthormarkClient, DirCache
+        except ImportError as e:
+            _LOGGER.error(
+                "authormark key is set but the 'authormark-client' package is "
+                f"not installed: {e}. Install it with "
+                "`pip install authormark-client`."
+            )
+            return None
+
+        # The target value wins over the project/root value.
+        slug_or_url = tgt.meta.get(AUTHORMARK_KEY, self.cfg.get(AUTHORMARK_KEY))
+
+        try:
+            base_url, slug = resolve_authormark_source(slug_or_url, self.cfg)
+        except ValueError as e:
+            _LOGGER.error(f"Invalid authormark configuration: {e}")
+            return None
+
+        force_refresh = tgt.meta.get("force_refresh", False)
+
+        # Co-locate the authormark cache under the same cache root tree as the
+        # google-doc caching, namespaced by 'authormark'.
+        cache_root = self.get_cache_root()
+        authormark_cache_dir = os.path.join(cache_root, "authormark")
+        cache = DirCache(authormark_cache_dir)
+
+        api_key = tgt.meta.get("authormark_api_key", self.cfg.get("authormark_api_key"))
+
+        client = AuthormarkClient(base_url=base_url, api_key=api_key, cache=cache)
+        try:
+            try:
+                # use_cache=False forces a full fetch (and refreshes the cache),
+                # which is the force-refresh path. Otherwise the client probes
+                # the cheap /modified endpoint and reuses the cached payload when
+                # the version/etag still matches.
+                author_data = client.get_markmeld_data(
+                    slug, use_cache=not force_refresh
+                )
+            except Exception as e:
+                # On a network/service error, fall back to a valid cache entry
+                # if one exists (cache-as-fallback); otherwise fail clearly.
+                from authormark_client import make_key
+
+                cached = cache.get(make_key(base_url, slug))
+                if cached is not None:
+                    _LOGGER.warning(
+                        f"authormark unreachable for slug '{slug}' at {base_url} "
+                        f"({e}); falling back to cached author block."
+                    )
+                    author_data = cached.data
+                else:
+                    _LOGGER.error(
+                        f"authormark unreachable for slug '{slug}' at {base_url} "
+                        f"and no cache is available: {e}"
+                    )
+                    return None
+        finally:
+            client.close()
+
+        if not isinstance(author_data, dict) or not author_data:
+            _LOGGER.error(
+                f"authormark returned no usable author data for slug '{slug}'."
+            )
+            return None
+
+        # Inject directly into the data block's `variables:` (high precedence).
+        existing_data = tgt.meta.setdefault("data", {})
+        variables = existing_data.setdefault("variables", {})
+        variables.update(author_data)
+
+        # Remove the authormark keys so meld_inputs/process_data does not
+        # re-encounter them (mirrors the google_docs pop).
+        tgt.meta.pop(AUTHORMARK_KEY, None)
+        tgt.meta.pop("authormark_api_key", None)
+
+        _LOGGER.info(
+            f"MM | Injected authormark author block for slug '{slug}' "
+            f"({len(author_data)} keys) from {base_url}"
+        )
+        return tgt
 
     def _resolve_citation_group_sources(self, target_name: str) -> Optional[List[str]]:
         """Resolve absolute file paths for all markdown sources in a target's citation group.
@@ -1029,14 +1279,18 @@ class MarkdownMelder:
 
         for sibling_name in group_targets:
             if sibling_name not in self.cfg.get("targets", {}):
-                _LOGGER.warning(f"Citation group target '{sibling_name}' not found in config")
+                _LOGGER.warning(
+                    f"Citation group target '{sibling_name}' not found in config"
+                )
                 continue
             sibling_cfg = self.cfg["targets"][sibling_name]
             data_block = sibling_cfg.get("data", {})
             md_files = data_block.get("md_files", {})
 
             # Get the workpath for resolving relative paths
-            workpath = sibling_cfg.get("_workpath", os.path.dirname(self.cfg.get("_cfg_file_path", "")))
+            workpath = sibling_cfg.get(
+                "_workpath", os.path.dirname(self.cfg.get("_cfg_file_path", ""))
+            )
 
             for key, md_path in md_files.items():
                 if os.path.isabs(md_path):
@@ -1096,13 +1350,13 @@ class MarkdownMelder:
 
         # Add citation_group_sources as metadata
         for source_path in citation_group_sources:
-            cmd_parts.append(f'--metadata=citation_group_sources:{source_path}')
+            cmd_parts.append(f"--metadata=citation_group_sources:{source_path}")
 
         # Add suppress-bibliography and bibliography-only as metadata if set
         if tgt.meta.get("suppress-bibliography"):
-            cmd_parts.append('--metadata=suppress-bibliography:true')
+            cmd_parts.append("--metadata=suppress-bibliography:true")
         if tgt.meta.get("bibliography-only"):
-            cmd_parts.append('--metadata=bibliography-only:true')
+            cmd_parts.append("--metadata=bibliography-only:true")
 
         cmd = " ".join(cmd_parts)
         _LOGGER.info(f"MM | Citation group pandoc command: {cmd}")
@@ -1114,19 +1368,25 @@ class MarkdownMelder:
             cwd = os.path.dirname(workpath)
 
         p = subprocess.Popen(
-            cmd, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE, cwd=cwd
+            cmd,
+            shell=True,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            cwd=cwd,
         )
         stdout, stderr = p.communicate(input=markdown_content.encode())
 
         if p.returncode != 0:
-            _LOGGER.error(f"Pandoc citation group processing failed: {stderr.decode('utf-8', errors='replace')}")
+            _LOGGER.error(
+                f"Pandoc citation group processing failed: {stderr.decode('utf-8', errors='replace')}"
+            )
             return markdown_content
 
         if stderr:
             _LOGGER.debug(f"Pandoc stderr: {stderr.decode('utf-8', errors='replace')}")
 
-        return stdout.decode('utf-8', errors='replace')
+        return stdout.decode("utf-8", errors="replace")
 
     def _run_pandoc_citeproc(self, markdown_content: str, tgt: "Target") -> str:
         """Run pandoc with --citeproc for normal citation processing.
@@ -1168,16 +1428,22 @@ class MarkdownMelder:
             cwd = os.path.dirname(workpath)
 
         p = subprocess.Popen(
-            cmd, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE, cwd=cwd
+            cmd,
+            shell=True,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            cwd=cwd,
         )
         stdout, stderr = p.communicate(input=markdown_content.encode())
 
         if p.returncode != 0:
-            _LOGGER.error(f"Pandoc citeproc processing failed: {stderr.decode('utf-8', errors='replace')}")
+            _LOGGER.error(
+                f"Pandoc citeproc processing failed: {stderr.decode('utf-8', errors='replace')}"
+            )
             return markdown_content
 
-        return stdout.decode('utf-8', errors='replace')
+        return stdout.decode("utf-8", errors="replace")
 
     def build_target(
         self,
@@ -1188,6 +1454,7 @@ class MarkdownMelder:
         input_file: Optional[str] = None,
         output_file: Optional[str] = None,
         vardata: Optional[List[str]] = None,
+        force_refresh: bool = False,
     ) -> Union[Target, Dict[int, Target], None]:
         """Build a target by processing inputs and running the command.
 
@@ -1203,6 +1470,8 @@ class MarkdownMelder:
             input_file: Override content source with an external file path.
             output_file: Override output file path.
             vardata: Optional list of "key=value" strings for CLI variable overrides.
+            force_refresh: If True, bypass remote caches (Google Doc and
+                authormark) and refetch from source.
 
         Returns:
             Target object with build results, dict of Target objects for loop
@@ -1215,6 +1484,11 @@ class MarkdownMelder:
             f"MM | Building target: {tgt.target_name} from file {tgt.meta['_cfg_file_path']}"
         )
 
+        # Propagate the CLI/caller force-refresh flag onto the target meta so the
+        # preprocessing hooks (Google Doc, authormark) can bypass their caches.
+        if force_refresh:
+            tgt.meta["force_refresh"] = True
+
         # Inject citation group sources if this target is in a citation group
         citation_group_sources = self._resolve_citation_group_sources(target_name)
         if citation_group_sources:
@@ -1222,7 +1496,9 @@ class MarkdownMelder:
             # Rebuild the command now that we have citation group info
             # (the original command was built in Target.__init__ before injection)
             tgt.meta["command"] = Target._build_default_command(tgt.meta)
-            _LOGGER.info(f"MM | Citation group sources for '{target_name}': {citation_group_sources}")
+            _LOGGER.info(
+                f"MM | Citation group sources for '{target_name}': {citation_group_sources}"
+            )
 
         # Inject ad-hoc input file into target data
         if input_file:
@@ -1239,11 +1515,23 @@ class MarkdownMelder:
             tgt.meta["output_file"] = str(input_path.with_suffix(".pdf"))
 
         # Check for Google Doc type and preprocess if needed
-        if TARGET_TYPE_KEY in tgt.meta and tgt.meta[TARGET_TYPE_KEY] == GOOGLE_DOC_TARGET_TYPE:
+        if (
+            TARGET_TYPE_KEY in tgt.meta
+            and tgt.meta[TARGET_TYPE_KEY] == GOOGLE_DOC_TARGET_TYPE
+        ):
             _LOGGER.info("MM | Processing Google Doc target...")
             tgt = self.preprocess_google_doc(tgt)
             if not tgt:
                 _LOGGER.error("Failed to preprocess Google Doc target")
+                return tgt
+
+        # Check for an authormark author-block source (target or root config)
+        # and inject the fetched author variables before melding.
+        if AUTHORMARK_KEY in tgt.meta or AUTHORMARK_KEY in self.cfg:
+            _LOGGER.info("MM | Processing authormark author block...")
+            tgt = self.preprocess_authormark(tgt)
+            if not tgt:
+                _LOGGER.error("Failed to preprocess authormark author block")
                 return tgt
 
         # First, run any pre-builds
@@ -1263,7 +1551,11 @@ class MarkdownMelder:
         result = self.run_command_for_target(tgt, print_only, vardump)
 
         # Run postprocess commands (shell commands in _workpath)
-        if "postprocess" in tgt.meta and tgt.meta["postprocess"] and result.returncode == 0:
+        if (
+            "postprocess" in tgt.meta
+            and tgt.meta["postprocess"]
+            and result.returncode == 0
+        ):
             postprocess_result = self.run_postprocess(result)
             if not postprocess_result:
                 return result
@@ -1277,7 +1569,7 @@ class MarkdownMelder:
         # Report the result if requested
         if report:
             result.report(print_output=print_only, dump_output=vardump)
-        
+
         return result
 
     def run_postprocess(self, tgt: Target) -> bool:
@@ -1302,6 +1594,7 @@ class MarkdownMelder:
 
         # Format command with target variables (like {today}, etc.)
         from .utilities import MyTemplate
+
         cmd_formatted = MyTemplate(postprocess_cmd).safe_substitute(**tgt.meta)
 
         returncode, stdout, stderr = run_cmd(cmd_formatted, None, workpath)
@@ -1312,17 +1605,11 @@ class MarkdownMelder:
             tgt.stderr += f"\n[postprocess stderr]\n{stderr}"
 
         if returncode != 0:
-            tgt.add_message(
-                f"Postprocess failed with return code {returncode}",
-                "fail"
-            )
+            tgt.add_message(f"Postprocess failed with return code {returncode}", "fail")
             tgt.returncode = returncode
             return False
 
-        tgt.add_message(
-            f"Postprocess completed successfully",
-            "success"
-        )
+        tgt.add_message(f"Postprocess completed successfully", "success")
         return True
 
     def build_side_targets(self, tgt: Target, side_list_key: str = "prebuild") -> bool:
@@ -1382,7 +1669,11 @@ class MarkdownMelder:
             if output_dir:
                 # Build absolute path relative to working directory
                 workpath = tgt.meta.get("_workpath", ".")
-                abs_output_dir = os.path.join(workpath, output_dir) if not os.path.isabs(output_dir) else output_dir
+                abs_output_dir = (
+                    os.path.join(workpath, output_dir)
+                    if not os.path.isabs(output_dir)
+                    else output_dir
+                )
 
                 if not os.path.exists(abs_output_dir):
                     _LOGGER.warning(
@@ -1412,9 +1703,7 @@ class MarkdownMelder:
             elif tgt.meta.get("bibdb"):
                 # For targets with bibliography, run pandoc with citeproc
                 # to resolve citations even in print_only mode
-                tgt.melded_output = self._run_pandoc_citeproc(
-                    tgt.melded_output, tgt
-                )
+                tgt.melded_output = self._run_pandoc_citeproc(tgt.melded_output, tgt)
             tgt.returncode = 0
         elif vardump:
             tgt.melded_output = tgt.melded_input
@@ -1423,7 +1712,9 @@ class MarkdownMelder:
             cmd_fmt = format_command(tgt)
             _LOGGER.debug(f"Running regular command: '{cmd_fmt}'")
             tgt.melded_output = self.render_template(tgt.melded_input, tgt)
-            _LOGGER.debug(f"melded_output length: {len(tgt.melded_output) if tgt.melded_output else 0} characters")
+            _LOGGER.debug(
+                f"melded_output length: {len(tgt.melded_output) if tgt.melded_output else 0} characters"
+            )
             if tgt.melded_output == "" or tgt.melded_output is None:
                 _LOGGER.error("No input detected. Check variable names")
                 tgt.returncode = 2
@@ -1432,11 +1723,14 @@ class MarkdownMelder:
                 if tgt.melded_output and isinstance(tgt.melded_output, str):
                     try:
                         from .document_checker import DocumentChecker
+
                         dc = DocumentChecker()
-                        analysis_report = dc.generate_figure_analysis_report(tgt.melded_output)
+                        analysis_report = dc.generate_figure_analysis_report(
+                            tgt.melded_output
+                        )
                         if analysis_report:
                             # Log the analysis report as warnings
-                            for line in analysis_report.split('\n'):
+                            for line in analysis_report.split("\n"):
                                 if line.strip():
                                     _LOGGER.warning(line)
                     except Exception as e:
@@ -1446,14 +1740,20 @@ class MarkdownMelder:
                 if tgt.melded_output and isinstance(tgt.melded_output, str):
                     try:
                         from .figure_conversion import process_local_figures
+
                         tgt.melded_output = process_local_figures(
                             tgt.melded_output,
-                            defpath=tgt.meta['_defpath'],
-                            cache_dir=Path(tgt.meta['_cache_root']).parent if '_cache_root' in tgt.meta else Path(tgt.meta.get('_workpath', '.')),
+                            defpath=tgt.meta["_defpath"],
+                            cache_dir=(
+                                Path(tgt.meta["_cache_root"]).parent
+                                if "_cache_root" in tgt.meta
+                                else Path(tgt.meta.get("_workpath", "."))
+                            ),
                         )
                     except Exception as e:
                         _LOGGER.warning(f"Could not process local figures: {e}")
                         import traceback
+
                         _LOGGER.warning(traceback.format_exc())
 
                 tgt.returncode, tgt.stdout, tgt.stderr = run_cmd(
@@ -1466,7 +1766,7 @@ class MarkdownMelder:
         tgt: Target,
         print_only: bool = False,
         vardump: bool = False,
-        report: bool = True
+        report: bool = True,
     ) -> Dict[int, Target]:
         """Build a target multiple times using loop configuration.
 
@@ -1509,19 +1809,23 @@ class MarkdownMelder:
             tgt_copy.meta.update({var: loop_var_value})
             _LOGGER.debug(tgt_copy.meta)
             # _LOGGER.debug(cmd_data)
-            self.render_template(
-                tgt_copy.melded_input, tgt_copy, double=False
-            )
+            self.render_template(tgt_copy.melded_input, tgt_copy, double=False)
             return_target_objects[i] = self.run_command_for_target(
                 tgt_copy, print_only, vardump
             )
 
         # Report loop results if requested
         if report:
-            successful_builds = sum(1 for t in return_target_objects.values() if t.returncode == 0)
-            _LOGGER.info(f"Built loop target '{tgt.target_name}': {successful_builds}/{len(return_target_objects)} successful")
+            successful_builds = sum(
+                1 for t in return_target_objects.values() if t.returncode == 0
+            )
+            _LOGGER.info(
+                f"Built loop target '{tgt.target_name}': {successful_builds}/{len(return_target_objects)} successful"
+            )
             for i, loop_tgt in return_target_objects.items():
-                _LOGGER.info(f"  Loop iteration {i}: Return code: {loop_tgt.returncode}. Output: {loop_tgt.meta.get('output_file', 'N/A')}")
+                _LOGGER.info(
+                    f"  Loop iteration {i}: Return code: {loop_tgt.returncode}. Output: {loop_tgt.meta.get('output_file', 'N/A')}"
+                )
 
         return return_target_objects
 
@@ -1553,20 +1857,21 @@ class MarkdownMelder:
                 tgt.meta["data"],
                 tgt.meta["_workpath"],
                 frontmatter_base=frontmatter_base,
-                frontmatter_overrides=frontmatter_overrides
+                frontmatter_overrides=frontmatter_overrides,
             )
         else:
             processed_data_block = process_data(
                 {},
                 tgt.meta["_workpath"],
                 frontmatter_base=frontmatter_base,
-                frontmatter_overrides=frontmatter_overrides
+                frontmatter_overrides=frontmatter_overrides,
             )
         _LOGGER.debug("processed_data_block: %s", processed_data_block)
         data_copy.update(processed_data_block)
 
         # Expand template variables in data_copy values (e.g., bibdb: "{mm-csl-nature}")
         from .utilities import expand_dict_templates
+
         expand_dict_templates(data_copy)
 
         k = list(data_copy.keys())
@@ -1585,7 +1890,7 @@ class MarkdownMelder:
         self,
         melded_input: Dict[str, Any],
         target: Target,
-        double: Optional[bool] = None
+        double: Optional[bool] = None,
     ) -> str:
         """Render the Jinja2 template with the melded input data.
 
@@ -1619,13 +1924,17 @@ class MarkdownMelder:
             )
 
         # Check for variable mismatches before rendering
-        if hasattr(tpl, 'source') and tpl.source:
+        if hasattr(tpl, "source") and tpl.source:
             mismatch_report = assess_variable_matches(tpl.source, melded_input)
-            if mismatch_report['missing']:
-                _LOGGER.warning(f"Template references variables not provided: {mismatch_report['missing']}")
+            if mismatch_report["missing"]:
+                _LOGGER.warning(
+                    f"Template references variables not provided: {mismatch_report['missing']}"
+                )
             # Log unused vars at debug level (less critical)
-            if mismatch_report['unused']:
-                _LOGGER.debug(f"Provided variables not used in template: {mismatch_report['unused']}")
+            if mismatch_report["unused"]:
+                _LOGGER.debug(
+                    f"Provided variables not used in template: {mismatch_report['unused']}"
+                )
 
         if double is None:
             if (

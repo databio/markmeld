@@ -22,8 +22,13 @@ extra = {
             "google-api-python-client",
             "google-auth-oauthlib",
             "google-auth-httplib2",
-        ]
-    }
+        ],
+        # Optional: only needed when a target uses the `authormark:` key to pull
+        # its author block from the authormark capability-URL API.
+        "authormark": [
+            "authormark-client>=0.1",
+        ],
+    },
 }
 
 with open(PACKAGE_NAME + "/_version.py", "r") as versionfile:
@@ -36,7 +41,7 @@ setup(
     name=PACKAGE_NAME,
     packages=[PACKAGE_NAME],
     version=version,
-    python_requires='>=3.10',
+    python_requires=">=3.10",
     long_description=long_description,
     long_description_content_type="text/markdown",
     description="Markmeld is a markup melder that combines structured yaml or "
@@ -66,7 +71,7 @@ setup(
             "templates/**/*.jinja",
             "csl/*.csl",
             "autocomplete/*.bash",
-            "config_template.yaml"
+            "config_template.yaml",
         ]
     },
     include_package_data=True,

@@ -1,0 +1,14 @@
+% Authormark end-to-end render fixture.
+% Title: {{ title }}
+{{ byline_latex }}
+
+# Authors
+{% for a in authors %}- {{ a.given }} {{ a.family }}{% if a.corresponding %} (corresponding){% endif %}
+{% endfor %}
+
+# Affiliations
+{% for aff in affiliations %}{{ aff.marker }}. {{ aff.name }}
+{% endfor %}
+
+# Author Contributions
+{{ author_contributions }}
