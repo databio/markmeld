@@ -227,7 +227,7 @@ class TestCloudCacheManagerMetadataV3:
 
             metadata = ccm.load_metadata('test_doc')
             assert metadata is not None
-            assert metadata['cache_version'] == '3.2'
+            assert metadata['cache_version'] == '3.3'
             assert 'figures' in metadata
             assert len(metadata['figures']) == 1
 
@@ -239,6 +239,47 @@ class TestCloudCacheManagerMetadataV3:
             assert fig['digest'] == 'abc123'
             assert fig['format'] == 'svg'
             assert fig['conversion']['status'] == 'pending'
+
+    def test_record_cached_file_legend_label(self):
+        """Test that legend/label are written into figure metadata."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ccm = CloudCacheManager(cache_root=tmpdir)
+
+            ccm.record_cached_file(
+                doc_id='test_doc',
+                filename='tss.svg',
+                source_path='fig/tss.svg',
+                size=1234,
+                legend='\\label{tss} Fig: TSS enrichment',
+                label='tss',
+            )
+
+            fig = ccm.load_metadata('test_doc')['figures'][0]
+            assert fig['legend'] == '\\label{tss} Fig: TSS enrichment'
+            assert fig['label'] == 'tss'
+
+    def test_update_cached_file_preserves_legend_label(self):
+        """update_cached_file must not erase legend/label set by record_cached_file."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ccm = CloudCacheManager(cache_root=tmpdir)
+
+            # Record a figure with legend/label
+            ccm.record_cached_file(
+                doc_id='test_doc',
+                filename='tss.svg',
+                source_path='fig/tss.svg',
+                size=10,
+                legend='Fig: TSS',
+                label='tss',
+            )
+
+            # Now update the same cached file's content via update_cached_file
+            cache_path = ccm.cache_root / 'test_doc' / 'fig' / 'tss.svg'
+            ccm.update_cached_file(cache_path, content='<svg>new</svg>')
+
+            fig = ccm.load_metadata('test_doc')['figures'][0]
+            assert fig['legend'] == 'Fig: TSS'
+            assert fig['label'] == 'tss'
 
     def test_record_cached_file_csv(self):
         """Test recording a cached CSV file."""

@@ -22,10 +22,10 @@ class TestCloudCacheManagerBibliography:
     """Test CloudCacheManager bibliography support."""
 
     def test_cache_version_updated(self):
-        """Test that cache version is updated to 3.2."""
+        """Test that cache version is updated to 3.3."""
         with tempfile.TemporaryDirectory() as tmpdir:
             cache_manager = CloudCacheManager(cache_root=tmpdir)
-            assert cache_manager.CACHE_VERSION == "3.2"
+            assert cache_manager.CACHE_VERSION == "3.3"
 
     def test_bibliography_file_category(self):
         """Test that .bib files are recognized as bibliography category."""

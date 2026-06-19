@@ -25,7 +25,7 @@ class CloudCacheManager:
     Attributes:
         cache_root: Absolute path to the cache root directory.
         create_dirs: Whether to auto-create directories.
-        CACHE_VERSION: Current cache format version ("3.2").
+        CACHE_VERSION: Current cache format version ("3.3").
         FILE_CATEGORIES: Mapping of category names to file extensions.
         CONVERSION_TARGETS: Mapping of source extensions to target extensions.
         CACHE_SUBDIRS: Mapping of subdirectory type names to directory names.
@@ -43,7 +43,7 @@ class CloudCacheManager:
             └── ...
     """
 
-    CACHE_VERSION = "3.2"
+    CACHE_VERSION = "3.3"
 
     # File type categories
     FILE_CATEGORIES = {
@@ -300,9 +300,9 @@ class CloudCacheManager:
             _LOGGER.error(f"Cannot read metadata.json at {metadata_path}: {e}")
             return None
 
-        # Only support v3.0, v3.1, and v3.2 formats
+        # Only support v3.0, v3.1, v3.2, and v3.3 formats
         cache_version = metadata.get('cache_version')
-        if cache_version not in ['3.0', '3.1', '3.2']:
+        if cache_version not in ['3.0', '3.1', '3.2', '3.3']:
             _LOGGER.warning(f"  Old cache format (v{cache_version}) detected - will rebuild cache with fresh download")
             return None
 
@@ -323,7 +323,7 @@ class CloudCacheManager:
         return metadata
 
     def save_metadata(self, doc_id: str, metadata: Dict[str, Any]) -> None:
-        """Save document metadata to cache as v3.2 format.
+        """Save document metadata to cache as v3.3 format.
 
         Merges provided metadata with existing cached metadata to prevent
         partial updates from corrupting existing data (like modified_time).
@@ -373,7 +373,7 @@ class CloudCacheManager:
         if 'cache_stats' not in metadata:
             metadata['cache_stats'] = self._init_cache_stats()
 
-        # Always save as v3.2
+        # Always save as v3.3
         metadata['cache_version'] = self.CACHE_VERSION
 
         # Clean up any legacy root-level fields (doc_id, doc_name, folder_id should be in 'document')
@@ -515,6 +515,8 @@ class CloudCacheManager:
         reference_order: Optional[int] = None,
         first_reference_line: Optional[int] = None,
         reference_count: Optional[int] = None,
+        legend: Optional[str] = None,
+        label: Optional[str] = None,
     ) -> None:
         """Record that a file was downloaded and cached.
 
@@ -528,6 +530,8 @@ class CloudCacheManager:
             reference_order: Order of first appearance in text.
             first_reference_line: Line number of first reference.
             reference_count: Total number of references.
+            legend: Figure caption (markdown image alt-text).
+            label: Figure id from \\label{...} in the alt-text.
         """
         metadata = self.load_metadata(doc_id)
         if not metadata:
@@ -567,6 +571,10 @@ class CloudCacheManager:
             file_record['first_reference_line'] = first_reference_line
         if reference_count is not None:
             file_record['reference_count'] = reference_count
+        if legend is not None:
+            file_record['legend'] = legend
+        if label is not None:
+            file_record['label'] = label
 
         # Add format field for figures
         if category == 'figures':

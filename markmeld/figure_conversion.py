@@ -28,7 +28,8 @@ def extract_figure_paths(markdown_content: str) -> List[Tuple[str, Dict[str, Any
     # Pattern to find markdown images with optional parameters
     # Matches: ![alt](path){.param=value .param2="value"}
     # Alt text may contain nested [...] spans (e.g., from tracked changes)
-    inline_pattern = r'!\[(?:[^\[\]]|\[[^\]]*\])*\]\(([^)]+)\)(\{[^}]*\})?'
+    # Group 1 captures the alt-text (legend), group 2 the path, group 3 params.
+    inline_pattern = r'!\[((?:[^\[\]]|\[[^\]]*\])*)\]\(([^)]+)\)(\{[^}]*\})?'
 
     # Find reference-style images: [ref]: path
     ref_pattern = r'^\[[^\]]+\]:\s*(.+)$'
@@ -36,14 +37,17 @@ def extract_figure_paths(markdown_content: str) -> List[Tuple[str, Dict[str, Any
     figures = []
 
     for match in re.finditer(inline_pattern, markdown_content):
-        path = match.group(1)
-        params_str = match.group(2) if match.group(2) else ""
+        alt = match.group(1) or ""
+        path = match.group(2)
+        params_str = match.group(3) if match.group(3) else ""
         params = parse_figure_parameters(params_str)
+        params['legend'] = alt.strip() if alt.strip() else None
+        params['label'] = parse_figure_label(alt)
         figures.append((path, params))
 
     for match in re.finditer(ref_pattern, markdown_content, re.MULTILINE):
         path = match.group(1)
-        figures.append((path, {}))
+        figures.append((path, {'legend': None, 'label': None}))
 
     # Filter out URLs and data URIs, keep only local paths
     local_figures = [
@@ -61,6 +65,14 @@ def extract_figure_paths(markdown_content: str) -> List[Tuple[str, Dict[str, Any
             unique_figures.append((path, params))
 
     return unique_figures
+
+
+def parse_figure_label(alt_text: str) -> Optional[str]:
+    """Extract the figure id from a \\label{...} in the image alt-text."""
+    if not alt_text:
+        return None
+    m = re.search(r'\\label\{([^}]+)\}', alt_text)
+    return m.group(1) if m else None
 
 
 def parse_figure_parameters(param_string: str) -> dict:

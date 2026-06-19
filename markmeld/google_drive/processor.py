@@ -1184,7 +1184,9 @@ class GoogleDriveProcessor:
         file_info: Dict[str, Any],
         doc_id: str,
         figure_type: str,
-        reference_order: int
+        reference_order: int,
+        legend: Optional[str] = None,
+        label: Optional[str] = None
     ) -> Path:
         """Get cached file or download if needed.
 
@@ -1194,6 +1196,8 @@ class GoogleDriveProcessor:
             doc_id: The document ID for cache context.
             figure_type: Type of figure ('svg', 'csv', etc.).
             reference_order: Order of appearance in document.
+            legend: Figure caption (markdown image alt-text).
+            label: Figure id from \\label{...} in the alt-text.
 
         Returns:
             Path to the source file (cached or newly downloaded).
@@ -1233,7 +1237,9 @@ class GoogleDriveProcessor:
                 size=cached_path.stat().st_size,
                 drive_file_id=file_info['id'],
                 digest=file_info.get('md5Checksum'),
-                reference_order=reference_order
+                reference_order=reference_order,
+                legend=legend,
+                label=label
             )
 
         return cached_path
@@ -1377,7 +1383,11 @@ class GoogleDriveProcessor:
 
         # Enumerate to track order of appearance (1-indexed)
         for reference_order, (fig_path, params) in enumerate(figure_data, start=1):
-            
+
+            # Legend (caption) and label (\label{...} id) travel inside params
+            legend = params.get('legend')
+            label = params.get('label')
+
             # Determine figure type and skip unknown
             figure_type = self.figure_converter.get_figure_type(fig_path)
             if figure_type == 'unknown':
@@ -1440,7 +1450,9 @@ class GoogleDriveProcessor:
                             size=source_file_path.stat().st_size,
                             drive_file_id=file_info.get('id') if file_info else None,
                             digest=file_info.get('md5Checksum') if file_info else None,
-                            reference_order=reference_order
+                            reference_order=reference_order,
+                            legend=legend,
+                            label=label
                         )
 
                     # Record conversion if it exists
@@ -1462,7 +1474,7 @@ class GoogleDriveProcessor:
                     continue
                 
                 # Get source file (cached or download)
-                source_file = self._get_cached_file_or_download(fig_path, file_info, doc_id, figure_type, reference_order)
+                source_file = self._get_cached_file_or_download(fig_path, file_info, doc_id, figure_type, reference_order, legend=legend, label=label)
                 
                 # Convert file
                 converted_path = self._convert_file(fig_path, source_file, file_info, params, doc_id, figure_type, output_path)

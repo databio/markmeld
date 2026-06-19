@@ -9,6 +9,7 @@ import pytest
 
 from markmeld.figure_conversion import (
     extract_figure_paths,
+    parse_figure_label,
     parse_figure_parameters,
     update_figure_paths,
     convert_svg,
@@ -23,7 +24,8 @@ class TestExtractFigurePaths:
     def test_basic_svg(self):
         md = "![diagram](fig/overview.svg)"
         result = extract_figure_paths(md)
-        assert result == [("fig/overview.svg", {})]
+        # Plain inline image: legend is the alt-text, label is None.
+        assert result == [("fig/overview.svg", {"legend": "diagram", "label": None})]
 
     def test_multiple_figures(self):
         md = "![a](fig/a.svg)\n![b](fig/b.png)\n![c](fig/c.svg)"
@@ -37,7 +39,7 @@ class TestExtractFigurePaths:
         md = "![diagram](fig/overview.svg){width=174mm}"
         result = extract_figure_paths(md)
         assert result[0][0] == "fig/overview.svg"
-        assert result[0][1] == {"width": "174mm"}
+        assert result[0][1] == {"width": "174mm", "legend": "diagram", "label": None}
 
     def test_filters_urls(self):
         md = "![ext](https://example.com/img.svg)\n![local](fig/local.svg)"
@@ -53,7 +55,41 @@ class TestExtractFigurePaths:
     def test_reference_style(self):
         md = "[fig1]: fig/diagram.svg"
         result = extract_figure_paths(md)
-        assert result == [("fig/diagram.svg", {})]
+        # Reference-style images have no alt-text: legend and label are None.
+        assert result == [("fig/diagram.svg", {"legend": None, "label": None})]
+
+    def test_legend_and_label(self):
+        md = "![\\label{tss} Fig: **TSS enrichment**. A) ... B) ...](fig/tss.pdf){width=174mm}"
+        result = extract_figure_paths(md)
+        assert result[0][0] == "fig/tss.pdf"
+        params = result[0][1]
+        assert params["legend"] == "\\label{tss} Fig: **TSS enrichment**. A) ... B) ..."
+        assert params["label"] == "tss"
+        assert params["width"] == "174mm"
+
+    def test_plain_image_has_no_label(self):
+        md = "![just a caption](fig/plain.svg)"
+        params = extract_figure_paths(md)[0][1]
+        assert params["legend"] == "just a caption"
+        assert params["label"] is None
+
+    def test_empty_alt_text(self):
+        md = "![](fig/blank.svg)"
+        params = extract_figure_paths(md)[0][1]
+        assert params["legend"] is None
+        assert params["label"] is None
+
+
+class TestParseFigureLabel:
+    def test_extracts_label(self):
+        assert parse_figure_label("\\label{tss} Fig: caption") == "tss"
+
+    def test_no_label(self):
+        assert parse_figure_label("Fig: caption with no label") is None
+
+    def test_empty(self):
+        assert parse_figure_label("") is None
+        assert parse_figure_label(None) is None
 
 
 class TestParseFigureParameters:

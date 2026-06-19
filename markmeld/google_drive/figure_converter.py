@@ -27,6 +27,7 @@ from ..figure_conversion import (
     df_to_pdf as _shared_df_to_pdf,
     extract_figure_paths as _shared_extract_figure_paths,
     find_optimal_height as _shared_find_optimal_height,
+    parse_figure_label as _shared_parse_figure_label,
     parse_figure_parameters as _shared_parse_figure_parameters,
     prepare_table_parameters as _shared_prepare_table_parameters,
 )
@@ -534,19 +535,24 @@ class FigureConverter:
         # Get base figures from shared extractor
         figures = _shared_extract_figure_paths(markdown_content)
 
-        # Also look for CSV files with {csv/...} syntax (Drive-specific)
+        # Also look for CSV files with {csv/...} syntax (Drive-specific).
+        # This brace syntax has no alt-text, so legend/label are None.
         csv_pattern = r'\{(csv/[^}]+\.csv)\}'
         for match in re.finditer(csv_pattern, markdown_content):
             path = match.group(1)
-            figures.append((path, {}))
+            figures.append((path, {'legend': None, 'label': None}))
 
-        # Re-add Google Sheets URLs that the shared extractor filters out
-        inline_pattern = r'!\[(?:[^\[\]]|\[[^\]]*\])*\]\(([^)]+)\)(\{[^}]*\})?'
+        # Re-add Google Sheets URLs that the shared extractor filters out.
+        # Group 1 captures alt-text (legend), group 2 path, group 3 params.
+        inline_pattern = r'!\[((?:[^\[\]]|\[[^\]]*\])*)\]\(([^)]+)\)(\{[^}]*\})?'
         for match in re.finditer(inline_pattern, markdown_content):
-            path = match.group(1)
+            path = match.group(2)
             if 'docs.google.com/spreadsheets' in path:
-                params_str = match.group(2) if match.group(2) else ""
+                alt = match.group(1) or ""
+                params_str = match.group(3) if match.group(3) else ""
                 params = _shared_parse_figure_parameters(params_str)
+                params['legend'] = alt.strip() if alt.strip() else None
+                params['label'] = _shared_parse_figure_label(alt)
                 figures.append((path, params))
 
         # Remove duplicates while preserving order
