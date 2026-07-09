@@ -415,6 +415,10 @@ class GoogleDriveProcessor:
             _LOGGER.info(f"⬇ No cached copy yet - downloading content from Google Drive...")
         _LOGGER.info(f"  Document ID: {doc_id}")
 
+        # Capture modifiedTime BEFORE downloading content so the cached stamp
+        # can never be newer than the bytes we save (see _save_to_disk).
+        doc_metadata = self.get_metadata(doc_id)
+
         if has_suggestions:
             _LOGGER.info("Document has suggestions — using Docs API with change markers")
             content = self._download_with_changes(doc_id)
@@ -427,7 +431,13 @@ class GoogleDriveProcessor:
             _LOGGER.info(f"Applied cleaning to document {doc_id} before caching")
 
         if not skip_disk_save and self.save_to_disk:
-            self._save_to_disk(doc_id, content, is_cleaned=apply_cleaning, changed=has_suggestions)
+            self._save_to_disk(
+                doc_id,
+                content,
+                is_cleaned=apply_cleaning,
+                changed=has_suggestions,
+                doc_metadata=doc_metadata,
+            )
 
         return content
     
@@ -947,7 +957,14 @@ class GoogleDriveProcessor:
             _LOGGER.info("  Document has changed - will download fresh copy")
             return None
     
-    def _save_to_disk(self, doc_id: str, content: str, is_cleaned: bool = False, changed: bool = False) -> None:
+    def _save_to_disk(
+        self,
+        doc_id: str,
+        content: str,
+        is_cleaned: bool = False,
+        changed: bool = False,
+        doc_metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
         """Save document content to disk and update metadata.
 
         Args:
@@ -955,6 +972,14 @@ class GoogleDriveProcessor:
             content: The markdown content to save.
             is_cleaned: Whether the content has been cleaned.
             changed: If True, save as the change-tracked variant (.changed.md).
+            doc_metadata: Drive metadata captured BEFORE the content download.
+                Its modifiedTime is stamped as the change-detection signal.
+                Capturing it before the download guarantees the stamp is never
+                *newer* than the content we cache: if the doc is edited during
+                the download we under-stamp and simply re-download next build,
+                rather than stamping a fresh time over stale content and then
+                treating that stale content as current. Falls back to a live
+                fetch if not provided.
         """
         if not self.save_to_disk:
             return
@@ -966,13 +991,15 @@ class GoogleDriveProcessor:
             # Save clean content without HTML comments
             doc_path.write_text(content, encoding='utf-8')
             _LOGGER.info(f"Saved to disk: {doc_path}")
-            
+
             # Record modifiedTime and save metadata. The cached modifiedTime is
             # the change-detection signal: a later build compares it against the
             # Doc's live modifiedTime to decide whether to re-download.
             try:
-                # Get document metadata
-                doc_metadata = self.get_metadata(doc_id)
+                # Use the pre-download metadata so the stamped modifiedTime
+                # matches the content just saved. Fall back to a live fetch.
+                if doc_metadata is None:
+                    doc_metadata = self.get_metadata(doc_id)
 
                 # Load existing metadata or create new v3.0 structure
                 metadata = self.cache_manager.load_metadata(doc_id)
