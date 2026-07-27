@@ -155,7 +155,7 @@ local function make_refs_subset(allrefs, subset_ids)
   local i = 1
   for k,v in pairs(allrefs.content) do
     already_included = false
-    for idnum, refid in pairs(subset_ids) do 
+    for idnum, refid in pairs(subset_ids) do
       if "ref-"..refid==v.identifier then
         print(k, idnum, refid, v.identifier)
         if processed_entries[v.identifier] then
@@ -169,6 +169,10 @@ local function make_refs_subset(allrefs, subset_ids)
           i = i+1
           processed_entries[v.identifier] = v.identifier
         end
+        -- subset_ids holds one entry per citation *instance*, so a work cited
+        -- more than once in this section matches repeatedly. Stop at the first
+        -- match: each reference belongs in a bibliography exactly once.
+        break
       end
     end
   end
