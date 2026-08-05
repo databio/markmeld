@@ -23,6 +23,7 @@ from .const import (
     GOOGLE_DOCS_KEY,
     TARGET_TYPE_KEY,
     GOOGLE_DOC_TARGET_TYPE,
+    EXTRACT_SECTIONS_KEY,
     AUTHORMARK_KEY,
     AUTHORMARK_BASE_URL_KEY,
     AUTHORMARK_BASE_URL_ENV,
@@ -160,8 +161,74 @@ def get_frontmatter_formats(frontmatter: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+# Default section-extraction map: lift a body "# Abstract" heading into the
+# `abstract` variable automatically, with no config. Targets can override or
+# opt out via the target-level `extract_sections:` key (see
+# resolve_extract_sections).
+DEFAULT_EXTRACT_SECTIONS = {"abstract": ["Abstract"]}
+
+_HEADING_RE = re.compile(r"^(#{1,6})[ \t]+(.*?)[ \t]*$", re.MULTILINE)
+
+
+def extract_body_section(
+    content: str, heading_names: list
+) -> Tuple[Optional[str], str]:
+    """Find a markdown section by heading text and split it out of the body.
+
+    Returns (section_text, remaining_content). section_text is None if no
+    matching heading is found (remaining_content is then the original).
+    Matching is case-insensitive on the heading text; among matches the
+    shallowest (lowest '#'-count) heading wins. The section spans from the
+    matched heading to the next heading of the same-or-shallower level.
+    """
+    wanted = {h.strip().lower() for h in heading_names}
+    headings = [
+        (m.start(), m.end(), len(m.group(1)), m.group(2).strip())
+        for m in _HEADING_RE.finditer(content)
+    ]
+    matches = [h for h in headings if h[3].lower() in wanted]
+    if not matches:
+        return None, content
+    start_pos, head_end, level, _text = min(matches, key=lambda h: (h[2], h[0]))
+    section_end = len(content)
+    for h_start, _h_end, h_level, _h_text in headings:
+        if h_start > start_pos and h_level <= level:
+            section_end = h_start
+            break
+    section_text = content[head_end:section_end].strip()
+    remaining = (content[:start_pos] + content[section_end:]).strip()
+    return section_text, remaining
+
+
+def resolve_extract_sections(target_meta: dict) -> dict:
+    """Merge the built-in defaults with a target's extract_sections key.
+
+    Resolution semantics:
+      - key absent            -> DEFAULT_EXTRACT_SECTIONS (abstract on)
+      - False / None / {}     -> disable all extraction ({} returned)
+      - {var: None}           -> drop that section from the effective map
+      - {var: [X, Y]} / "X"   -> override heading list for that section
+    """
+    if EXTRACT_SECTIONS_KEY not in target_meta:
+        return dict(DEFAULT_EXTRACT_SECTIONS)
+    user = target_meta[EXTRACT_SECTIONS_KEY]
+    if not user:  # False / None / {} -> disable all
+        return {}
+    effective = dict(DEFAULT_EXTRACT_SECTIONS)
+    for var_name, headings in user.items():
+        if headings is None:  # opt out of this section
+            effective.pop(var_name, None)
+        else:
+            effective[var_name] = headings if isinstance(headings, list) else [headings]
+    return effective
+
+
 def _parse_markdown_source(
-    key: str, post: Any, path: Optional[str] = None, ext: str = "md"
+    key: str,
+    post: Any,
+    path: Optional[str] = None,
+    ext: str = "md",
+    extract_sections: Optional[Dict[str, list]] = None,
 ) -> MarkdownResult:
     """Parse a markdown source into a structured result.
 
@@ -170,10 +237,21 @@ def _parse_markdown_source(
         post: A frontmatter Post object with .content and .metadata.
         path: Optional path/identifier for the source.
         ext: File extension for metadata tracking.
+        extract_sections: Optional {var_name: heading_names} map. For each entry
+            not already set in the file's frontmatter, the matching body section
+            is lifted into post.metadata[var_name] and stripped from the body.
 
     Returns:
         MarkdownResult with parsed content, raw text, and metadata.
     """
+    for var_name, heading_names in (extract_sections or {}).items():
+        if var_name in post.metadata:  # frontmatter precedence -- always wins
+            continue
+        section_text, remaining = extract_body_section(post.content, heading_names)
+        if section_text is not None:
+            post.metadata[var_name] = section_text
+            post.content = remaining
+
     return MarkdownResult(
         key=key,
         content=post.content,
@@ -193,6 +271,7 @@ def process_data(
     filepath: str,
     frontmatter_base: Optional[Dict[str, Any]] = None,
     frontmatter_overrides: Optional[Dict[str, Any]] = None,
+    extract_sections: Optional[Dict[str, list]] = None,
 ) -> Dict[str, Any]:
     """Process a data block and extract metadata from all sources.
 
@@ -216,6 +295,9 @@ def process_data(
         filepath: Path to the config file for resolving relative paths.
         frontmatter_base: Base frontmatter values (level 1).
         frontmatter_overrides: Override frontmatter values (level 5).
+        extract_sections: {var_name: heading_names} map of body sections to lift
+            into variables (see resolve_extract_sections). Applied per markdown
+            source; frontmatter values take precedence.
 
     Returns:
         Dictionary containing processed data including:
@@ -306,6 +388,7 @@ def process_data(
                 p,
                 path=os.path.relpath(v, os.path.dirname(filepath)),
                 ext=get_file_extension(v),
+                extract_sections=extract_sections,
             )
         )
 
@@ -316,7 +399,9 @@ def process_data(
             continue
         note_content = apih.fetch_note_content(v)
         p = frontmatter.loads(note_content)
-        _apply_markdown_result(_parse_markdown_source(k, p, path=v))
+        _apply_markdown_result(
+            _parse_markdown_source(k, p, path=v, extract_sections=extract_sections)
+        )
 
     for k, v in md_content.items():
         _LOGGER.info(f"MM | Processing md content {k}")
@@ -339,7 +424,9 @@ def process_data(
             data["_raw"][k] = {}
             continue
 
-        _apply_markdown_result(_parse_markdown_source(k, p))
+        _apply_markdown_result(
+            _parse_markdown_source(k, p, extract_sections=extract_sections)
+        )
 
     # Process yaml_files AFTER md so yaml values can override md frontmatter
     for k, v in yaml_files.items():
@@ -1851,6 +1938,7 @@ class MarkdownMelder:
         # Extract frontmatter sections from target meta (not from data block)
         frontmatter_base = tgt.meta.get("frontmatter", None)
         frontmatter_overrides = tgt.meta.get("frontmatter_overrides", None)
+        extract_sections = resolve_extract_sections(tgt.meta)
 
         if "data" in tgt.meta:
             processed_data_block = process_data(
@@ -1858,6 +1946,7 @@ class MarkdownMelder:
                 tgt.meta["_workpath"],
                 frontmatter_base=frontmatter_base,
                 frontmatter_overrides=frontmatter_overrides,
+                extract_sections=extract_sections,
             )
         else:
             processed_data_block = process_data(
@@ -1865,6 +1954,7 @@ class MarkdownMelder:
                 tgt.meta["_workpath"],
                 frontmatter_base=frontmatter_base,
                 frontmatter_overrides=frontmatter_overrides,
+                extract_sections=extract_sections,
             )
         _LOGGER.debug("processed_data_block: %s", processed_data_block)
         data_copy.update(processed_data_block)

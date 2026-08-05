@@ -4,6 +4,16 @@ Markmeld is a markdown melder. It merges yaml and markdown content using jinja2 
 
 Read the complete documentation at [markmeld.databio.org](https://markmeld.databio.org).
 
+## Automatic abstract extraction
+
+A markdown paper written as plain prose with an `# Abstract` heading has that
+section lifted into the `abstract` variable automatically (and stripped from the
+body), so it renders in a template's abstract slot just like a frontmatter
+`abstract:` would. A frontmatter `abstract:` still takes precedence. Opt a target
+out with `extract_sections: {abstract: null}`, disable all extraction with
+`extract_sections: false`, or override the heading names with
+`extract_sections: {abstract: [Abstract, Summary]}`.
+
 ## Testing
 
 Test with

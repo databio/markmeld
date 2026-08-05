@@ -73,6 +73,36 @@ Markmeld uses `_markmeld.yaml` files with this structure:
 - Remote templates via URLs
 - Glob patterns for batch processing
 
+**Section extraction (`extract_sections`)**: A markdown source written as plain
+prose with an `# Abstract` (or `## Abstract`) heading has that section lifted
+into the `abstract` variable automatically and stripped from the body, so it
+flows into templates like a frontmatter `abstract:` would. This is on by
+default. Precedence: a frontmatter `abstract:` always wins; otherwise the
+shallowest matching heading is used and its section (heading through the next
+same-or-shallower heading) is removed from the body. Override per target with a
+target-level `extract_sections:` key (sibling of `data:`):
+
+```yaml
+targets:
+  manuscript:
+    # nothing needed -- body "# Abstract" is pulled into `abstract` by default
+    data: { md_files: { content: paper.md } }
+
+  resume:
+    extract_sections: { abstract: null }   # opt OUT: leave "# Abstract" in body
+    data: { ... }
+
+  report:
+    extract_sections: false                # disable ALL extraction for target
+    data: { ... }
+
+  fancy:
+    extract_sections:
+      abstract: [Abstract, Summary]        # override heading names to try
+      significance: [Significance]         # also lift another section
+    data: { ... }
+```
+
 **Advanced Features**:
 - **Loop targets**: Mail merge functionality for generating multiple documents
 - **Target factories**: Auto-generate targets using Python plugins

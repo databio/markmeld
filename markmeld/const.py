@@ -11,6 +11,9 @@ GOOGLE_DOCS_KEY = "google_docs"
 TARGET_TYPE_KEY = "type"
 GOOGLE_DOC_TARGET_TYPE = "google-doc"
 
+# Section-extraction constants (lift a body heading into a template variable)
+EXTRACT_SECTIONS_KEY = "extract_sections"
+
 # Authormark author-block source constants
 AUTHORMARK_KEY = "authormark"
 AUTHORMARK_BASE_URL_KEY = "authormark_base_url"
