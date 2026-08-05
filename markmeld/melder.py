@@ -169,6 +169,19 @@ DEFAULT_EXTRACT_SECTIONS = {"abstract": ["Abstract"]}
 
 _HEADING_RE = re.compile(r"^(#{1,6})[ \t]+(.*?)[ \t]*$", re.MULTILINE)
 
+# Markdown emphasis / code markers to ignore when matching heading text, so a
+# bold "## **Abstract**" heading still matches the wanted name "Abstract".
+_EMPHASIS_RE = re.compile(r"[*_`]")
+
+
+def _normalize_heading(text: str) -> str:
+    """Normalize heading text for matching: drop emphasis markers, lowercase.
+
+    Also strips any trailing ATX closing '#' sequence (e.g. '## Abstract ##').
+    """
+    text = text.rstrip("#").strip()
+    return _EMPHASIS_RE.sub("", text).strip().lower()
+
 
 def extract_body_section(
     content: str, heading_names: list
@@ -177,16 +190,17 @@ def extract_body_section(
 
     Returns (section_text, remaining_content). section_text is None if no
     matching heading is found (remaining_content is then the original).
-    Matching is case-insensitive on the heading text; among matches the
-    shallowest (lowest '#'-count) heading wins. The section spans from the
+    Matching is case-insensitive on the heading text and ignores markdown
+    emphasis markers (so "## **Abstract**" matches "Abstract"); among matches
+    the shallowest (lowest '#'-count) heading wins. The section spans from the
     matched heading to the next heading of the same-or-shallower level.
     """
-    wanted = {h.strip().lower() for h in heading_names}
+    wanted = {_normalize_heading(h) for h in heading_names}
     headings = [
         (m.start(), m.end(), len(m.group(1)), m.group(2).strip())
         for m in _HEADING_RE.finditer(content)
     ]
-    matches = [h for h in headings if h[3].lower() in wanted]
+    matches = [h for h in headings if _normalize_heading(h[3]) in wanted]
     if not matches:
         return None, content
     start_pos, head_end, level, _text = min(matches, key=lambda h: (h[2], h[0]))

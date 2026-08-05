@@ -368,6 +368,19 @@ def test_extract_abstract_override_heading_names():
     assert "Abstract prose." in body_out
 
 
+def test_extract_abstract_bold_heading():
+    """A bold-wrapped '## **Abstract**' heading still matches and extracts."""
+    body = (
+        "# **Title**\n\n## **Abstract**\n\nBold-heading abstract.\n\n"
+        "## **Introduction**\n\nIntro."
+    )
+    result = _run_extract_target({"data": {"md_content": {"body": body}}})
+    assert "ABSTRACT:Bold-heading abstract." in result.melded_output
+    body_out = result.melded_output.split("BODY:")[1]
+    assert "Bold-heading abstract." not in body_out
+    assert "## **Introduction**" in body_out
+
+
 def test_extract_abstract_via_md_files():
     """Extraction also applies to md_files sources (same code path)."""
     with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
