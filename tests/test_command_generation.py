@@ -132,9 +132,10 @@ class TestDefaultCommandGeneration:
         # Verify --lua-filter flags are present
         assert "--lua-filter" in command, f"--lua-filter flags missing: {command}"
 
-        # Count occurrences
+        # Count occurrences. The three configured filters, plus the always-on
+        # unicode-symbols filter every default command carries.
         filter_count = command.count("--lua-filter")
-        assert filter_count == 3, f"Expected 3 --lua-filter flags, found {filter_count}"
+        assert filter_count == 4, f"Expected 4 --lua-filter flags, found {filter_count}"
 
         # Verify order
         figczar_pos = command.find("figczar")
@@ -255,8 +256,11 @@ class TestDefaultCommandGeneration:
         assert "--bibliography" in command, f"--bibliography flag missing: {command}"
         assert "--csl" in command, f"--csl flag missing: {command}"
         assert "--lua-filter" in command, f"--lua-filter flags missing: {command}"
-        assert command.count("--lua-filter") == 2, \
-            f"Expected 2 --lua-filter flags, found {command.count('--lua-filter')}"
+        # The two configured filters, plus the always-on unicode-symbols filter.
+        assert command.count("--lua-filter") == 3, \
+            f"Expected 3 --lua-filter flags, found {command.count('--lua-filter')}"
+        assert "unicode-symbols.lua" in command, \
+            f"the unicode-symbols filter should be on every default command: {command}"
         assert "--citeproc" in command, f"--citeproc flag missing: {command}"
         assert "-o " in command, f"-o flag missing: {command}"
 

@@ -816,6 +816,8 @@ class Target:
     @staticmethod
     def _build_default_command(meta: Dict[str, Any]) -> str:
         """Build a default pandoc command from target metadata."""
+        from .resource_manager import get_filter_path
+
         options_array = []
 
         if "latex_template" in meta:
@@ -834,8 +836,6 @@ class Target:
         )
 
         if has_citation_group:
-            from .resource_manager import get_filter_path
-
             filter_path = get_filter_path("consistent-citations")
             if filter_path:
                 options_array.append(f'--lua-filter "{filter_path}"')
@@ -858,6 +858,18 @@ class Target:
                 filters_list = [filters_list]
             for filter_ref in filters_list:
                 options_array.append(f'--lua-filter "{filter_ref}"')
+
+        # Unconditional, and last so it also cleans up anything citeproc or an
+        # earlier filter inserted. Authors paste "≤", "×" and friends into prose
+        # from Word and email; pdflatex (pandoc's default engine) has no inputenc
+        # mapping for the Mathematical Operators block, so one pasted character
+        # kills the whole PDF. Fixing it here rather than in a LaTeX template
+        # covers every template at once -- including the ones that live in a
+        # Google Drive sync cache and cannot be version controlled. The filter
+        # installs itself only for LaTeX output; every other writer is untouched.
+        unicode_filter = get_filter_path("unicode-symbols")
+        if unicode_filter:
+            options_array.append(f'--lua-filter "{unicode_filter}"')
 
         if "output_file" in meta:
             options_array.append('-o "{output_file}"')
