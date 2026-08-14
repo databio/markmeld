@@ -24,6 +24,7 @@ from .const import (
     TARGET_TYPE_KEY,
     GOOGLE_DOC_TARGET_TYPE,
     EXTRACT_SECTIONS_KEY,
+    EXTRACT_TITLE_KEY,
     AUTHORMARK_KEY,
     AUTHORMARK_BASE_URL_KEY,
     AUTHORMARK_BASE_URL_ENV,
@@ -168,10 +169,31 @@ def get_frontmatter_formats(frontmatter: Dict[str, Any]) -> Dict[str, Any]:
 DEFAULT_EXTRACT_SECTIONS = {"abstract": ["Abstract"]}
 
 _HEADING_RE = re.compile(r"^(#{1,6})[ \t]+(.*?)[ \t]*$", re.MULTILINE)
+_H1_RE = re.compile(r"^#[ \t]+(.*?)[ \t]*$", re.MULTILINE)
+_AUTHORMARK_LINE_RE = re.compile(r"^authormark:[ \t]+\S+[ \t]*\n?", re.MULTILINE)
 
 # Markdown emphasis / code markers to ignore when matching heading text, so a
 # bold "## **Abstract**" heading still matches the wanted name "Abstract".
 _EMPHASIS_RE = re.compile(r"[*_`]")
+
+
+def extract_body_title(content: str) -> Tuple[Optional[str], str]:
+    """Extract the first H1 heading's text as the title.
+
+    Returns (title_text, remaining_content). title_text is None if no H1 is
+    found. The H1 line (and any immediately following blank line) is stripped
+    from the body.
+    """
+    m = _H1_RE.search(content)
+    if m is None:
+        return None, content
+    title = _EMPHASIS_RE.sub("", m.group(1)).strip()
+    before = content[: m.start()]
+    after = content[m.end() :]
+    if after.startswith("\n"):
+        after = after[1:]
+    remaining = (before + after).strip()
+    return title, remaining
 
 
 def _normalize_heading(text: str) -> str:
@@ -243,6 +265,7 @@ def _parse_markdown_source(
     path: Optional[str] = None,
     ext: str = "md",
     extract_sections: Optional[Dict[str, list]] = None,
+    extract_title: bool = True,
 ) -> MarkdownResult:
     """Parse a markdown source into a structured result.
 
@@ -254,10 +277,21 @@ def _parse_markdown_source(
         extract_sections: Optional {var_name: heading_names} map. For each entry
             not already set in the file's frontmatter, the matching body section
             is lifted into post.metadata[var_name] and stripped from the body.
+        extract_title: If True (default), extract the first H1 heading as the
+            ``title`` variable and strip it from the body. Frontmatter ``title``
+            takes precedence.
 
     Returns:
         MarkdownResult with parsed content, raw text, and metadata.
     """
+    if extract_title and "title" not in post.metadata:
+        title_text, remaining = extract_body_title(post.content)
+        if title_text is not None:
+            post.metadata["title"] = title_text
+            post.content = remaining
+
+    post.content = _AUTHORMARK_LINE_RE.sub("", post.content).strip()
+
     for var_name, heading_names in (extract_sections or {}).items():
         if var_name in post.metadata:  # frontmatter precedence -- always wins
             continue
@@ -286,6 +320,7 @@ def process_data(
     frontmatter_base: Optional[Dict[str, Any]] = None,
     frontmatter_overrides: Optional[Dict[str, Any]] = None,
     extract_sections: Optional[Dict[str, list]] = None,
+    extract_title: bool = True,
 ) -> Dict[str, Any]:
     """Process a data block and extract metadata from all sources.
 
@@ -312,6 +347,8 @@ def process_data(
         extract_sections: {var_name: heading_names} map of body sections to lift
             into variables (see resolve_extract_sections). Applied per markdown
             source; frontmatter values take precedence.
+        extract_title: If True (default), extract the first H1 heading as the
+            ``title`` variable. Frontmatter ``title`` takes precedence.
 
     Returns:
         Dictionary containing processed data including:
@@ -403,6 +440,7 @@ def process_data(
                 path=os.path.relpath(v, os.path.dirname(filepath)),
                 ext=get_file_extension(v),
                 extract_sections=extract_sections,
+                extract_title=extract_title,
             )
         )
 
@@ -414,7 +452,7 @@ def process_data(
         note_content = apih.fetch_note_content(v)
         p = frontmatter.loads(note_content)
         _apply_markdown_result(
-            _parse_markdown_source(k, p, path=v, extract_sections=extract_sections)
+            _parse_markdown_source(k, p, path=v, extract_sections=extract_sections, extract_title=extract_title)
         )
 
     for k, v in md_content.items():
@@ -439,7 +477,7 @@ def process_data(
             continue
 
         _apply_markdown_result(
-            _parse_markdown_source(k, p, extract_sections=extract_sections)
+            _parse_markdown_source(k, p, extract_sections=extract_sections, extract_title=extract_title)
         )
 
     # Process yaml_files AFTER md so yaml values can override md frontmatter
@@ -1965,6 +2003,7 @@ class MarkdownMelder:
         frontmatter_base = tgt.meta.get("frontmatter", None)
         frontmatter_overrides = tgt.meta.get("frontmatter_overrides", None)
         extract_sections = resolve_extract_sections(tgt.meta)
+        extract_title = tgt.meta.get(EXTRACT_TITLE_KEY, True)
 
         if "data" in tgt.meta:
             processed_data_block = process_data(
@@ -1973,6 +2012,7 @@ class MarkdownMelder:
                 frontmatter_base=frontmatter_base,
                 frontmatter_overrides=frontmatter_overrides,
                 extract_sections=extract_sections,
+                extract_title=extract_title,
             )
         else:
             processed_data_block = process_data(
@@ -1981,6 +2021,7 @@ class MarkdownMelder:
                 frontmatter_base=frontmatter_base,
                 frontmatter_overrides=frontmatter_overrides,
                 extract_sections=extract_sections,
+                extract_title=extract_title,
             )
         _LOGGER.debug("processed_data_block: %s", processed_data_block)
         data_copy.update(processed_data_block)
