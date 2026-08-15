@@ -265,7 +265,7 @@ def _parse_markdown_source(
     path: Optional[str] = None,
     ext: str = "md",
     extract_sections: Optional[Dict[str, list]] = None,
-    extract_title: bool = True,
+    extract_title: bool = False,
 ) -> MarkdownResult:
     """Parse a markdown source into a structured result.
 
@@ -277,9 +277,10 @@ def _parse_markdown_source(
         extract_sections: Optional {var_name: heading_names} map. For each entry
             not already set in the file's frontmatter, the matching body section
             is lifted into post.metadata[var_name] and stripped from the body.
-        extract_title: If True (default), extract the first H1 heading as the
-            ``title`` variable and strip it from the body. Frontmatter ``title``
-            takes precedence.
+        extract_title: If True, extract the first H1 heading as the ``title``
+            variable and strip it from the body. Off by default, because a
+            template that never renders ``title`` would silently delete the
+            heading. Frontmatter ``title`` takes precedence.
 
     Returns:
         MarkdownResult with parsed content, raw text, and metadata.
@@ -320,7 +321,7 @@ def process_data(
     frontmatter_base: Optional[Dict[str, Any]] = None,
     frontmatter_overrides: Optional[Dict[str, Any]] = None,
     extract_sections: Optional[Dict[str, list]] = None,
-    extract_title: bool = True,
+    extract_title: bool = False,
 ) -> Dict[str, Any]:
     """Process a data block and extract metadata from all sources.
 
@@ -347,8 +348,8 @@ def process_data(
         extract_sections: {var_name: heading_names} map of body sections to lift
             into variables (see resolve_extract_sections). Applied per markdown
             source; frontmatter values take precedence.
-        extract_title: If True (default), extract the first H1 heading as the
-            ``title`` variable. Frontmatter ``title`` takes precedence.
+        extract_title: If True, extract the first H1 heading as the ``title``
+            variable. Off by default. Frontmatter ``title`` takes precedence.
 
     Returns:
         Dictionary containing processed data including:
@@ -2003,7 +2004,7 @@ class MarkdownMelder:
         frontmatter_base = tgt.meta.get("frontmatter", None)
         frontmatter_overrides = tgt.meta.get("frontmatter_overrides", None)
         extract_sections = resolve_extract_sections(tgt.meta)
-        extract_title = tgt.meta.get(EXTRACT_TITLE_KEY, True)
+        extract_title = tgt.meta.get(EXTRACT_TITLE_KEY, False)
 
         if "data" in tgt.meta:
             processed_data_block = process_data(
