@@ -4,14 +4,10 @@ Acceptance tests for the citation_groups feature.
 citation_groups allow multiple targets to share a citation namespace so that
 reference numbers are consistent across documents (e.g., grant proposals where
 project_summary, project_description, and references_cited must agree on numbering).
-
-These tests are written BEFORE the feature is implemented. They should all FAIL
-until the citation_groups feature is built into markmeld.
 """
 
 import pytest
 import markmeld
-
 
 CFG_PATH = "tests/test_data/citation_groups/_markmeld.yaml"
 
@@ -56,19 +52,25 @@ class TestSuppressBibliography:
         res = mm.build_target("project_summary", print_only=True)
         output = res.melded_output
         # Should have inline citations
-        assert "[1]" in output or "[2]" in output, f"Expected inline citations: {output}"
+        assert (
+            "[1]" in output or "[2]" in output
+        ), f"Expected inline citations: {output}"
         # Should NOT have a references/bibliography section
         # Pandoc citeproc typically generates a div with id "refs"
-        assert "refs" not in output.lower() or '<div id="refs"' not in output, \
-            f"Bibliography should be suppressed in project_summary: {output}"
+        assert (
+            "refs" not in output.lower() or '<div id="refs"' not in output
+        ), f"Bibliography should be suppressed in project_summary: {output}"
 
     def test_project_description_no_bibliography(self, mm):
         """project_description output should have inline citations but NO bibliography section."""
         res = mm.build_target("project_description", print_only=True)
         output = res.melded_output
-        assert "[2]" in output or "[3]" in output, f"Expected inline citations: {output}"
-        assert "refs" not in output.lower() or '<div id="refs"' not in output, \
-            f"Bibliography should be suppressed in project_description: {output}"
+        assert (
+            "[2]" in output or "[3]" in output
+        ), f"Expected inline citations: {output}"
+        assert (
+            "refs" not in output.lower() or '<div id="refs"' not in output
+        ), f"Bibliography should be suppressed in project_description: {output}"
 
 
 class TestBibliographyOnly:
@@ -79,10 +81,12 @@ class TestBibliographyOnly:
         res = mm.build_target("references_cited", print_only=True)
         output = res.melded_output
         # Should NOT contain body text from project_summary or project_description
-        assert "foundational work" not in output, \
-            f"Body text from project_summary leaked into references_cited: {output}"
-        assert "approach is valid" not in output, \
-            f"Body text from project_description leaked into references_cited: {output}"
+        assert (
+            "foundational work" not in output
+        ), f"Body text from project_summary leaked into references_cited: {output}"
+        assert (
+            "approach is valid" not in output
+        ), f"Body text from project_description leaked into references_cited: {output}"
         # Should contain bibliography entries
         assert "Alpha" in output, f"Expected Alpha in bibliography: {output}"
         assert "Beta" in output, f"Expected Beta in bibliography: {output}"
@@ -108,14 +112,16 @@ class TestCitationOrdering:
         # In project_summary: Alpha before Beta
         alpha_pos = summary.find("[1]")
         beta_pos = summary.find("[2]")
-        assert alpha_pos < beta_pos, \
-            f"Alpha [1] should appear before Beta [2] in summary"
+        assert (
+            alpha_pos < beta_pos
+        ), f"Alpha [1] should appear before Beta [2] in summary"
 
         # In project_description: Beta [2] before Gamma [3]
         beta_pos_desc = desc.find("[2]")
         gamma_pos_desc = desc.find("[3]")
-        assert beta_pos_desc < gamma_pos_desc, \
-            f"Beta [2] should appear before Gamma [3] in description"
+        assert (
+            beta_pos_desc < gamma_pos_desc
+        ), f"Beta [2] should appear before Gamma [3] in description"
 
 
 class TestUngroupedTargetIndependent:
@@ -140,32 +146,23 @@ class TestUngroupedTargetIndependent:
         assert "Delta" in output, f"Expected Delta in bibliography: {output}"
         assert "Alpha" in output, f"Expected Alpha in bibliography: {output}"
         # Should NOT contain Beta or Gamma (not cited in this target)
-        assert "Beta" not in output, f"Unexpected Beta in budget_justification: {output}"
-        assert "Gamma" not in output, f"Unexpected Gamma in budget_justification: {output}"
+        assert (
+            "Beta" not in output
+        ), f"Unexpected Beta in budget_justification: {output}"
+        assert (
+            "Gamma" not in output
+        ), f"Unexpected Gamma in budget_justification: {output}"
 
 
 class TestCitationGroupConfig:
-    """Test that the citation_groups config key is recognized and parsed."""
+    """Test that citation_groups is parsed from _markmeld.yaml with its
+    expected group membership."""
 
-    def test_config_has_citation_groups(self, mm):
-        """The config should have citation_groups parsed from _markmeld.yaml."""
-        assert "citation_groups" in mm.cfg, \
-            "citation_groups key should be present in loaded config"
-
-    def test_citation_group_contains_expected_targets(self, mm):
-        """The 'grant' group should list the three expected targets."""
+    def test_citation_groups_parsed_from_config(self, mm):
         groups = mm.cfg["citation_groups"]
         assert "grant" in groups, f"Expected 'grant' group, got: {list(groups.keys())}"
-        assert groups["grant"] == ["project_summary", "project_description", "references_cited"]
-
-    def test_target_knows_its_group(self, mm):
-        """When building a grouped target, it should know which group it belongs to.
-        This tests whatever internal mechanism is used to pass group info to the target.
-        """
-        # This is an implementation-detail test -- it may need to be adjusted
-        # once the feature is built. The key assertion is that the melder
-        # can determine which group a target belongs to.
-        res = mm.build_target("project_summary", print_only=True)
-        # If the feature stores group info on the target, check it:
-        assert hasattr(res, 'meta') or hasattr(res, 'melded_output'), \
-            "Target should have build results"
+        assert groups["grant"] == [
+            "project_summary",
+            "project_description",
+            "references_cited",
+        ]

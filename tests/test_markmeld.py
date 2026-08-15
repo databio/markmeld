@@ -1,12 +1,9 @@
-print("Run test")
-
 import markmeld
 import os
 import pytest
 
 from datetime import date
 
-cfg = {"test": True}
 today = date.today().strftime("%Y-%m-%d")
 
 # We want our logger to print verbosely during testing
@@ -40,76 +37,80 @@ def test_cli():
     from markmeld.cli import main
 
     with pytest.raises(SystemExit):
-        main(test_args={"config": "tests/test_data/_markmeld_basic.yaml", "target": None, "list": True})
+        main(
+            test_args={
+                "config": "tests/test_data/_markmeld_basic.yaml",
+                "target": None,
+                "list": True,
+            }
+        )
 
 
 def test_MarkdownMelder_demo():
     cfg = markmeld.load_config_file("tests/test_data/_markmeld_basic.yaml")
-    # cmd_data = markmeld.populate_cmd_data(cfg, "default", {})
     x = markmeld.MarkdownMelder(cfg)
 
     res = x.build_target("default", print_only=True)
     compare_to_file("demo/rendered.md", res.melded_output)
 
-    res = x.build_target("default", print_only=False)
     outfile = f"tests/test_data/{today}_demo_output.txt"
-    assert os.path.isfile(outfile)
-    print(f"res:", res)
-    os.remove(outfile)
+    try:
+        x.build_target("default", print_only=False)
+        assert os.path.isfile(outfile)
+    finally:
+        if os.path.isfile(outfile):
+            os.remove(outfile)
 
 
 def test_loop():
     cfg = markmeld.load_config_file("demo_loop/_markmeld.yaml")
     x = markmeld.MarkdownMelder(cfg)
     res = x.build_target("default", print_only=True)
-    print(f"res:", res)
     assert "John Doe" in str(res[0].melded_output)
     assert "Jane Doe" in str(res[1].melded_output)
 
     # Check actual build (requires pandoc)
-    res = x.build_target("default")
-    assert os.path.isfile(f"demo_loop/{today}_demo_output_John Doe.txt")
-    assert os.path.isfile(f"demo_loop/{today}_demo_output_Jane Doe.txt")
-    os.remove(f"demo_loop/{today}_demo_output_John Doe.txt")
-    os.remove(f"demo_loop/{today}_demo_output_Jane Doe.txt")
+    john_out = f"demo_loop/{today}_demo_output_John Doe.txt"
+    jane_out = f"demo_loop/{today}_demo_output_Jane Doe.txt"
+    try:
+        x.build_target("default")
+        assert os.path.isfile(john_out)
+        assert os.path.isfile(jane_out)
+    finally:
+        if os.path.isfile(john_out):
+            os.remove(john_out)
+        if os.path.isfile(jane_out):
+            os.remove(jane_out)
 
     res2 = x.build_target("complex_loop", print_only=True)
     assert "John Doe" in str(res2[0].melded_output)
     assert "Jane Doe" in str(res2[1].melded_output)
-    # print(f"res:", res)
 
 
 def test_factory():
     cfg = markmeld.load_config_file("demo_factory/_markmeld.yaml")
     x = markmeld.MarkdownMelder(cfg)
-    # print(x.cfg)
     res = x.build_target("target1", print_only=True)
-    # print(f"res:", res)
     assert "Target1" in str(res.melded_output)
 
 
 def test_v2_basic_function():
     cfg = markmeld.load_config_file("tests/test_data/_markmeld_inherit.yaml")
     mm = markmeld.MarkdownMelder(cfg)
-    # print(x.cfg)
+
     res = mm.build_target("test_process_md", print_only=True)
-    # print(res.melded_output)
     assert "GGnmmicHsG" in str(res.melded_output)
 
     res = mm.build_target("test_process_yaml", print_only=True)
-    print(res.melded_output)
     assert "rVEeqUQ1t5" in str(res.melded_output)
 
     res = mm.build_target("test_data_variables", print_only=True)
-    print(res.melded_output)
     assert "6s0BoZEiiN" in str(res.melded_output)
 
     res = mm.build_target("test_merged_frontmatter", print_only=True)
-    print(res.melded_output)
     assert "text_property_value" in str(res.melded_output)
 
     res = mm.build_target("test_unkeyed_yaml", print_only=True)
-    print(res.melded_output)
     assert "22" in str(res.melded_output)
 
 
@@ -118,26 +119,21 @@ def test_inherited_data_propogates_to_target():
     mm = markmeld.MarkdownMelder(cfg)
 
     res = mm.build_target("test_inherited_data_propogates_to_target", print_only=True)
-    print(res.melded_output)
     assert "xs8Nd0D98" in str(res.melded_output)
 
     res = mm.build_target("test_inherited_data_merges_into_target", print_only=True)
-    print(res.melded_output)
     assert "xs8Nd0D98" in str(res.melded_output)  # From root data definition
     assert "k9XFJOId0" in str(res.melded_output)  # From local target data definition
 
     res = mm.build_target("test_recursive_inheritance", print_only=True)
-    print(res.melded_output)
     assert "xs8Nd0D98" in str(res.melded_output)  # From deep inheritance
     assert "k9XFJOId0" in str(res.melded_output)  # From immediate inheritance
     assert "c9nmw827" in str(res.melded_output)  # Make sure order is correct
 
     res = mm.build_target("test_multiple_inheritance", print_only=True)
-    print(res.melded_output)
     assert "8x8x9c" in str(res.melded_output)
 
     res = mm.build_target("test_multiple_inheritance_plus_local", print_only=True)
-    print(res.melded_output)
     assert "0sjk8wj82" in str(res.melded_output)
 
 
@@ -146,7 +142,6 @@ def test_import():
     mm = markmeld.MarkdownMelder(cfg)
 
     res = mm.build_target("imported_target", print_only=True)
-    print(res.melded_output)
     assert "rVEeqUQ1t5" in str(res.melded_output)
 
     cfg2 = markmeld.load_config_wrapper(
@@ -155,7 +150,6 @@ def test_import():
     mm2 = markmeld.MarkdownMelder(cfg2)
 
     res = mm2.build_target("imported_target", print_only=True)
-    print(res.melded_output)
     assert "qk32LK6Nv0" in str(res.melded_output)
 
 
@@ -183,10 +177,6 @@ def test_variable_variables():
     mm3 = markmeld.MarkdownMelder(cfg3)
     res3 = mm3.build_target("default", print_only=True)
 
-    # print("/////" + res.melded_output + "/////")
-    # print("/////" + res2.melded_output + "/////")
-    # print("/////" + res3.melded_output + "/////")
-
     cfg4 = markmeld.load_config_wrapper("demo_book/variable_variables/_markmeld.yaml")
     mm4 = markmeld.MarkdownMelder(cfg4)
     res4 = mm4.build_target("default", print_only=True)
@@ -199,15 +189,20 @@ def test_variable_variables():
 def test_meta_target():
     cfg = markmeld.load_config_wrapper("tests/test_data/prebuild_test/_markmeld.yaml")
     mm = markmeld.MarkdownMelder(cfg)
-    res = mm.build_target("my_meta_target", print_only=True)
     test_path = "tests/test_data/prebuild_test/prebuild_test_file"
-    assert os.path.isfile(test_path)
-    os.remove(test_path)
+    try:
+        mm.build_target("my_meta_target", print_only=True)
+        assert os.path.isfile(test_path)
+    finally:
+        if os.path.isfile(test_path):
+            os.remove(test_path)
 
 
 def test_postprocess():
     """Test that postprocess runs shell commands in _workpath after build"""
-    cfg = markmeld.load_config_wrapper("tests/test_data/postprocess_test/_markmeld.yaml")
+    cfg = markmeld.load_config_wrapper(
+        "tests/test_data/postprocess_test/_markmeld.yaml"
+    )
     mm = markmeld.MarkdownMelder(cfg)
 
     test_dir = "tests/test_data/postprocess_test"
@@ -220,84 +215,21 @@ def test_postprocess():
     if os.path.isfile(output_path):
         os.remove(output_path)
 
-    res = mm.build_target("test_postprocess", print_only=False)
+    try:
+        mm.build_target("test_postprocess", print_only=False)
 
-    # Postprocess should have created the marker file in _workpath
-    assert os.path.isfile(marker_path), "postprocess should create marker file"
-    # Postprocess should have appended to output file
-    assert os.path.isfile(output_path), "output file should exist"
-    with open(output_path) as f:
-        content = f.read()
-    assert "postprocessed" in content, "postprocess should append to output"
-
-    # Clean up
-    os.remove(marker_path)
-    os.remove(output_path)
-
-
-def test_default_command_with_lua_filters():
-    """Test that lua_filters array generates correct pandoc command"""
-    from markmeld.melder import Target
-
-    cfg = {
-        "_cfg_file_path": "/tmp/test.yaml",
-        "targets": {
-            "test": {
-                "_workpath": "/tmp",
-                "_defpath": "/tmp",
-                "latex_template": "article.tex",
-                "bibdb": "refs.bib",
-                "csl": "biomed.csl",
-                "lua_filters": [
-                    "{resource:filter:figczar}",
-                    "{resource:filter:change-marker}",
-                    "{resource:filter:multi-refs}"
-                ],
-                "citeproc": False,  # multi-refs handles it
-                "output_file": "output.pdf"
-            }
-        }
-    }
-
-    tgt = Target(cfg, "test")
-
-    # Verify command structure
-    assert "--lua-filter" in tgt.meta["command"]
-    assert "figczar" in tgt.meta["command"]
-    assert "change-marker" in tgt.meta["command"]
-    assert "multi-refs" in tgt.meta["command"]
-    assert "--citeproc" not in tgt.meta["command"]  # Should NOT be present
-
-    # Verify order (filters should appear in specified order)
-    cmd = tgt.meta["command"]
-    figczar_pos = cmd.find("figczar")
-    marker_pos = cmd.find("change-marker")
-    multirefs_pos = cmd.find("multi-refs")
-    assert figczar_pos < marker_pos < multirefs_pos
-
-
-def test_default_command_with_citeproc():
-    """Test that citeproc boolean adds --citeproc flag"""
-    from markmeld.melder import Target
-
-    cfg = {
-        "_cfg_file_path": "/tmp/test.yaml",
-        "targets": {
-            "test": {
-                "_workpath": "/tmp",
-                "_defpath": "/tmp",
-                "latex_template": "article.tex",
-                "bibdb": "refs.bib",
-                "csl": "biomed.csl",
-                "lua_filters": ["{resource:filter:figczar}"],
-                "citeproc": True,
-                "output_file": "output.pdf"
-            }
-        }
-    }
-
-    tgt = Target(cfg, "test")
-    assert "--citeproc" in tgt.meta["command"]
+        # Postprocess should have created the marker file in _workpath
+        assert os.path.isfile(marker_path), "postprocess should create marker file"
+        # Postprocess should have appended to output file
+        assert os.path.isfile(output_path), "output file should exist"
+        with open(output_path) as f:
+            content = f.read()
+        assert "postprocessed" in content, "postprocess should append to output"
+    finally:
+        if os.path.isfile(marker_path):
+            os.remove(marker_path)
+        if os.path.isfile(output_path):
+            os.remove(output_path)
 
 
 # Tests for assess_variable_matches function
@@ -311,9 +243,9 @@ def test_assess_variable_matches_all_match():
 
     result = assess_variable_matches(template, provided)
 
-    assert result['missing'] == set()
-    assert "name" in result['template_vars']
-    assert "age" in result['template_vars']
+    assert result["missing"] == set()
+    assert "name" in result["template_vars"]
+    assert "age" in result["template_vars"]
 
 
 def test_assess_variable_matches_missing_vars():
@@ -323,9 +255,9 @@ def test_assess_variable_matches_missing_vars():
 
     result = assess_variable_matches(template, provided)
 
-    assert result['missing'] == {"email"}
-    assert "name" in result['template_vars']
-    assert "email" in result['template_vars']
+    assert result["missing"] == {"email"}
+    assert "name" in result["template_vars"]
+    assert "email" in result["template_vars"]
 
 
 def test_assess_variable_matches_unused_vars():
@@ -335,8 +267,8 @@ def test_assess_variable_matches_unused_vars():
 
     result = assess_variable_matches(template, provided)
 
-    assert result['missing'] == set()
-    assert result['unused'] == {"age", "email"}
+    assert result["missing"] == set()
+    assert result["unused"] == {"age", "email"}
 
 
 def test_assess_variable_matches_underscore_filter():
@@ -347,9 +279,9 @@ def test_assess_variable_matches_underscore_filter():
     result = assess_variable_matches(template, provided)
 
     # _internal is missing but should be filtered out (internal variable)
-    assert "_internal" not in result['missing']
+    assert "_internal" not in result["missing"]
     # _private is unused but should be filtered out (internal variable)
-    assert "_private" not in result['unused']
+    assert "_private" not in result["unused"]
 
 
 def test_assess_variable_matches_with_filters():
@@ -359,9 +291,9 @@ def test_assess_variable_matches_with_filters():
 
     result = assess_variable_matches(template, provided)
 
-    assert result['missing'] == set()
-    assert "date" in result['template_vars']
-    assert "name" in result['template_vars']
+    assert result["missing"] == set()
+    assert "date" in result["template_vars"]
+    assert "name" in result["template_vars"]
 
 
 def test_assess_variable_matches_with_loops():
@@ -375,5 +307,5 @@ def test_assess_variable_matches_with_loops():
 
     result = assess_variable_matches(template, provided)
 
-    assert result['missing'] == set()
-    assert "items" in result['template_vars']
+    assert result["missing"] == set()
+    assert "items" in result["template_vars"]

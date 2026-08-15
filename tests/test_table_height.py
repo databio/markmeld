@@ -6,34 +6,51 @@ Ensures the height formula:
 2. Doesn't overshoot (not more than 25% taller than minimum needed)
 """
 
+import shutil
 import pytest
 import pandas as pd
 import tempfile
 import subprocess
 from pathlib import Path
 
+try:
+    import weasyprint  # noqa: F401
+
+    WEASYPRINT_AVAILABLE = True
+except ImportError:
+    WEASYPRINT_AVAILABLE = False
+
+PDFINFO_AVAILABLE = shutil.which("pdfinfo") is not None
+
+pytestmark = pytest.mark.skipif(
+    not (WEASYPRINT_AVAILABLE and PDFINFO_AVAILABLE),
+    reason="weasyprint and/or pdfinfo not available",
+)
+
 
 def get_page_count(pdf_path: str) -> int:
     """Get number of pages in PDF."""
-    result = subprocess.run(['pdfinfo', pdf_path], capture_output=True, text=True)
-    for line in result.stdout.split('\n'):
-        if 'Pages:' in line:
-            return int(line.split(':')[1].strip())
+    result = subprocess.run(["pdfinfo", pdf_path], capture_output=True, text=True)
+    for line in result.stdout.split("\n"):
+        if "Pages:" in line:
+            return int(line.split(":")[1].strip())
     return 0
 
 
-def render_table_pdf(df: pd.DataFrame, font_size_pt: float, height_mm: float, output_path: str):
+def render_table_pdf(
+    df: pd.DataFrame, font_size_pt: float, height_mm: float, output_path: str
+):
     """Render DataFrame to PDF with specified height."""
     from weasyprint import HTML
 
-    css = f'''<style>
+    css = f"""<style>
       @page {{ size: 174mm {height_mm:.2f}mm; margin: 0; }}
       body {{ font-family: Helvetica, Arial, sans-serif; font-size: {font_size_pt}pt; margin: 2mm; }}
       table {{ border-collapse: collapse; width: 100%; table-layout: fixed; }}
       th, td {{ border: 0; padding: 1px 3px; }}
       th {{ background-color: #ccc; font-weight: bold; }}
       tr:nth-child(even) {{ background-color: #f2f2f2; }}
-    </style>'''
+    </style>"""
 
     html_content = css + df.to_html(index=False, escape=True)
     HTML(string=html_content).write_pdf(output_path)
@@ -43,7 +60,7 @@ def find_minimum_height(df: pd.DataFrame, font_size_pt: float) -> float:
     """Binary search to find minimum height that fits on 1 page."""
     low, high = 10.0, 500.0
 
-    with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as f:
+    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
         temp_path = f.name
 
     try:
@@ -61,20 +78,23 @@ def find_minimum_height(df: pd.DataFrame, font_size_pt: float) -> float:
 
 def create_test_dataframe(n_rows: int) -> pd.DataFrame:
     """Create a test DataFrame with specified number of rows."""
-    return pd.DataFrame({
-        'Column A': [f'Row {i}' for i in range(n_rows)],
-        'Column B': [i * 10 for i in range(n_rows)],
-        'Column C': [f'Data {i}' for i in range(n_rows)],
-    })
+    return pd.DataFrame(
+        {
+            "Column A": [f"Row {i}" for i in range(n_rows)],
+            "Column B": [i * 10 for i in range(n_rows)],
+            "Column C": [f"Data {i}" for i in range(n_rows)],
+        }
+    )
 
 
+@pytest.mark.slow
 class TestTableHeightCalculation:
     """Test suite for table height calculation."""
 
     REPRESENTATIVE_CASES = [
-        (6, 6),    # small table, small font
-        (6, 18),   # small table, large font
-        (60, 6),   # large table, small font
+        (6, 6),  # small table, small font
+        (6, 18),  # small table, large font
+        (60, 6),  # large table, small font
         (60, 18),  # large table, large font
     ]
     MAX_OVERSHOOT_PERCENT = 25  # Maximum allowed overshoot
@@ -83,6 +103,7 @@ class TestTableHeightCalculation:
     def figure_converter(self):
         """Create FigureConverter instance."""
         from markmeld.google_drive import FigureConverter
+
         return FigureConverter(cache_manager=None)
 
     @pytest.mark.parametrize("n_rows,font_size", REPRESENTATIVE_CASES)
@@ -94,7 +115,7 @@ class TestTableHeightCalculation:
         # Get calculated height from our formula
         calculated_height = figure_converter._guess_pdf_height_mm(total_rows, font_size)
 
-        with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as f:
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
             output_path = f.name
 
         try:
@@ -129,24 +150,33 @@ class TestTableHeightCalculation:
         )
 
 
+@pytest.mark.slow
 class TestRealisticContent:
     """Test with realistic content that causes text wrapping."""
 
     def create_realistic_dataframe(self, n_rows: int) -> pd.DataFrame:
         """Create DataFrame with long content similar to real CSVs."""
-        return pd.DataFrame({
-            'sample_name': [f'Sample_name_with_long_prefix_{i:03d}' for i in range(n_rows)],
-            'common_name': ['hg38' for _ in range(n_rows)],
-            'authority': ['institution' for _ in range(n_rows)],
-            'description': [f'This is a longer description that will wrap to multiple lines number {i}' for i in range(n_rows)],
-            'digest': ['ABC123DEF456GHI789JKL012MNO345PQR' for _ in range(n_rows)],
-            'count': [1234 for _ in range(n_rows)],
-        })
+        return pd.DataFrame(
+            {
+                "sample_name": [
+                    f"Sample_name_with_long_prefix_{i:03d}" for i in range(n_rows)
+                ],
+                "common_name": ["hg38" for _ in range(n_rows)],
+                "authority": ["institution" for _ in range(n_rows)],
+                "description": [
+                    f"This is a longer description that will wrap to multiple lines number {i}"
+                    for i in range(n_rows)
+                ],
+                "digest": ["ABC123DEF456GHI789JKL012MNO345PQR" for _ in range(n_rows)],
+                "count": [1234 for _ in range(n_rows)],
+            }
+        )
 
     @pytest.fixture
     def figure_converter(self):
         """Create FigureConverter instance."""
         from markmeld.google_drive import FigureConverter
+
         return FigureConverter(cache_manager=None)
 
     @pytest.mark.parametrize("n_rows", [10, 60])
@@ -161,7 +191,7 @@ class TestRealisticContent:
             total_rows, font_size, df=df, page_width_mm=174
         )
 
-        with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as f:
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
             output_path = f.name
 
         try:
@@ -197,7 +227,3 @@ class TestRealisticContent:
             f"Overshoot too large: {overshoot_percent:.1f}% > 5%. "
             f"Rows={n_rows}, calculated={calculated_height:.1f}mm, minimum={min_height:.1f}mm"
         )
-
-
-if __name__ == '__main__':
-    pytest.main([__file__, '-v'])

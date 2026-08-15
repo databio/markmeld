@@ -78,3 +78,6 @@ __pycache__/
 hello_looper-master*
 
 plans/*
+
+# untracked test residue
+test_cache/

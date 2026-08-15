@@ -16,10 +16,10 @@ from markmeld.google_drive.markdown_clean import (
     check_and_fix_latex_incompatible_chars,
 )
 
-
 # ============================================================
 # ensure_blank_lines_before_headings
 # ============================================================
+
 
 class TestEnsureBlankLinesBeforeHeadings:
     """Tests for the heading blank line fix.
@@ -28,30 +28,34 @@ class TestEnsureBlankLinesBeforeHeadings:
     causing markdown parsers to render them inline instead of as headings.
     """
 
-    def test_missing_blank_line_before_h1(self):
-        md = "Some paragraph text.\n# Heading"
-        result = ensure_blank_lines_before_headings(md)
-        assert result == "Some paragraph text.\n\n# Heading"
+    @pytest.mark.parametrize(
+        "md, expected",
+        [
+            ("Some paragraph text.\n# Heading", "Some paragraph text.\n\n# Heading"),
+            ("End of paragraph.\n## Section", "End of paragraph.\n\n## Section"),
+            (
+                "End of paragraph.\n### Subsection",
+                "End of paragraph.\n\n### Subsection",
+            ),
+        ],
+    )
+    def test_missing_blank_line_before_heading(self, md, expected):
+        assert ensure_blank_lines_before_headings(md) == expected
 
-    def test_missing_blank_line_before_h2(self):
-        md = "End of paragraph.\n## Section"
-        result = ensure_blank_lines_before_headings(md)
-        assert result == "End of paragraph.\n\n## Section"
-
-    def test_missing_blank_line_before_h3(self):
-        md = "End of paragraph.\n### Subsection"
-        result = ensure_blank_lines_before_headings(md)
-        assert result == "End of paragraph.\n\n### Subsection"
-
-    def test_already_has_blank_line(self):
-        md = "Some text.\n\n# Heading"
-        result = ensure_blank_lines_before_headings(md)
-        assert result == md
-
-    def test_heading_at_start_of_document(self):
-        md = "# Title\nSome text."
-        result = ensure_blank_lines_before_headings(md)
-        assert result == md
+    @pytest.mark.parametrize(
+        "md",
+        [
+            "Some text.\n\n# Heading",
+            "# Title\nSome text.",
+            "# Methods\n\n## Components\n\n### Overview",
+            "Text.\n\n# Heading\n\n## Sub",
+            "Just a paragraph.\nAnother line.",
+            "Text.\n\n\n# Heading",
+            "",
+        ],
+    )
+    def test_leaves_input_unchanged(self, md):
+        assert ensure_blank_lines_before_headings(md) == md
 
     def test_consecutive_headings_no_blank_lines(self):
         """Google Docs often outputs consecutive headings without blanks."""
@@ -59,16 +63,11 @@ class TestEnsureBlankLinesBeforeHeadings:
         result = ensure_blank_lines_before_headings(md)
         assert result == "# Methods\n\n## Components\n\n### Overview"
 
-    def test_consecutive_headings_already_spaced(self):
-        md = "# Methods\n\n## Components\n\n### Overview"
-        result = ensure_blank_lines_before_headings(md)
-        assert result == md
-
     def test_figure_then_heading_no_blank(self):
         """Real-world pattern: figure reference immediately before heading."""
-        md = "![Figure 1](fig/fig01.svg){fullwidth=\"t\"}\n## Results"
+        md = '![Figure 1](fig/fig01.svg){fullwidth="t"}\n## Results'
         result = ensure_blank_lines_before_headings(md)
-        assert result == "![Figure 1](fig/fig01.svg){fullwidth=\"t\"}\n\n## Results"
+        assert result == '![Figure 1](fig/fig01.svg){fullwidth="t"}\n\n## Results'
 
     def test_long_paragraph_then_heading(self):
         """Reproduces the actual bug from the sequence collections paper."""
@@ -84,20 +83,6 @@ class TestEnsureBlankLinesBeforeHeadings:
             "\n### Existing and planned implementations"
         )
 
-    def test_does_not_add_extra_blank_lines(self):
-        """Should not add blanks if one already exists."""
-        md = "Text.\n\n# Heading\n\n## Sub"
-        result = ensure_blank_lines_before_headings(md)
-        assert result == md
-
-    def test_empty_input(self):
-        assert ensure_blank_lines_before_headings("") == ""
-
-    def test_no_headings(self):
-        md = "Just a paragraph.\nAnother line."
-        result = ensure_blank_lines_before_headings(md)
-        assert result == md
-
     def test_hash_in_non_heading_context(self):
         """Lines starting with # inside code blocks shouldn't be affected,
         but since we don't track code block state, this is a known limitation.
@@ -107,68 +92,59 @@ class TestEnsureBlankLinesBeforeHeadings:
         # It will add a blank line — acceptable since outside code blocks
         assert "\n\n# this is a comment" in result
 
-    def test_multiple_blank_lines_preserved(self):
-        """Don't collapse existing multiple blank lines."""
-        md = "Text.\n\n\n# Heading"
-        result = ensure_blank_lines_before_headings(md)
-        # Last line before heading is empty, so no insertion needed
-        assert result == md
-
 
 # ============================================================
 # clean_escape_characters
 # ============================================================
 
+
 class TestCleanEscapeCharacters:
-    def test_removes_bracket_escapes(self):
-        assert "[]" in clean_escape_characters("\\[\\]")
-
-    def test_removes_underscore_escape(self):
-        assert "some_var" in clean_escape_characters("some\\_var")
-
-    def test_removes_paren_escapes(self):
-        result = clean_escape_characters("\\(text\\)")
-        assert result == "(text)"
-
-    def test_removes_star_escapes(self):
-        assert clean_escape_characters("\\*bold\\*") == "*bold*"
-
-    def test_preserves_latex_commands(self):
-        """Double backslash before LaTeX commands should become single."""
-        result = clean_escape_characters("\\\\alpha")
-        assert result == "\\alpha"
-
-    def test_preserves_latex_braces(self):
-        result = clean_escape_characters("\\\\{x\\\\}")
-        assert result == "\\{x\\}"
-
-    def test_mixed_escapes(self):
-        md = "See \\[Figure 1\\] for \\*details\\*"
-        result = clean_escape_characters(md)
-        assert result == "See [Figure 1] for *details*"
+    @pytest.mark.parametrize(
+        "md, expected",
+        [
+            ("\\[\\]", "[]"),
+            ("some\\_var", "some_var"),
+            ("\\(text\\)", "(text)"),
+            ("\\*bold\\*", "*bold*"),
+            # Double backslash before a LaTeX command/brace collapses to single,
+            # so LaTeX escapes survive the markdown-escape cleanup.
+            ("\\\\alpha", "\\alpha"),
+            ("\\\\{x\\\\}", "\\{x\\}"),
+            ("See \\[Figure 1\\] for \\*details\\*", "See [Figure 1] for *details*"),
+        ],
+    )
+    def test_clean_escape_characters(self, md, expected):
+        assert clean_escape_characters(md) == expected
 
 
 # ============================================================
 # remove_embedded_images
 # ============================================================
 
+
 class TestRemoveEmbeddedImages:
-    def test_removes_data_uri_reference(self):
-        md = "[image1]: data:image/png;base64,abc123\nSome text."
+    @pytest.mark.parametrize(
+        "md, removed, preserved",
+        [
+            (
+                "[image1]: data:image/png;base64,abc123\nSome text.",
+                "data:",
+                "Some text.",
+            ),
+            ("![][image1]\nText after.", "image1", "Text after."),
+        ],
+    )
+    def test_removes_reference_but_preserves_trailing_text(
+        self, md, removed, preserved
+    ):
         result = remove_embedded_images(md)
-        assert "data:" not in result
-        assert "Some text." in result
+        assert removed not in result
+        assert preserved in result
 
     def test_removes_inline_data_uri(self):
         md = "![alt](data:image/png;base64,abc123)"
         result = remove_embedded_images(md)
         assert "data:" not in result
-
-    def test_removes_image_references(self):
-        md = "![][image1]\nText after."
-        result = remove_embedded_images(md)
-        assert "image1" not in result
-        assert "Text after." in result
 
     def test_preserves_file_images(self):
         """File-based images (not data URIs) should be preserved."""
@@ -186,18 +162,18 @@ class TestRemoveEmbeddedImages:
 # strip_bold_from_headings
 # ============================================================
 
+
 class TestStripBoldFromHeadings:
-    def test_removes_bold_from_h1(self):
-        result = strip_bold_from_headings("# **Bold Title**")
-        assert result == "# Bold Title"
-
-    def test_removes_bold_from_h2(self):
-        result = strip_bold_from_headings("## **Section Name**")
-        assert result == "## Section Name"
-
-    def test_removes_bold_from_h3(self):
-        result = strip_bold_from_headings("### **Subsection**")
-        assert result == "### Subsection"
+    @pytest.mark.parametrize(
+        "md, expected",
+        [
+            ("# **Bold Title**", "# Bold Title"),
+            ("## **Section Name**", "## Section Name"),
+            ("### **Subsection**", "### Subsection"),
+        ],
+    )
+    def test_removes_bold_from_heading(self, md, expected):
+        assert strip_bold_from_headings(md) == expected
 
     def test_preserves_non_heading_bold(self):
         md = "This is **bold** text in a paragraph."
@@ -219,6 +195,7 @@ class TestStripBoldFromHeadings:
 # replace_svg_extensions
 # ============================================================
 
+
 class TestReplaceSvgExtensions:
     def test_replaces_svg_with_pdf(self):
         md = "![Figure](fig/image.svg)"
@@ -232,14 +209,14 @@ class TestReplaceSvgExtensions:
         assert "b.pdf" in result
         assert ".svg" not in result
 
-    def test_preserves_non_svg_images(self):
-        md = "![Figure](fig/image.png)"
-        result = replace_svg_extensions(md)
-        assert result == md
-
-    def test_preserves_svg_in_text(self):
-        """SVG mentioned in text (not image syntax) should not change."""
-        md = "The file format is .svg for vectors."
+    @pytest.mark.parametrize(
+        "md",
+        [
+            "![Figure](fig/image.png)",
+            "The file format is .svg for vectors.",
+        ],
+    )
+    def test_leaves_non_svg_syntax_unchanged(self, md):
         result = replace_svg_extensions(md)
         assert result == md
 
@@ -256,77 +233,49 @@ class TestReplaceSvgExtensions:
 # check_and_fix_latex_incompatible_chars
 # ============================================================
 
+
 class TestLatexIncompatibleChars:
-    def test_smart_quotes_replaced(self):
-        result = check_and_fix_latex_incompatible_chars("\u2018hello\u2019")
-        assert result == "'hello'"
-
-    def test_double_smart_quotes_replaced(self):
-        result = check_and_fix_latex_incompatible_chars("\u201Chello\u201D")
-        assert result == '"hello"'
-
-    def test_en_dash(self):
-        result = check_and_fix_latex_incompatible_chars("pages 1\u20135")
-        assert result == "pages 1--5"
-
-    def test_em_dash(self):
-        result = check_and_fix_latex_incompatible_chars("word\u2014word")
-        assert result == "word---word"
-
-    def test_ellipsis(self):
-        result = check_and_fix_latex_incompatible_chars("wait\u2026")
-        assert result == "wait..."
-
-    def test_vertical_tab(self):
-        """The bug that broke the sequence collections manuscript."""
-        result = check_and_fix_latex_incompatible_chars("before\x0bafter")
-        assert result == "before\nafter"
-
-    def test_no_break_space(self):
-        result = check_and_fix_latex_incompatible_chars("hello\u00A0world")
-        assert result == "hello world"
-
-    def test_zero_width_space_removed(self):
-        result = check_and_fix_latex_incompatible_chars("hel\u200Blo")
-        assert result == "hello"
-
-    def test_greek_letters(self):
-        result = check_and_fix_latex_incompatible_chars("\u03B1 and \u03B2")
-        assert "$\\alpha$" in result
-        assert "$\\beta$" in result
-
-    def test_degree_sign(self):
-        result = check_and_fix_latex_incompatible_chars("90\u00B0")
-        assert "$^\\circ$" in result
-
-    def test_subscripts(self):
-        result = check_and_fix_latex_incompatible_chars("H\u2082O")
-        assert "$_2$" in result
-
-    def test_superscripts(self):
-        result = check_and_fix_latex_incompatible_chars("m\u00B2")
-        assert "$^2$" in result
-
-    def test_arrows(self):
-        result = check_and_fix_latex_incompatible_chars("A \u2192 B")
-        assert "$\\rightarrow$" in result
-
-    def test_plain_ascii_unchanged(self):
-        md = "Just plain ASCII text with numbers 123 and symbols !@#."
-        assert check_and_fix_latex_incompatible_chars(md) == md
-
-    def test_multiple_replacements_in_one_string(self):
-        md = "The \u03B1-value\u2014ranging from 1\u20135\u2014was \u2248 0.05"
-        result = check_and_fix_latex_incompatible_chars(md)
-        assert "$\\alpha$" in result
-        assert "---" in result
-        assert "--" in result
-        assert "~" in result
+    # (input, expected) -- one row per problematic character, plus a few
+    # "stays unchanged" and "multiple replacements at once" cases.
+    @pytest.mark.parametrize(
+        "md, expected",
+        [
+            ("\u2018hello\u2019", "'hello'"),
+            ("\u201chello\u201d", '"hello"'),
+            ("pages 1\u20135", "pages 1--5"),
+            ("word\u2014word", "word---word"),
+            ("wait\u2026", "wait..."),
+            ("before\x0bafter", "before\nafter"),  # broke the seq. collections paper
+            ("hello\u00a0world", "hello world"),
+            ("hel\u200blo", "hello"),
+            ("\u03b1 and \u03b2", "$\\alpha$ and $\\beta$"),
+            ("90\u00b0", "90$^\\circ$"),
+            ("H\u2082O", "H$_2$O"),
+            ("m\u00b2", "m$^2$"),
+            ("A \u2192 B", "A $\\rightarrow$ B"),
+            ("\u2010", "-"),
+            ("\u00b1", "+/-"),
+            ("Just ASCII 123 and symbols !@#.", "Just ASCII 123 and symbols !@#."),
+            ("", ""),
+            (
+                "Text with  spaces\tand\ttabs\nand newlines",
+                "Text with  spaces\tand\ttabs\nand newlines",
+            ),
+            ("   Multiple spaces ", "   Multiple spaces "),
+            (
+                "The \u03b1-value\u2014ranging from 1\u20135\u2014was \u2248 0.05",
+                "The $\\alpha$-value---ranging from 1--5---was ~ 0.05",
+            ),
+        ],
+    )
+    def test_char_replacement(self, md, expected):
+        assert check_and_fix_latex_incompatible_chars(md) == expected
 
 
 # ============================================================
 # clean_markdown (integration)
 # ============================================================
+
 
 class TestCleanMarkdownIntegration:
     def test_all_steps_applied(self):
@@ -334,7 +283,7 @@ class TestCleanMarkdownIntegration:
         md = (
             "# **Introduction**\n"
             "This is a paragraph with \\[escaped brackets\\] "
-            "and smart quotes \u201Clike this\u201D.\n"
+            "and smart quotes “like this”.\n"
             "## **Methods**\n"
             "We used the \\*standard\\* approach."
         )
@@ -345,8 +294,8 @@ class TestCleanMarkdownIntegration:
         assert "\\[" not in result
         assert "[escaped brackets]" in result
         # Smart quotes replaced
-        assert "\u201C" not in result
-        assert "\u201D" not in result
+        assert "“" not in result
+        assert "”" not in result
         # Blank line before ## Methods
         assert "\n\n## Methods" in result
 
@@ -354,7 +303,7 @@ class TestCleanMarkdownIntegration:
         """The exact pattern that caused the original bug."""
         md = (
             "End of paragraph (Figure 3E).\n"
-            "![Caption](fig/fig07.svg){fullwidth=\"t\"}\n"
+            '![Caption](fig/fig07.svg){fullwidth="t"}\n'
             "## Implementations\n"
             "### Existing implementations\n"
             "Several implementations exist."
