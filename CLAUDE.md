@@ -152,11 +152,33 @@ authormark: bkb52l34jb523jk5bkdbj3        # a capability slug
 ```
 
 At build time, `MarkdownMelder.preprocess_authormark` fetches the server-rendered
-markmeld block and injects its top-level keys (`authors`, `affiliations`,
-`author_contributions`, `byline_latex`, `title`, `affiliations_latex`, ...) into
-the target's `data.variables`. Because `variables:` has high precedence, these
-values override any leftover inline author block — authormark is the single
-source of truth when the key is set.
+markmeld block and splits it in two:
+
+**Content keys** (`authors`, `affiliations`, `author_contributions`,
+`byline_latex`, `title`, `affiliations_latex`, ...) are merged into the target's
+`frontmatter_overrides`, which is precedence level 5 (highest). They override any
+leftover inline author block — authormark is the single source of truth when the
+key is set — and, because `frontmatter_overrides` feeds the global frontmatter,
+`title` also becomes pandoc metadata (`_global_frontmatter`), not just a Jinja
+variable. Note this beats a `title:` set in a paper's own markdown frontmatter;
+there is currently no local escape hatch short of removing the `authormark:` key.
+
+**The reserved `metadata` key** is promoted onto the target's config, so a paper
+can carry its own build settings:
+
+```yaml
+# in the authormark payload
+metadata:
+  extract_title: true
+```
+
+Only keys in `const.AUTHORMARK_ALLOWED_META_KEYS` (currently `extract_title` and
+`extract_sections`) are applied; anything else is dropped with a warning. This
+whitelist is a security boundary — `tgt.meta` is where `command`, `prebuild`, and
+`postbuild` live, and markmeld runs those as subprocesses, so a remote payload
+must never be able to set them. Widen the whitelist deliberately, key by key.
+Explicit local config wins: a target that already sets `extract_title` keeps its
+own value.
 
 **Base URL resolution** (highest first): `authormark_base_url` in config →
 `MM_AUTHORMARK_BASE_URL` env var → the deployed default. A bare slug is joined

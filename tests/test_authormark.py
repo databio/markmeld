@@ -20,10 +20,17 @@ httpx = pytest.importorskip("httpx")
 respx = pytest.importorskip("respx")
 
 import markmeld
-from markmeld.melder import MarkdownMelder, resolve_authormark_source
+import markmeld.melder
+from markmeld.melder import (
+    MarkdownMelder,
+    Target,
+    process_data,
+    resolve_authormark_source,
+)
 from markmeld.const import (
     AUTHORMARK_DEFAULT_BASE_URL,
     AUTHORMARK_BASE_URL_ENV,
+    EXTRACT_TITLE_KEY,
 )
 
 import logmuse
@@ -401,3 +408,180 @@ def test_end_to_end_render(cache_root):
     assert "Analytical Engine Lab" in out
     assert "(corresponding)" in out
     assert r"\author{" in out
+
+
+# --------------------------------------------------------------------------- #
+# Payload splitting: content keys vs. the reserved `metadata` block
+# --------------------------------------------------------------------------- #
+
+PAPER_TEMPLATE = os.path.join(HERE, "test_data", "authormark", "paper.jinja")
+
+
+def _stub_client(monkeypatch, payload):
+    """Make AuthormarkClient.get_markmeld_data return `payload` verbatim.
+
+    Returns the exact object passed in (not a copy), so tests can assert that
+    preprocess_authormark does not mutate a shared/cached payload.
+    """
+    import authormark_client
+
+    def _get(self, slug, use_cache=True):
+        return payload
+
+    monkeypatch.setattr(authormark_client.AuthormarkClient, "get_markmeld_data", _get)
+
+
+def _payload_with_metadata(metadata):
+    p = dict(CANNED_MARKMELD)
+    p["metadata"] = metadata
+    return p
+
+
+def _preprocessed_target(cfg, target_name="manuscript"):
+    """Run preprocess_authormark on a fresh Target and return it."""
+    mm = MarkdownMelder(cfg)
+    tgt = Target(root_cfg=cfg, target_name=target_name)
+    return mm.preprocess_authormark(tgt)
+
+
+def test_content_keys_go_to_frontmatter_overrides(cache_root, monkeypatch):
+    """Content keys land in frontmatter_overrides, not data.variables."""
+    _stub_client(monkeypatch, _payload_with_metadata({"extract_title": True}))
+    cfg = _make_config(cache_root)
+    tgt = _preprocessed_target(cfg)
+
+    overrides = tgt.meta["frontmatter_overrides"]
+    assert overrides["title"] == CANNED_MARKMELD["title"]
+    assert overrides["byline_latex"] == CANNED_MARKMELD["byline_latex"]
+    assert [a["family"] for a in overrides["authors"]] == ["Lovelace", "Babbage"]
+
+    # The old data.variables route is gone entirely.
+    variables = tgt.meta.get("data", {}).get("variables", {})
+    assert "title" not in variables
+    assert "authors" not in variables
+
+
+def test_metadata_not_leaked_into_frontmatter(cache_root, monkeypatch):
+    """`metadata` is config, not content -- it must not become frontmatter."""
+    _stub_client(monkeypatch, _payload_with_metadata({"extract_title": True}))
+    cfg = _make_config(cache_root)
+    tgt = _preprocessed_target(cfg)
+    assert "metadata" not in tgt.meta["frontmatter_overrides"]
+
+
+def test_metadata_promoted_to_target_config(cache_root, monkeypatch):
+    """`metadata: {extract_title: true}` sets the target's extract_title flag."""
+    _stub_client(monkeypatch, _payload_with_metadata({"extract_title": True}))
+    cfg = _make_config(cache_root)
+    tgt = _preprocessed_target(cfg)
+    assert tgt.meta["extract_title"] is True
+
+
+def test_local_target_config_wins_over_metadata(cache_root, monkeypatch):
+    """An explicit local extract_title is not overridden by authormark."""
+    _stub_client(monkeypatch, _payload_with_metadata({"extract_title": True}))
+    cfg = _make_config(cache_root, extra_target={"extract_title": False})
+    tgt = _preprocessed_target(cfg)
+    assert tgt.meta["extract_title"] is False
+
+
+def test_disallowed_metadata_key_is_dropped(cache_root, monkeypatch, caplog):
+    """A non-whitelisted metadata key is ignored and warned about."""
+    _stub_client(
+        monkeypatch,
+        _payload_with_metadata({"command": "rm -rf /", "extract_title": True}),
+    )
+    cfg = _make_config(cache_root)
+    tgt = _preprocessed_target(cfg)
+
+    # `command` is None in the base test config; it must not become the payload's.
+    assert tgt.meta.get("command") is None
+    assert tgt.meta["extract_title"] is True
+    assert "command" not in tgt.meta["frontmatter_overrides"]
+
+
+def test_cached_payload_is_not_mutated(cache_root, monkeypatch):
+    """preprocess_authormark copies before popping -- the cache entry survives."""
+    payload = _payload_with_metadata({"extract_title": True})
+    _stub_client(monkeypatch, payload)
+    cfg = _make_config(cache_root)
+    _preprocessed_target(cfg)
+    assert "metadata" in payload
+    assert payload["metadata"] == {"extract_title": True}
+
+
+def test_metadata_absent_is_fine(cache_root, monkeypatch):
+    """A payload with no `metadata` key still injects its content keys."""
+    _stub_client(monkeypatch, dict(CANNED_MARKMELD))
+    cfg = _make_config(cache_root)
+    tgt = _preprocessed_target(cfg)
+    assert tgt.meta["frontmatter_overrides"]["title"] == CANNED_MARKMELD["title"]
+    assert EXTRACT_TITLE_KEY not in tgt.meta
+
+
+def test_authormark_runs_before_extract_title_is_read(cache_root, monkeypatch):
+    """Ordering guard: injection happens before build_target_meta reads the flag.
+
+    If a future refactor reorders these, `extract_title` from a payload's
+    `metadata` block would be silently ignored again.
+    """
+    calls = []
+
+    real_preprocess = MarkdownMelder.preprocess_authormark
+    real_process_data = markmeld.melder.process_data
+
+    def spy_preprocess(self, tgt):
+        calls.append("preprocess_authormark")
+        return real_preprocess(self, tgt)
+
+    def spy_process_data(*args, **kwargs):
+        calls.append(("process_data", kwargs.get("extract_title")))
+        return real_process_data(*args, **kwargs)
+
+    monkeypatch.setattr(MarkdownMelder, "preprocess_authormark", spy_preprocess)
+    monkeypatch.setattr(markmeld.melder, "process_data", spy_process_data)
+    _stub_client(monkeypatch, _payload_with_metadata({"extract_title": True}))
+
+    cfg = _make_config(cache_root)
+    MarkdownMelder(cfg).build_target("manuscript", print_only=True)
+
+    assert calls[0] == "preprocess_authormark"
+    # The flag the melder actually used came from the authormark payload.
+    assert ("process_data", True) in calls
+
+
+# --------------------------------------------------------------------------- #
+# Integration: frontmatter_overrides reaches the global frontmatter
+# --------------------------------------------------------------------------- #
+
+
+def test_frontmatter_overrides_reach_global_frontmatter(cache_root):
+    """Regression guard: an override `title` shows up in pandoc frontmatter."""
+    data = process_data(
+        {"md_content": {"body": "## Introduction\n\nText.\n"}},
+        os.path.join(cache_root, "_markmeld.yaml"),
+        frontmatter_overrides={"title": "A Study of Authormark"},
+    )
+    assert "title:" in data["_global_frontmatter"]["fenced"]
+    assert data["_global_frontmatter"]["dict"]["title"] == "A Study of Authormark"
+
+
+def test_authormark_title_renders_and_h1_is_stripped(cache_root, monkeypatch):
+    """End-to-end: authormark supplies the title, extract_title strips the H1."""
+    _stub_client(monkeypatch, _payload_with_metadata({"extract_title": True}))
+    cfg = _make_config(
+        cache_root,
+        extra_target={
+            "jinja_template": PAPER_TEMPLATE,
+            "data": {
+                "md_content": {
+                    "body": "# Body Heading Title\n\n## Introduction\n\nText.\n"
+                }
+            },
+        },
+    )
+    out = MarkdownMelder(cfg).build_target("manuscript", print_only=True).melded_output
+
+    assert "title: A Study of Authormark" in out
+    assert "# Body Heading Title" not in out
+    assert "## Introduction" in out

@@ -21,3 +21,13 @@ AUTHORMARK_BASE_URL_KEY = "authormark_base_url"
 AUTHORMARK_BASE_URL_ENV = "MM_AUTHORMARK_BASE_URL"
 # Default authormark host (the deployed public capability-URL API).
 AUTHORMARK_DEFAULT_BASE_URL = "https://authormark.databio.org"
+
+# Target-config keys an authormark payload's `metadata:` block may set.
+# Deliberately narrow: the payload comes from a remote service, and keys
+# like `command`, `prebuild`, and `postbuild` are executed as subprocesses.
+AUTHORMARK_ALLOWED_META_KEYS = frozenset(
+    {
+        EXTRACT_TITLE_KEY,
+        EXTRACT_SECTIONS_KEY,
+    }
+)

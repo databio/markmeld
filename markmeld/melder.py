@@ -29,6 +29,7 @@ from .const import (
     AUTHORMARK_BASE_URL_KEY,
     AUTHORMARK_BASE_URL_ENV,
     AUTHORMARK_DEFAULT_BASE_URL,
+    AUTHORMARK_ALLOWED_META_KEYS,
 )
 from .exceptions import *
 from .utilities import *
@@ -1305,15 +1306,22 @@ class MarkdownMelder:
 
         When a target (or the project root config) has an ``authormark:`` key,
         the author/affiliation/CRediT graph is fetched at build time from the
-        authormark service and merged into the target's ``data.variables`` block
-        under the same top-level names a manuscript template already uses for an
-        inline author YAML block (``authors``, ``affiliations``,
-        ``author_contributions``, ``byline_latex``, ``title``,
-        ``affiliations_latex``, ...).
+        authormark service and split into two parts:
 
-        Routing through ``variables:`` gives these keys high precedence, so when
-        ``authormark:`` is set authormark is the single source of truth and any
-        leftover inline author block is overridden.
+        - **Content keys** (``authors``, ``affiliations``,
+          ``author_contributions``, ``byline_latex``, ``title``,
+          ``affiliations_latex``, ...) are merged into the target's
+          ``frontmatter_overrides``. That is precedence level 5 (highest), so
+          when ``authormark:`` is set authormark is the single source of truth
+          and any leftover inline author block is overridden. It also makes the
+          keys part of the global frontmatter, so ``title`` reaches pandoc
+          metadata (``_global_frontmatter``) and not only Jinja variables.
+        - The reserved ``metadata`` key is promoted onto ``tgt.meta`` as target
+          config, but only for the keys named in
+          ``AUTHORMARK_ALLOWED_META_KEYS``, and only when the target does not
+          already set them (explicit local config always wins). The whitelist
+          is a security boundary: ``tgt.meta`` holds ``command``/``prebuild``/
+          ``postbuild``, which markmeld executes as subprocesses.
 
         The client's ``/modified``-based cache (a :class:`DirCache` co-located
         with the rest of markmeld's cache) keeps build-to-build fetches cheap;
@@ -1395,10 +1403,29 @@ class MarkdownMelder:
             )
             return None
 
-        # Inject directly into the data block's `variables:` (high precedence).
-        existing_data = tgt.meta.setdefault("data", {})
-        variables = existing_data.setdefault("variables", {})
-        variables.update(author_data)
+        # Split the payload: the reserved `metadata` key is target config, and
+        # everything else is author/paper content. Copy first -- `author_data`
+        # may be a live cache entry shared across targets in one build.
+        author_data = dict(author_data)
+        am_metadata = author_data.pop("metadata", None) or {}
+
+        # Content keys become frontmatter overrides (precedence level 5), which
+        # updates frontmatter_temp, vars_temp, and data all three. They stay
+        # usable as plain Jinja variables while also reaching pandoc metadata.
+        overrides = tgt.meta.setdefault("frontmatter_overrides", {})
+        overrides.update(author_data)
+
+        # The `metadata` block sets target config, restricted to a whitelist.
+        for k, v in am_metadata.items():
+            if k not in AUTHORMARK_ALLOWED_META_KEYS:
+                _LOGGER.warning(
+                    f"authormark metadata key '{k}' is not an allowed "
+                    f"target-config key; ignoring."
+                )
+                continue
+            if k in tgt.meta:  # explicit local config always wins
+                continue
+            tgt.meta[k] = v
 
         # Remove the authormark keys so meld_inputs/process_data does not
         # re-encounter them (mirrors the google_docs pop).
@@ -1407,7 +1434,8 @@ class MarkdownMelder:
 
         _LOGGER.info(
             f"MM | Injected authormark author block for slug '{slug}' "
-            f"({len(author_data)} keys) from {base_url}"
+            f"({len(author_data)} content keys, {len(am_metadata)} metadata "
+            f"keys) from {base_url}"
         )
         return tgt
 
