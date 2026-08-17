@@ -342,7 +342,8 @@ class GoogleDriveProcessor:
         output_path: Optional[Union[str, Path]] = None,
         parse_frontmatter: bool = True,
         update_figure_paths: bool = True,
-        folder_id: Optional[str] = None
+        folder_id: Optional[str] = None,
+        force_refresh: bool = False
     ) -> Any:
         """Download a Google Doc and optionally clean it and save to disk.
 
@@ -353,13 +354,17 @@ class GoogleDriveProcessor:
             parse_frontmatter: Whether to parse frontmatter.
             update_figure_paths: Whether to update SVG paths to converted PDFs.
             folder_id: Optional folder ID to search for figures (uses doc's parent if not provided).
+            force_refresh: If True, bypass the disk cache and re-download the
+                markdown fresh even when the Doc's modifiedTime is unchanged.
 
         Returns:
             frontmatter.Post object if parse_frontmatter is True,
             cleaned markdown string otherwise.
         """
         # Download the markdown (cleaned by default if clean=True)
-        markdown_content = self._download_raw_markdown(doc_id, apply_cleaning=clean)
+        markdown_content = self._download_raw_markdown(
+            doc_id, apply_cleaning=clean, force_refresh=force_refresh
+        )
         
         # Note: Cleaning is now done during caching in _download_raw_markdown
         
@@ -379,7 +384,8 @@ class GoogleDriveProcessor:
             return markdown_content
     
     def _download_raw_markdown(
-        self, doc_id: str, skip_disk_save: bool = False, apply_cleaning: bool = True
+        self, doc_id: str, skip_disk_save: bool = False, apply_cleaning: bool = True,
+        force_refresh: bool = False
     ) -> str:
         """Download markdown from Google Drive with disk caching.
 
@@ -394,6 +400,9 @@ class GoogleDriveProcessor:
             doc_id: The Google Doc ID.
             skip_disk_save: Whether to skip saving to disk.
             apply_cleaning: Whether to apply cleaning before caching.
+            force_refresh: If True, bypass the disk cache and re-download fresh
+                content even when the Doc's modifiedTime is unchanged. The
+                stored modifiedTime stamp is still updated afterward.
 
         Returns:
             Markdown content as string.
@@ -401,10 +410,13 @@ class GoogleDriveProcessor:
         # Check if document has suggestions — use Docs API path if so
         has_suggestions = self._document_has_suggestions(doc_id)
 
-        # Check disk cache
-        disk_content = self._load_from_disk(doc_id, changed=has_suggestions)
-        if disk_content is not None:
-            return disk_content
+        # Check disk cache (skipped entirely when a fresh download is forced)
+        if not force_refresh:
+            disk_content = self._load_from_disk(doc_id, changed=has_suggestions)
+            if disk_content is not None:
+                return disk_content
+        else:
+            _LOGGER.info("  force_refresh=True - bypassing disk cache, downloading fresh content")
 
         # Need to download from Google Drive. Distinguish a cache miss (no
         # cached copy yet) from an actual change since the last build.
@@ -1153,19 +1165,24 @@ class GoogleDriveProcessor:
             return None
     
     def _prepare_document_and_folder(
-        self, doc_id: str, folder_id: Optional[str]
+        self, doc_id: str, folder_id: Optional[str], force_refresh: bool = False
     ) -> Tuple[str, List, str, Dict]:
         """Prepare document content, determine folder ID, and process bibliography.
 
         Args:
             doc_id: The Google Doc ID.
             folder_id: Optional folder ID (resolved from doc parents if not provided).
+            force_refresh: If True, re-download the markdown fresh even when the
+                Doc's modifiedTime is unchanged.
 
         Returns:
             Tuple of (doc_content, figure_data, folder_id, bibliography_info).
         """
         # Download and read the document (with cleaning to remove embedded images)
-        doc_content = self.download_doc(doc_id, clean=True, parse_frontmatter=False, update_figure_paths=False)
+        doc_content = self.download_doc(
+            doc_id, clean=True, parse_frontmatter=False, update_figure_paths=False,
+            force_refresh=force_refresh
+        )
 
         # Extract figure paths with parameters
         figure_data = self.extract_figure_paths(doc_content)
@@ -1376,7 +1393,8 @@ class GoogleDriveProcessor:
         self,
         doc_id: str,
         folder_id: Optional[str] = None,
-        skip_unchanged: bool = True
+        skip_unchanged: bool = True,
+        force_refresh: bool = False
     ) -> Dict[str, Any]:
         """Process all figures and bibliography referenced in the document.
 
@@ -1391,6 +1409,9 @@ class GoogleDriveProcessor:
             doc_id: The Google Doc ID.
             folder_id: Optional folder ID (uses doc's parent if not provided).
             skip_unchanged: Whether to skip unchanged files based on MD5 checksum.
+            force_refresh: If True, re-download the source markdown fresh even
+                when the Doc's modifiedTime is unchanged (independent of
+                skip_unchanged, which governs figure re-conversion).
 
         Returns:
             Dict with 'document' (updated content), 'results' (processing summary),
@@ -1399,7 +1420,9 @@ class GoogleDriveProcessor:
         _LOGGER.info(f"Processing figures for document: {doc_id}")
 
         # Prepare document and determine folder (also processes bibliography during same download)
-        doc_content, figure_data, folder_id, bibliography_info = self._prepare_document_and_folder(doc_id, folder_id)
+        doc_content, figure_data, folder_id, bibliography_info = self._prepare_document_and_folder(
+            doc_id, folder_id, force_refresh=force_refresh
+        )
         
         # Prepare list of paths for batch fetching and optimize API calls
         figure_paths = [path for path, _ in figure_data]
