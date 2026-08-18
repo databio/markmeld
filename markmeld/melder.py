@@ -1197,8 +1197,15 @@ class MarkdownMelder:
 
             md_content = {}
 
+            # `folder_id` is a RESERVED key naming the Drive folder that holds
+            # the docs' figures/bibliography. It is NOT a document to download,
+            # so it is pulled out here and skipped in the download loop below.
+            folder_id = google_docs.get("folder_id")
+
             # Process each Google Doc
             for var_name, doc_id in google_docs.items():
+                if var_name == "folder_id":
+                    continue
                 if not doc_id:
                     _LOGGER.warning(f"Skipping empty doc_id for variable '{var_name}'")
                     md_content[var_name] = ""
