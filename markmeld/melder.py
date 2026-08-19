@@ -1228,8 +1228,9 @@ class MarkdownMelder:
                 )
                 result = gdp.process_document_figures(
                     doc_id,
-                    None,  # No folder_id needed - method will find parent folder automatically
+                    folder_id,  # reserved folder_id if given; else parent is auto-resolved
                     skip_unchanged=(not force_refresh),
+                    force_refresh=force_refresh,
                 )
 
                 # Store content using the variable name as the key
@@ -1422,7 +1423,38 @@ class MarkdownMelder:
         overrides = tgt.meta.setdefault("frontmatter_overrides", {})
         overrides.update(author_data)
 
-        # The `metadata` block sets target config, restricted to a whitelist.
+        # Generate pandoc-standard `author` and `institutions` keys from the
+        # authormark structured data so existing LaTeX templates (which iterate
+        # $for(author)$ with .name/.affiliation/.correspondence) work without
+        # modification. Only generated when the payload has `authors` and does
+        # not already provide `author`.
+        if "authors" in author_data and "author" not in author_data:
+            pandoc_authors = []
+            for a in author_data["authors"]:
+                entry = {
+                    "name": f"{a.get('given', '')} {a.get('family', '')}".strip(),
+                    "affiliation": ",".join(str(m) for m in a.get("affiliation_markers", [])),
+                }
+                if a.get("corresponding") and a.get("email"):
+                    entry["correspondence"] = a["email"]
+                if a.get("orcid"):
+                    entry["orcid"] = a["orcid"]
+                pandoc_authors.append(entry)
+            overrides["author"] = pandoc_authors
+        if "affiliations" in author_data and "institutions" not in author_data:
+            overrides["institutions"] = [
+                {"key": aff["marker"], "name": aff["name"]}
+                for aff in author_data["affiliations"]
+            ]
+
+        # The `metadata` block: `frontmatter` sub-key goes into
+        # frontmatter_overrides (safe — pandoc metadata, no whitelist needed);
+        # remaining keys set target config, restricted to a whitelist.
+        am_frontmatter = am_metadata.pop("frontmatter", None)
+        if am_frontmatter and isinstance(am_frontmatter, dict):
+            for k, v in am_frontmatter.items():
+                if k not in overrides:
+                    overrides[k] = v
         for k, v in am_metadata.items():
             if k not in AUTHORMARK_ALLOWED_META_KEYS:
                 _LOGGER.warning(
