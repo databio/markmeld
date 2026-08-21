@@ -7,6 +7,7 @@ project_summary, project_description, and references_cited must agree on numberi
 """
 
 import pytest
+
 import markmeld
 
 CFG_PATH = "tests/test_data/citation_groups/_markmeld.yaml"
@@ -52,25 +53,21 @@ class TestSuppressBibliography:
         res = mm.build_target("project_summary", print_only=True)
         output = res.melded_output
         # Should have inline citations
-        assert (
-            "[1]" in output or "[2]" in output
-        ), f"Expected inline citations: {output}"
+        assert "[1]" in output or "[2]" in output, f"Expected inline citations: {output}"
         # Should NOT have a references/bibliography section
         # Pandoc citeproc typically generates a div with id "refs"
-        assert (
-            "refs" not in output.lower() or '<div id="refs"' not in output
-        ), f"Bibliography should be suppressed in project_summary: {output}"
+        assert "refs" not in output.lower() or '<div id="refs"' not in output, (
+            f"Bibliography should be suppressed in project_summary: {output}"
+        )
 
     def test_project_description_no_bibliography(self, mm):
         """project_description output should have inline citations but NO bibliography section."""
         res = mm.build_target("project_description", print_only=True)
         output = res.melded_output
-        assert (
-            "[2]" in output or "[3]" in output
-        ), f"Expected inline citations: {output}"
-        assert (
-            "refs" not in output.lower() or '<div id="refs"' not in output
-        ), f"Bibliography should be suppressed in project_description: {output}"
+        assert "[2]" in output or "[3]" in output, f"Expected inline citations: {output}"
+        assert "refs" not in output.lower() or '<div id="refs"' not in output, (
+            f"Bibliography should be suppressed in project_description: {output}"
+        )
 
 
 class TestBibliographyOnly:
@@ -81,12 +78,12 @@ class TestBibliographyOnly:
         res = mm.build_target("references_cited", print_only=True)
         output = res.melded_output
         # Should NOT contain body text from project_summary or project_description
-        assert (
-            "foundational work" not in output
-        ), f"Body text from project_summary leaked into references_cited: {output}"
-        assert (
-            "approach is valid" not in output
-        ), f"Body text from project_description leaked into references_cited: {output}"
+        assert "foundational work" not in output, (
+            f"Body text from project_summary leaked into references_cited: {output}"
+        )
+        assert "approach is valid" not in output, (
+            f"Body text from project_description leaked into references_cited: {output}"
+        )
         # Should contain bibliography entries
         assert "Alpha" in output, f"Expected Alpha in bibliography: {output}"
         assert "Beta" in output, f"Expected Beta in bibliography: {output}"
@@ -103,25 +100,22 @@ class TestCitationOrdering:
         """
         res_summary = mm.build_target("project_summary", print_only=True)
         res_desc = mm.build_target("project_description", print_only=True)
-        res_refs = mm.build_target("references_cited", print_only=True)
+        mm.build_target("references_cited", print_only=True)
 
         summary = res_summary.melded_output
         desc = res_desc.melded_output
-        refs = res_refs.melded_output
 
         # In project_summary: Alpha before Beta
         alpha_pos = summary.find("[1]")
         beta_pos = summary.find("[2]")
-        assert (
-            alpha_pos < beta_pos
-        ), f"Alpha [1] should appear before Beta [2] in summary"
+        assert alpha_pos < beta_pos, "Alpha [1] should appear before Beta [2] in summary"
 
         # In project_description: Beta [2] before Gamma [3]
         beta_pos_desc = desc.find("[2]")
         gamma_pos_desc = desc.find("[3]")
-        assert (
-            beta_pos_desc < gamma_pos_desc
-        ), f"Beta [2] should appear before Gamma [3] in description"
+        assert beta_pos_desc < gamma_pos_desc, (
+            "Beta [2] should appear before Gamma [3] in description"
+        )
 
 
 class TestUngroupedTargetIndependent:
@@ -146,12 +140,8 @@ class TestUngroupedTargetIndependent:
         assert "Delta" in output, f"Expected Delta in bibliography: {output}"
         assert "Alpha" in output, f"Expected Alpha in bibliography: {output}"
         # Should NOT contain Beta or Gamma (not cited in this target)
-        assert (
-            "Beta" not in output
-        ), f"Unexpected Beta in budget_justification: {output}"
-        assert (
-            "Gamma" not in output
-        ), f"Unexpected Gamma in budget_justification: {output}"
+        assert "Beta" not in output, f"Unexpected Beta in budget_justification: {output}"
+        assert "Gamma" not in output, f"Unexpected Gamma in budget_justification: {output}"
 
 
 class TestCitationGroupConfig:

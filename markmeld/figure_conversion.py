@@ -12,14 +12,14 @@ import os
 import re
 import subprocess
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 _LOGGER = logging.getLogger(__name__)
 
 INKSCAPE_COMMAND = "inkscape"
 
 
-def extract_figure_paths(markdown_content: str) -> List[Tuple[str, Dict[str, Any]]]:
+def extract_figure_paths(markdown_content: str) -> list[tuple[str, dict[str, Any]]]:
     """Extract all figure paths and their parameters from markdown content.
 
     Returns:
@@ -29,10 +29,10 @@ def extract_figure_paths(markdown_content: str) -> List[Tuple[str, Dict[str, Any
     # Matches: ![alt](path){.param=value .param2="value"}
     # Alt text may contain nested [...] spans (e.g., from tracked changes)
     # Group 1 captures the alt-text (legend), group 2 the path, group 3 params.
-    inline_pattern = r'!\[((?:[^\[\]]|\[[^\]]*\])*)\]\(([^)]+)\)(\{[^}]*\})?'
+    inline_pattern = r"!\[((?:[^\[\]]|\[[^\]]*\])*)\]\(([^)]+)\)(\{[^}]*\})?"
 
     # Find reference-style images: [ref]: path
-    ref_pattern = r'^\[[^\]]+\]:\s*(.+)$'
+    ref_pattern = r"^\[[^\]]+\]:\s*(.+)$"
 
     figures = []
 
@@ -41,19 +41,19 @@ def extract_figure_paths(markdown_content: str) -> List[Tuple[str, Dict[str, Any
         path = match.group(2)
         params_str = match.group(3) if match.group(3) else ""
         params = parse_figure_parameters(params_str)
-        params['legend'] = alt.strip() if alt.strip() else None
-        params['label'] = parse_figure_label(alt)
+        params["legend"] = alt.strip() if alt.strip() else None
+        params["label"] = parse_figure_label(alt)
         figures.append((path, params))
 
     for match in re.finditer(ref_pattern, markdown_content, re.MULTILINE):
         path = match.group(1)
-        figures.append((path, {'legend': None, 'label': None}))
+        figures.append((path, {"legend": None, "label": None}))
 
     # Filter out URLs and data URIs, keep only local paths
     local_figures = [
         (path, params)
         for path, params in figures
-        if not path.startswith(('http://', 'https://', 'data:'))
+        if not path.startswith(("http://", "https://", "data:"))
     ]
 
     # Remove duplicates while preserving order
@@ -67,11 +67,11 @@ def extract_figure_paths(markdown_content: str) -> List[Tuple[str, Dict[str, Any
     return unique_figures
 
 
-def parse_figure_label(alt_text: str) -> Optional[str]:
+def parse_figure_label(alt_text: str) -> str | None:
     """Extract the figure id from a \\label{...} in the image alt-text."""
     if not alt_text:
         return None
-    m = re.search(r'\\label\{([^}]+)\}', alt_text)
+    m = re.search(r"\\label\{([^}]+)\}", alt_text)
     return m.group(1) if m else None
 
 
@@ -82,7 +82,7 @@ def parse_figure_parameters(param_string: str) -> dict:
         return params
 
     param_string = param_string.strip()
-    if param_string.startswith('{') and param_string.endswith('}'):
+    if param_string.startswith("{") and param_string.endswith("}"):
         param_string = param_string[1:-1].strip()
 
     pattern = r'([a-zA-Z0-9_-]+)=(?:"([^"]+)"|([^\s}]+))'
@@ -94,7 +94,7 @@ def parse_figure_parameters(param_string: str) -> dict:
     return params
 
 
-def update_figure_paths(markdown_content: str, path_mapping: Dict[str, str]) -> str:
+def update_figure_paths(markdown_content: str, path_mapping: dict[str, str]) -> str:
     """Replace figure paths in markdown with converted paths, preserving parameters.
 
     Args:
@@ -107,7 +107,7 @@ def update_figure_paths(markdown_content: str, path_mapping: Dict[str, str]) -> 
     updated = markdown_content
 
     # Handle paths with parameters first - preserve the parameters
-    param_pattern = r'(!\[[^\]]*\]\()([^)]+)(\))(\{[^}]*\})'
+    param_pattern = r"(!\[[^\]]*\]\()([^)]+)(\))(\{[^}]*\})"
 
     def replace_with_mapping(match):
         prefix = match.group(1)
@@ -122,9 +122,9 @@ def update_figure_paths(markdown_content: str, path_mapping: Dict[str, str]) -> 
 
     # Then handle regular path replacements for paths without parameters
     for old_path, new_path in path_mapping.items():
-        updated = updated.replace(f']({old_path})', f']({new_path})')
-        updated = updated.replace(f']: {old_path}', f']: {new_path}')
-        updated = updated.replace(f']:{old_path}', f']:{new_path}')
+        updated = updated.replace(f"]({old_path})", f"]({new_path})")
+        updated = updated.replace(f"]: {old_path}", f"]: {new_path}")
+        updated = updated.replace(f"]:{old_path}", f"]:{new_path}")
 
     return updated
 
@@ -153,11 +153,9 @@ def convert_svg(svg_path: str, output_path: Path) -> bool:
         _LOGGER.info(f"  Converting SVG to PDF: {svg_path}")
 
         env = os.environ.copy()
-        env['DISPLAY'] = ''
+        env["DISPLAY"] = ""
 
-        result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=60, env=env
-        )
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60, env=env)
 
         if result.returncode != 0:
             _LOGGER.error(f"Inkscape conversion failed (rc={result.returncode})")
@@ -169,8 +167,8 @@ def convert_svg(svg_path: str, output_path: Path) -> bool:
             _LOGGER.error(f"PDF file was not created at {output_path}")
             return False
 
-        svg_rel = '/'.join(Path(svg_path).parts[-2:])
-        out_rel = '/'.join(output_path.parts[-2:])
+        svg_rel = "/".join(Path(svg_path).parts[-2:])
+        out_rel = "/".join(output_path.parts[-2:])
         _LOGGER.info(f"  Converted: {svg_rel} -> {out_rel}")
         return True
 
@@ -186,14 +184,14 @@ def convert_svg(svg_path: str, output_path: Path) -> bool:
 
 
 DEFAULT_TABLE_PARAMS = {
-    'fig_width_mm': 174,
-    'font_size_pt': 6,
-    'tr_padding_v': 1,
-    'tr_padding_h': 3,
+    "fig_width_mm": 174,
+    "font_size_pt": 6,
+    "tr_padding_v": 1,
+    "tr_padding_h": 3,
 }
 
 
-def convert_csv(csv_path: str, output_path: Path, params: Dict[str, Any]) -> bool:
+def convert_csv(csv_path: str, output_path: Path, params: dict[str, Any]) -> bool:
     """Convert CSV to PDF using weasyprint.
 
     Args:
@@ -213,8 +211,8 @@ def convert_csv(csv_path: str, output_path: Path, params: Dict[str, Any]) -> boo
         table_params = prepare_table_parameters(params, df)
         df_to_pdf(df, str(output_path), **table_params)
 
-        csv_rel = '/'.join(Path(csv_path).parts[-2:])
-        out_rel = '/'.join(output_path.parts[-2:])
+        csv_rel = "/".join(Path(csv_path).parts[-2:])
+        out_rel = "/".join(output_path.parts[-2:])
         _LOGGER.info(f"  Converted: {csv_rel} -> {out_rel}")
         return True
 
@@ -223,7 +221,7 @@ def convert_csv(csv_path: str, output_path: Path, params: Dict[str, Any]) -> boo
         return False
 
 
-def prepare_table_parameters(params: Dict[str, Any], df: Any) -> Dict[str, Any]:
+def prepare_table_parameters(params: dict[str, Any], df: Any) -> dict[str, Any]:
     """Prepare table parameters for PDF generation.
 
     Args:
@@ -235,67 +233,71 @@ def prepare_table_parameters(params: Dict[str, Any], df: Any) -> Dict[str, Any]:
     """
     table_params = DEFAULT_TABLE_PARAMS.copy()
 
-    if 'fig_width' in params:
-        width_str = str(params['fig_width']).strip().lower()
-        if width_str == 'auto':
-            table_params['fig_width_mm'] = 'auto'
-        elif width_str.endswith('mm'):
-            table_params['fig_width_mm'] = float(width_str[:-2])
+    if "fig_width" in params:
+        width_str = str(params["fig_width"]).strip().lower()
+        if width_str == "auto":
+            table_params["fig_width_mm"] = "auto"
+        elif width_str.endswith("mm"):
+            table_params["fig_width_mm"] = float(width_str[:-2])
         else:
             try:
-                table_params['fig_width_mm'] = float(width_str)
+                table_params["fig_width_mm"] = float(width_str)
             except ValueError:
                 _LOGGER.warning(f"  Invalid width value '{params['fig_width']}', using default")
 
-    if 'font-size' in params:
-        size_str = str(params['font-size'])
-        if size_str.endswith('pt'):
-            table_params['font_size_pt'] = float(size_str[:-2])
+    if "font-size" in params:
+        size_str = str(params["font-size"])
+        if size_str.endswith("pt"):
+            table_params["font_size_pt"] = float(size_str[:-2])
         else:
-            table_params['font_size_pt'] = float(size_str)
+            table_params["font_size_pt"] = float(size_str)
 
-    if 'col-names' in params:
-        table_params['colnames'] = params['col-names'].split(',')
+    if "col-names" in params:
+        table_params["colnames"] = params["col-names"].split(",")
     else:
-        table_params['colnames'] = list(df.columns)
+        table_params["colnames"] = list(df.columns)
 
-    if 'col-widths' in params:
-        widths = params['col-widths'].split(',')
-        table_params['col_widths'] = [float(w.strip()) for w in widths]
+    if "col-widths" in params:
+        widths = params["col-widths"].split(",")
+        table_params["col_widths"] = [float(w.strip()) for w in widths]
     else:
         n_cols = len(df.columns)
-        table_params['col_widths'] = [100.0 / n_cols] * n_cols
+        table_params["col_widths"] = [100.0 / n_cols] * n_cols
 
-    if 'col-align' in params:
-        table_params['col_alignments'] = params['col-align'].split(',')
+    if "col-align" in params:
+        table_params["col_alignments"] = params["col-align"].split(",")
     else:
-        table_params['col_alignments'] = ['left'] * len(df.columns)
+        table_params["col_alignments"] = ["left"] * len(df.columns)
 
-    if 'padding-v' in params:
-        table_params['tr_padding_v'] = float(params['padding-v'])
-    if 'padding-h' in params:
-        table_params['tr_padding_h'] = float(params['padding-h'])
+    if "padding-v" in params:
+        table_params["tr_padding_v"] = float(params["padding-v"])
+    if "padding-h" in params:
+        table_params["tr_padding_h"] = float(params["padding-h"])
 
-    if 'fig_height' in params:
-        height_str = str(params['fig_height']).strip().lower()
-        if height_str == 'auto':
-            table_params['fig_height_mm'] = 'auto'
-        elif height_str.endswith('mm'):
-            table_params['fig_height_mm'] = float(height_str[:-2])
+    if "fig_height" in params:
+        height_str = str(params["fig_height"]).strip().lower()
+        if height_str == "auto":
+            table_params["fig_height_mm"] = "auto"
+        elif height_str.endswith("mm"):
+            table_params["fig_height_mm"] = float(height_str[:-2])
         else:
             try:
-                table_params['fig_height_mm'] = float(height_str)
+                table_params["fig_height_mm"] = float(height_str)
             except ValueError:
-                table_params['fig_height_mm'] = 'auto'
+                table_params["fig_height_mm"] = "auto"
     else:
-        font_size = table_params.get('font_size_pt', 6)
-        page_width = table_params.get('fig_width_mm', 174)
-        if page_width == 'auto':
+        font_size = table_params.get("font_size_pt", 6)
+        page_width = table_params.get("fig_width_mm", 174)
+        if page_width == "auto":
             page_width = 174
-        table_params['fig_height_mm'] = find_optimal_height(
-            df, table_params['col_widths'], table_params['col_alignments'],
-            page_width, font_size,
-            table_params.get('tr_padding_v', 1), table_params.get('tr_padding_h', 3)
+        table_params["fig_height_mm"] = find_optimal_height(
+            df,
+            table_params["col_widths"],
+            table_params["col_alignments"],
+            page_width,
+            font_size,
+            table_params.get("tr_padding_v", 1),
+            table_params.get("tr_padding_h", 3),
         )
         _LOGGER.info(
             f"  Auto-calculated height: {table_params['fig_height_mm']:.2f}mm "
@@ -306,8 +308,8 @@ def prepare_table_parameters(params: Dict[str, Any], df: Any) -> Dict[str, Any]:
 
 
 def build_table_css(
-    col_widths: List[float],
-    col_alignments: List[str],
+    col_widths: list[float],
+    col_alignments: list[str],
     page_width_mm: float,
     page_height_mm: float,
     font_size_pt: float,
@@ -317,13 +319,15 @@ def build_table_css(
     """Build CSS for table rendering."""
     col_css = ""
     for i, (w, align) in enumerate(zip(col_widths, col_alignments)):
-        col_css += f"th:nth-child({i+1}), td:nth-child({i+1}) {{ width: {w}%; text-align: {align}; box-sizing: border-box; }}\n"
+        col_css += f"th:nth-child({i + 1}), td:nth-child({i + 1}) {{ width: {w}%; text-align: {align}; box-sizing: border-box; }}\n"
 
     def fmt(val):
-        return 'auto' if val == 'auto' else f"{val}mm"
+        return "auto" if val == "auto" else f"{val}mm"
 
     width_css, height_css = fmt(page_width_mm), fmt(page_height_mm)
-    page_size = "auto" if width_css == 'auto' and height_css == 'auto' else f"{width_css} {height_css}"
+    page_size = (
+        "auto" if width_css == "auto" and height_css == "auto" else f"{width_css} {height_css}"
+    )
 
     return f"""<style>
       @page {{ size: {page_size}; margin: 0; }}
@@ -339,11 +343,11 @@ def build_table_css(
 def df_to_pdf(
     df: Any,
     output_file: str,
-    colnames: List[str],
-    col_widths: List[float],
-    col_alignments: List[str],
+    colnames: list[str],
+    col_widths: list[float],
+    col_alignments: list[str],
     fig_width_mm: float,
-    fig_height_mm: Optional[float] = None,
+    fig_height_mm: float | None = None,
     font_size_pt: float = 6,
     tr_padding_v: float = 1,
     tr_padding_h: float = 3,
@@ -359,15 +363,20 @@ def df_to_pdf(
         raise ValueError("Number of column alignments does not match number of columns")
 
     if fig_height_mm is None:
-        page_width = fig_width_mm if fig_width_mm != 'auto' else 174
+        page_width = fig_width_mm if fig_width_mm != "auto" else 174
         fig_height_mm = find_optimal_height(
             df, col_widths, col_alignments, page_width, font_size_pt, tr_padding_v, tr_padding_h
         )
 
     df.columns = colnames
     css = build_table_css(
-        col_widths, col_alignments, fig_width_mm, fig_height_mm,
-        font_size_pt, tr_padding_v, tr_padding_h
+        col_widths,
+        col_alignments,
+        fig_width_mm,
+        fig_height_mm,
+        font_size_pt,
+        tr_padding_v,
+        tr_padding_h,
     )
 
     _LOGGER.info(f"  Generating PDF with dimensions: {fig_width_mm}mm x {fig_height_mm}mm")
@@ -376,8 +385,8 @@ def df_to_pdf(
 
 def find_optimal_height(
     df: Any,
-    col_widths: List[float],
-    col_alignments: List[str],
+    col_widths: list[float],
+    col_alignments: list[str],
     page_width_mm: float,
     font_size_pt: float,
     tr_padding_v: float,
@@ -388,8 +397,13 @@ def find_optimal_height(
 
     def fits_on_one_page(height_mm: float) -> bool:
         css = build_table_css(
-            col_widths, col_alignments, page_width_mm, height_mm,
-            font_size_pt, tr_padding_v, tr_padding_h
+            col_widths,
+            col_alignments,
+            page_width_mm,
+            height_mm,
+            font_size_pt,
+            tr_padding_v,
+            tr_padding_h,
         )
         return len(HTML(string=css + df.to_html(index=False, escape=True)).render().pages) == 1
 
@@ -408,7 +422,7 @@ def find_optimal_height(
     return high * 1.02  # Small buffer
 
 
-def compute_params_digest(params: Dict[str, Any]) -> str:
+def compute_params_digest(params: dict[str, Any]) -> str:
     """Compute MD5 digest for a parameter dictionary."""
     sorted_params = json.dumps(params, sort_keys=True)
     return hashlib.md5(sorted_params.encode()).hexdigest()
@@ -417,13 +431,13 @@ def compute_params_digest(params: Dict[str, Any]) -> str:
 def _compute_file_md5(file_path: str) -> str:
     """Compute MD5 hash of a file's contents."""
     h = hashlib.md5()
-    with open(file_path, 'rb') as f:
-        for chunk in iter(lambda: f.read(8192), b''):
+    with open(file_path, "rb") as f:
+        for chunk in iter(lambda: f.read(8192), b""):
             h.update(chunk)
     return h.hexdigest()
 
 
-def _load_digest(digest_path: Path) -> Optional[str]:
+def _load_digest(digest_path: Path) -> str | None:
     """Load a stored digest from a file."""
     if digest_path.exists():
         return digest_path.read_text().strip()
@@ -436,9 +450,7 @@ def _save_digest(digest_path: Path, digest: str) -> None:
     digest_path.write_text(digest)
 
 
-def _needs_conversion(
-    source_path: str, output_path: Path, digest_path: Path
-) -> bool:
+def _needs_conversion(source_path: str, output_path: Path, digest_path: Path) -> bool:
     """Check if SVG→PDF conversion is needed based on output existence and MD5 cache."""
     if not output_path.exists():
         return True
@@ -450,8 +462,11 @@ def _needs_conversion(
 
 
 def _needs_csv_conversion(
-    source_path: str, params: Dict[str, Any], output_path: Path,
-    file_digest_path: Path, params_digest_path: Path,
+    source_path: str,
+    params: dict[str, Any],
+    output_path: Path,
+    file_digest_path: Path,
+    params_digest_path: Path,
 ) -> bool:
     """Check if CSV→PDF conversion is needed based on file content and params."""
     if not output_path.exists():
@@ -469,9 +484,7 @@ def _needs_csv_conversion(
     return current_params_digest != stored_params_digest
 
 
-def process_local_figures(
-    markdown_content: str, defpath: str, cache_dir: Path
-) -> str:
+def process_local_figures(markdown_content: str, defpath: str, cache_dir: Path) -> str:
     """Process local figure references in markdown, converting SVGs and CSVs to PDFs.
 
     This is the main entry point for local figure conversion. It:
@@ -492,8 +505,9 @@ def process_local_figures(
 
     # Filter to files that need conversion
     convertible = [
-        (path, params) for path, params in figures
-        if path.lower().endswith('.svg') or path.lower().endswith('.csv')
+        (path, params)
+        for path, params in figures
+        if path.lower().endswith(".svg") or path.lower().endswith(".csv")
     ]
 
     if not convertible:
@@ -502,7 +516,7 @@ def process_local_figures(
     converted_dir = cache_dir / ".cache" / "local" / "converted"
     digest_dir = cache_dir / ".cache" / "local" / "digest"
 
-    path_mapping: Dict[str, str] = {}
+    path_mapping: dict[str, str] = {}
 
     for fig_path, params in convertible:
         # Resolve source path against defpath
@@ -516,11 +530,11 @@ def process_local_figures(
             continue
 
         fig_lower = fig_path.lower()
-        pdf_relative = re.sub(r'\.(svg|csv)$', '.pdf', fig_path, flags=re.IGNORECASE)
+        pdf_relative = re.sub(r"\.(svg|csv)$", ".pdf", fig_path, flags=re.IGNORECASE)
         output_path = converted_dir / pdf_relative
         file_digest_path = digest_dir / (fig_path + ".md5")
 
-        if fig_lower.endswith('.svg'):
+        if fig_lower.endswith(".svg"):
             if _needs_conversion(source_path, output_path, file_digest_path):
                 success = convert_svg(source_path, output_path)
                 if success:
@@ -529,9 +543,11 @@ def process_local_figures(
                     _LOGGER.error(f"Failed to convert {fig_path}, leaving path unchanged")
                     continue
 
-        elif fig_lower.endswith('.csv'):
+        elif fig_lower.endswith(".csv"):
             params_digest_path = digest_dir / (fig_path + ".params.md5")
-            if _needs_csv_conversion(source_path, params, output_path, file_digest_path, params_digest_path):
+            if _needs_csv_conversion(
+                source_path, params, output_path, file_digest_path, params_digest_path
+            ):
                 success = convert_csv(source_path, output_path, params)
                 if success:
                     _save_digest(file_digest_path, _compute_file_md5(source_path))

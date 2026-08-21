@@ -1,8 +1,8 @@
 """Google Drive integration for markmeld."""
 
-from .processor import GoogleDriveProcessor, handle_drive_errors
 from .cache_manager import CloudCacheManager
 from .figure_converter import FigureConverter
+from .processor import GoogleDriveProcessor, handle_drive_errors
 
 __all__ = [
     "GoogleDriveProcessor",

@@ -18,8 +18,9 @@ pytest
 # Run specific test
 pytest tests/test_markmeld.py::test_name
 
-# Format code with black (used in CI)
-black .
+# Lint and format with ruff (used in CI)
+ruff check .
+ruff format .
 
 # Build demo documents
 cd demo

@@ -1,8 +1,9 @@
 """Shared pytest fixtures for the markmeld test suite."""
 
+from unittest.mock import MagicMock, patch
+
 import pytest
 import yaml
-from unittest.mock import MagicMock, patch
 
 
 @pytest.fixture
@@ -93,9 +94,7 @@ def mm_target(tmp_path):
         from markmeld import MarkdownMelder
 
         mm = MarkdownMelder(config)
-        result = mm.build_target(
-            target_name, print_only=print_only, **(build_kwargs or {})
-        )
+        result = mm.build_target(target_name, print_only=print_only, **(build_kwargs or {}))
         result.mm = mm
         return result
 
@@ -144,9 +143,7 @@ def google_drive_processor():
                 return mock_docs_service
             return MagicMock()
 
-        creds_patcher = patch(
-            "markmeld.google_drive.processor.service_account.Credentials"
-        )
+        creds_patcher = patch("markmeld.google_drive.processor.service_account.Credentials")
         build_patcher = patch(
             "markmeld.google_drive.processor.build", side_effect=build_side_effect
         )

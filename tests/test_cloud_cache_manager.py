@@ -18,9 +18,7 @@ except ImportError:
     GOOGLE_DEPS_AVAILABLE = False
 
 
-@pytest.mark.skipif(
-    not GOOGLE_DEPS_AVAILABLE, reason="Google Drive dependencies not available"
-)
+@pytest.mark.skipif(not GOOGLE_DEPS_AVAILABLE, reason="Google Drive dependencies not available")
 def test_cache_manager_resolves_relative_and_absolute_paths(tmp_path):
     """cache_root is always resolved to an absolute path, whichever form it's given in."""
     for relative in (Path("relative/.cache"), "test/.cache"):
@@ -68,9 +66,7 @@ class TestGoogleDriveDiskCache:
         assert processor.save_to_disk is False
         assert processor._load_from_disk("any_doc_id") is None
 
-    def test_disk_cache_invalidation_on_modification(
-        self, google_drive_processor, tmp_path
-    ):
+    def test_disk_cache_invalidation_on_modification(self, google_drive_processor, tmp_path):
         processor = google_drive_processor(
             save_to_disk=True, cache_root=str(tmp_path / ".cache")
         ).processor
@@ -148,9 +144,7 @@ class TestCloudCacheManagerMetadata:
     @pytest.mark.parametrize(
         "filename, source_path, size, category, conversion_status",
         [
-            pytest.param(
-                "image.svg", "fig/image.svg", 1234, "figures", "pending", id="svg"
-            ),
+            pytest.param("image.svg", "fig/image.svg", 1234, "figures", "pending", id="svg"),
             pytest.param("data.csv", "csv/data.csv", 5678, "csvs", "pending", id="csv"),
             pytest.param(
                 "photo.png",
@@ -276,9 +270,7 @@ class TestCloudCacheManagerMetadata:
         ccm.record_cached_file("test_doc", "img2.png", "fig/img2.png", 2000)
         ccm.record_cached_file("test_doc", "data.csv", "csv/data.csv", 3000)
         ccm.record_cached_file("test_doc", "refs.bib", "bib/refs.bib", 500)
-        ccm.record_conversion(
-            "test_doc", "img1.svg", "converted/fig/img1.pdf", 1500, "success"
-        )
+        ccm.record_conversion("test_doc", "img1.svg", "converted/fig/img1.pdf", 1500, "success")
 
         stats = ccm.load_metadata("test_doc")["cache_stats"]
         assert stats["total_files"] == 4
@@ -291,12 +283,8 @@ class TestCloudCacheManagerMetadata:
         assert stats["conversions_pending"] == 1
 
     def test_update_existing_file_record(self, ccm):
-        ccm.record_cached_file(
-            "test_doc", "img.svg", "fig/img.svg", 1000, digest="old_digest"
-        )
-        ccm.record_cached_file(
-            "test_doc", "img.svg", "fig/img.svg", 1100, digest="new_digest"
-        )
+        ccm.record_cached_file("test_doc", "img.svg", "fig/img.svg", 1000, digest="old_digest")
+        ccm.record_cached_file("test_doc", "img.svg", "fig/img.svg", 1100, digest="new_digest")
 
         metadata = ccm.load_metadata("test_doc")
         assert len(metadata["figures"]) == 1
@@ -335,9 +323,7 @@ class TestCloudCacheManagerMetadata:
         ccm.record_cached_file("test_doc", "img1.svg", "fig/img1.svg", 1000)
         ccm.record_cached_file("test_doc", "data.csv", "csv/data.csv", 2000)
         ccm.record_cached_file("test_doc", "refs.bib", "bib/refs.bib", 500)
-        ccm.record_conversion(
-            "test_doc", "img1.svg", "converted/fig/img1.pdf", 1500, "success"
-        )
+        ccm.record_conversion("test_doc", "img1.svg", "converted/fig/img1.pdf", 1500, "success")
 
         summary = ccm.get_cached_files_summary("test_doc")
         assert "document" in summary

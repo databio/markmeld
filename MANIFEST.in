@@ -1,5 +1,0 @@
-include requirements/*
-include markmeld/*
-include README.md
-include LICENSE.txt
-include docs/img/markmeld_logo.svg

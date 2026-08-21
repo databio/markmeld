@@ -398,9 +398,7 @@ PANEL_ORDER_CASES = [
 def test_validate_panel_order(dc, markdown, expected):
     refs = dc.extract_figure_references(markdown)
     violations = dc.validate_panel_order(refs)
-    assert [
-        (v["type"], v["figure"], v.get("missing_panel")) for v in violations
-    ] == expected
+    assert [(v["type"], v["figure"], v.get("missing_panel")) for v in violations] == expected
 
 
 # ---------------------------------------------------------------------------
@@ -558,22 +556,20 @@ def test_multi_panel_same_figure_in_parentheses(dc):
     panel_violations = dc.validate_panel_order(refs)
 
     fig3_order_violations = [
-        v
-        for v in panel_violations
-        if v["figure"] == "3" and v["type"] == "panel_out_of_order"
+        v for v in panel_violations if v["figure"] == "3" and v["type"] == "panel_out_of_order"
     ]
-    assert (
-        len(fig3_order_violations) == 0
-    ), f"Should have no panel order violations for Fig 3, but found: {fig3_order_violations}"
+    assert len(fig3_order_violations) == 0, (
+        f"Should have no panel order violations for Fig 3, but found: {fig3_order_violations}"
+    )
 
     fig3_missing_violations = [
         v
         for v in panel_violations
         if v["figure"] == "3" and v["type"] in ["missing_panel_A", "missing_panel"]
     ]
-    assert (
-        len(fig3_missing_violations) == 0
-    ), f"Should have no missing panel violations for Fig 3, but found: {fig3_missing_violations}"
+    assert len(fig3_missing_violations) == 0, (
+        f"Should have no missing panel violations for Fig 3, but found: {fig3_missing_violations}"
+    )
 
 
 def test_multiple_panels_same_line_correct_order(dc):
@@ -600,9 +596,7 @@ def test_multiple_panels_same_line_correct_order(dc):
     panel_violations = dc.validate_panel_order(refs)
 
     fig7_order_violations = [
-        v
-        for v in panel_violations
-        if v["figure"] == "7" and v["type"] == "panel_out_of_order"
+        v for v in panel_violations if v["figure"] == "7" and v["type"] == "panel_out_of_order"
     ]
     assert len(fig7_order_violations) == 0, (
         "Should have no panel order violations for Fig 7 (panels are in A,B,C,D "
@@ -614,9 +608,9 @@ def test_multiple_panels_same_line_correct_order(dc):
         for v in panel_violations
         if v["figure"] == "7" and v["type"] in ["missing_panel_A", "missing_panel"]
     ]
-    assert (
-        len(fig7_missing_violations) == 0
-    ), f"Should have no missing panel violations for Fig 7, but found: {fig7_missing_violations}"
+    assert len(fig7_missing_violations) == 0, (
+        f"Should have no missing panel violations for Fig 7, but found: {fig7_missing_violations}"
+    )
 
 
 def test_figure_order_with_parenthetical_context(dc):
@@ -631,12 +625,8 @@ def test_figure_order_with_parenthetical_context(dc):
     refs = dc.extract_figure_references(markdown)
     violations = dc.validate_figure_order(refs)
 
-    missing_s2 = [
-        v for v in violations if v["type"] == "missing_figure" and v["figure"] == "S2"
-    ]
-    assert (
-        len(missing_s2) == 0
-    ), f"Incorrectly reported S2 as missing. Violations: {violations}"
+    missing_s2 = [v for v in violations if v["type"] == "missing_figure" and v["figure"] == "S2"]
+    assert len(missing_s2) == 0, f"Incorrectly reported S2 as missing. Violations: {violations}"
 
 
 def test_panel_order_with_parenthetical_context(dc):
@@ -653,9 +643,9 @@ def test_panel_order_with_parenthetical_context(dc):
     panel_violations = dc.validate_panel_order(refs)
 
     fig4_violations = [v for v in panel_violations if v["figure"] == "4"]
-    assert (
-        len(fig4_violations) == 0
-    ), f"Incorrectly reported panel violations for Fig 4: {fig4_violations}"
+    assert len(fig4_violations) == 0, (
+        f"Incorrectly reported panel violations for Fig 4: {fig4_violations}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -729,12 +719,10 @@ def test_plan_example_punctuation_after_panel_caught(dc):
     semicolon) are still recognized and the panel is still extracted."""
     refs = dc.extract_figure_references(PLAN_EXAMPLE_MARKDOWN)
 
-    clustering_comp_a = [
-        r for r in refs if r.figure_num == "clustering-comp" and r.panels == "A"
-    ]
-    assert (
-        len(clustering_comp_a) == 2
-    ), f"Expected 2 clustering-comp panel A refs, found {len(clustering_comp_a)}"
+    clustering_comp_a = [r for r in refs if r.figure_num == "clustering-comp" and r.panels == "A"]
+    assert len(clustering_comp_a) == 2, (
+        f"Expected 2 clustering-comp panel A refs, found {len(clustering_comp_a)}"
+    )
 
 
 def test_plan_example_space_before_panel_extracts_no_panel(dc):
@@ -746,9 +734,7 @@ def test_plan_example_space_before_panel_extracts_no_panel(dc):
     assert len(bulk_refs) == 2, f"Expected 2 bulk-analysis refs, found {len(bulk_refs)}"
 
     space_error_refs = [r for r in bulk_refs if " D)" in r.context and r.panels == ""]
-    assert (
-        len(space_error_refs) == 1
-    ), "Should find 1 reference with space before D in context"
+    assert len(space_error_refs) == 1, "Should find 1 reference with space before D in context"
     assert space_error_refs[0].panels == ""
 
 
@@ -766,9 +752,7 @@ def test_plan_example_panel_order_violations_per_figure(dc):
 
     for fig, violation_type in expected_violations.items():
         matching = [
-            v
-            for v in panel_violations
-            if fig in str(v["figure"]) and v["type"] == violation_type
+            v for v in panel_violations if fig in str(v["figure"]) and v["type"] == violation_type
         ]
         assert len(matching) > 0, f"Failed to detect {violation_type} for {fig}"
 
@@ -867,9 +851,7 @@ LABEL_ORDER_CASES = [
 def test_label_figure_order(dc, content, expected):
     refs = dc.extract_figure_references(content)
     violations = dc.validate_figure_order(refs, content)
-    assert [
-        (v["type"], v["figure"], v.get("expected_after")) for v in violations
-    ] == expected
+    assert [(v["type"], v["figure"], v.get("expected_after")) for v in violations] == expected
 
 
 def test_mixed_numeric_and_label_references(dc):

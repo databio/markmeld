@@ -7,10 +7,12 @@ polished documents like resumes, proposals, manuscripts, and more.
 
 import sys
 
-from .melder import MarkdownMelder
+__version__ = "0.4.0-dev4"
+
 from .cli import main
-from .utilities import load_config_file, load_config_wrapper
 from .document_checker import DocumentChecker, FigureReference, ValidationIssue
+from .melder import MarkdownMelder
+from .utilities import load_config_file, load_config_wrapper
 
 __all__ = [
     "MarkdownMelder",
@@ -23,7 +25,8 @@ __all__ = [
 
 # Optional Google Drive functionality
 try:
-    from .google_drive import GoogleDriveProcessor
+    from .google_drive import GoogleDriveProcessor  # noqa: F401
+
     __all__.append("GoogleDriveProcessor")
 except ImportError:
     # Google dependencies not installed

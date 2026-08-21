@@ -8,7 +8,7 @@ and produces markdown where:
 """
 
 import logging
-from typing import Dict, Any, List
+from typing import Any
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -23,7 +23,7 @@ _HEADING_MAP = {
 }
 
 
-def doc_to_markdown(doc: Dict[str, Any]) -> str:
+def doc_to_markdown(doc: dict[str, Any]) -> str:
     """Convert a Google Docs API document to markdown with change markers.
 
     Args:
@@ -36,7 +36,7 @@ def doc_to_markdown(doc: Dict[str, Any]) -> str:
     body = doc.get("body", {})
     content = body.get("content", [])
 
-    parts: List[str] = []
+    parts: list[str] = []
     in_frontmatter = False
     for element in content:
         if "paragraph" in element:
@@ -73,7 +73,7 @@ def doc_to_markdown(doc: Dict[str, Any]) -> str:
     return "\n".join(parts)
 
 
-def _convert_paragraph(paragraph: Dict[str, Any]) -> str:
+def _convert_paragraph(paragraph: dict[str, Any]) -> str:
     """Convert a paragraph element to markdown.
 
     Args:
@@ -110,7 +110,7 @@ def _convert_paragraph(paragraph: Dict[str, Any]) -> str:
     return text
 
 
-def _convert_element(element: Dict[str, Any]) -> str:
+def _convert_element(element: dict[str, Any]) -> str:
     """Convert a single paragraph element (text run, inline object, etc.).
 
     Args:
@@ -130,7 +130,7 @@ def _convert_element(element: Dict[str, Any]) -> str:
     return ""
 
 
-def _convert_text_run(element: Dict[str, Any]) -> str:
+def _convert_text_run(element: dict[str, Any]) -> str:
     """Convert a text run element, handling suggestions and formatting.
 
     Args:
@@ -143,9 +143,7 @@ def _convert_text_run(element: Dict[str, Any]) -> str:
     content = text_run.get("content", "")
 
     # Check for suggestion markers at the element level or textRun level
-    is_deletion = bool(
-        element.get("suggestedDeletionIds") or text_run.get("suggestedDeletionIds")
-    )
+    is_deletion = bool(element.get("suggestedDeletionIds") or text_run.get("suggestedDeletionIds"))
     is_insertion = bool(
         element.get("suggestedInsertionIds") or text_run.get("suggestedInsertionIds")
     )
@@ -171,7 +169,7 @@ def _convert_text_run(element: Dict[str, Any]) -> str:
     return formatted
 
 
-def _apply_formatting(text: str, text_style: Dict[str, Any]) -> str:
+def _apply_formatting(text: str, text_style: dict[str, Any]) -> str:
     """Apply bold/italic markdown formatting to text.
 
     Args:
@@ -206,7 +204,7 @@ def _apply_formatting(text: str, text_style: Dict[str, Any]) -> str:
     return text
 
 
-def _convert_table(table: Dict[str, Any]) -> str:
+def _convert_table(table: dict[str, Any]) -> str:
     """Convert a table element to markdown.
 
     Args:
@@ -219,10 +217,10 @@ def _convert_table(table: Dict[str, Any]) -> str:
     if not rows:
         return ""
 
-    md_rows: List[str] = []
+    md_rows: list[str] = []
     for i, row in enumerate(rows):
         cells = row.get("tableCells", [])
-        cell_texts: List[str] = []
+        cell_texts: list[str] = []
         for cell in cells:
             # Each cell has content (paragraphs)
             cell_content = cell.get("content", [])

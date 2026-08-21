@@ -88,29 +88,29 @@ def clean_escape_characters(markdown_content: str) -> str:
     content = markdown_content
 
     # Remove escapes from various markdown characters (but NOT LaTeX ones)
-    content = content.replace('\\[', '[')
-    content = content.replace('\\]', ']')
-    content = content.replace('\\_', '_')
-    content = content.replace('\\!', '!')
-    content = content.replace('\\(', '(')
-    content = content.replace('\\)', ')')
-    content = content.replace('\\`', '`')
-    content = content.replace('\\-', '-')
-    content = content.replace('\\*', '*')
-    content = content.replace('\\=', '=')
-    content = content.replace('\\+', '+')
-    content = content.replace('\\<', '<')
-    content = content.replace('\\>', '>')
+    content = content.replace("\\[", "[")
+    content = content.replace("\\]", "]")
+    content = content.replace("\\_", "_")
+    content = content.replace("\\!", "!")
+    content = content.replace("\\(", "(")
+    content = content.replace("\\)", ")")
+    content = content.replace("\\`", "`")
+    content = content.replace("\\-", "-")
+    content = content.replace("\\*", "*")
+    content = content.replace("\\=", "=")
+    content = content.replace("\\+", "+")
+    content = content.replace("\\<", "<")
+    content = content.replace("\\>", ">")
 
     # Handle LaTeX-specific fixes: convert double backslashes before LaTeX commands to single
     # This fixes Google Docs converting \{ to \\{ while preserving the LaTeX command
-    content = re.sub(r'\\\\([{}\\])', r'\\\1', content)
+    content = re.sub(r"\\\\([{}\\])", r"\\\1", content)
 
     # Handle other LaTeX commands: convert \\alpha to \alpha, etc.
-    content = re.sub(r'\\\\([a-zA-Z]+)', r'\\\1', content)
+    content = re.sub(r"\\\\([a-zA-Z]+)", r"\\\1", content)
 
     # Finally, clean up any remaining double backslashes that aren't LaTeX commands
-    content = re.sub(r'\\\\(?![{}\\a-zA-Z])', r'\\', content)
+    content = re.sub(r"\\\\(?![{}\\a-zA-Z])", r"\\", content)
 
     return content
 
@@ -128,16 +128,18 @@ def remove_embedded_images(markdown_content: str) -> str:
         Content with embedded images removed and blank lines cleaned up.
     """
     # Remove reference-style image definitions with data URIs (both with and without angle brackets)
-    content = re.sub(r'^\[[^\]]+\]:\s*<?data:[^>\n]*>?\s*$', '', markdown_content, flags=re.MULTILINE)
+    content = re.sub(
+        r"^\[[^\]]+\]:\s*<?data:[^>\n]*>?\s*$", "", markdown_content, flags=re.MULTILINE
+    )
 
     # Remove markdown image references (both ![][imageX] and ![alt][imageX])
-    content = re.sub(r'!\[[^\]]*\]\[[^\]]+\]', '', content)
+    content = re.sub(r"!\[[^\]]*\]\[[^\]]+\]", "", content)
 
     # Remove inline data URI images
-    content = re.sub(r'!\[[^\]]*\]\(data:[^)]+\)', '', content)
+    content = re.sub(r"!\[[^\]]*\]\(data:[^)]+\)", "", content)
 
     # Clean up extra blank lines
-    content = re.sub(r'\n\n+', '\n\n', content)
+    content = re.sub(r"\n\n+", "\n\n", content)
 
     return content.strip()
 
@@ -154,17 +156,17 @@ def strip_bold_from_headings(markdown_content: str) -> str:
         Content with bold markers removed from heading lines.
     """
     # Pattern matches heading lines with bold markers
-    content = re.sub(r'^(#+)\s+\*\*(.*?)\*\*\s*$', r'\1 \2', markdown_content, flags=re.MULTILINE)
+    content = re.sub(r"^(#+)\s+\*\*(.*?)\*\*\s*$", r"\1 \2", markdown_content, flags=re.MULTILINE)
 
     # Also handle cases where there might be bold within the heading
-    lines = content.split('\n')
+    lines = content.split("\n")
     cleaned_lines = []
     for line in lines:
-        if line.strip().startswith('#'):
-            line = line.replace('**', '')
+        if line.strip().startswith("#"):
+            line = line.replace("**", "")
         cleaned_lines.append(line)
 
-    return '\n'.join(cleaned_lines)
+    return "\n".join(cleaned_lines)
 
 
 def ensure_blank_lines_before_headings(markdown_content: str) -> str:
@@ -179,13 +181,13 @@ def ensure_blank_lines_before_headings(markdown_content: str) -> str:
     Returns:
         Content with blank lines inserted before heading lines.
     """
-    lines = markdown_content.split('\n')
+    lines = markdown_content.split("\n")
     result = []
     for i, line in enumerate(lines):
-        if line.startswith('#') and i > 0 and result and result[-1].strip() != '':
-            result.append('')
+        if line.startswith("#") and i > 0 and result and result[-1].strip() != "":
+            result.append("")
         result.append(line)
-    return '\n'.join(result)
+    return "\n".join(result)
 
 
 def replace_svg_extensions(markdown_content: str) -> str:
@@ -200,10 +202,10 @@ def replace_svg_extensions(markdown_content: str) -> str:
         Content with .svg image extensions replaced by .pdf.
     """
     # Pattern to match markdown images with .svg extension
-    pattern = r'!\[([^\]]*)\]\(([^)]+?)(\.svg)\)'
+    pattern = r"!\[([^\]]*)\]\(([^)]+?)(\.svg)\)"
 
     # Replace .svg with .pdf
-    content = re.sub(pattern, r'![\1](\2.pdf)', markdown_content)
+    content = re.sub(pattern, r"![\1](\2.pdf)", markdown_content)
 
     return content
 
@@ -224,59 +226,59 @@ def check_and_fix_latex_incompatible_chars(markdown_content: str) -> str:
     # Dictionary of problematic Unicode characters and their LaTeX-safe replacements
     # Add more as we discover them
     char_replacements = {
-        '\u223C': '~',           # U+223C TILDE OPERATOR -> regular tilde
-        '\u2212': '-',           # U+2212 MINUS SIGN -> hyphen-minus
-        '\u2019': "'",           # U+2019 RIGHT SINGLE QUOTATION MARK -> apostrophe
-        '\u2018': "'",           # U+2018 LEFT SINGLE QUOTATION MARK -> apostrophe
-        '\u201C': '"',           # U+201C LEFT DOUBLE QUOTATION MARK -> quotation mark
-        '\u201D': '"',           # U+201D RIGHT DOUBLE QUOTATION MARK -> quotation mark
-        '\u2026': '...',         # U+2026 HORIZONTAL ELLIPSIS -> three dots
-        '\u2013': '--',          # U+2013 EN DASH -> double hyphen
-        '\u2014': '---',         # U+2014 EM DASH -> triple hyphen
-        '\u000B': '\n',          # U+000B VERTICAL TAB -> newline
-        '\u00A0': ' ',           # U+00A0 NO-BREAK SPACE -> regular space
-        '\u200B': '',            # U+200B ZERO WIDTH SPACE -> remove
-        '\u2010': '-',           # U+2010 HYPHEN -> hyphen-minus
-        '\u00D7': 'x',           # U+00D7 MULTIPLICATION SIGN -> letter x
-        '\u00F7': '/',           # U+00F7 DIVISION SIGN -> forward slash
-        '\u2248': '~',           # U+2248 ALMOST EQUAL TO -> tilde
-        '\u2260': '!=',          # U+2260 NOT EQUAL TO -> !=
-        '\u2264': '<=',          # U+2264 LESS-THAN OR EQUAL TO -> <=
-        '\u2265': '>=',          # U+2265 GREATER-THAN OR EQUAL TO -> >=
-        '\u00B1': '+/-',         # U+00B1 PLUS-MINUS SIGN -> +/-
-        '\u00B0': '$^\\circ$',   # U+00B0 DEGREE SIGN -> LaTeX degree symbol
-        '\u00B5': '$\\mu$',      # U+00B5 MICRO SIGN -> LaTeX mu
-        '\u221E': '$\\infty$',   # U+221E INFINITY -> LaTeX infinity
-        '\u221A': '$\\sqrt{}$',  # U+221A SQUARE ROOT -> LaTeX square root
-        '\u2211': '$\\sum$',     # U+2211 N-ARY SUMMATION -> LaTeX sum
-        '\u220F': '$\\prod$',    # U+220F N-ARY PRODUCT -> LaTeX product
-        '\u222B': '$\\int$',     # U+222B INTEGRAL -> LaTeX integral
-        '\u03B1': '$\\alpha$',   # U+03B1 GREEK SMALL LETTER ALPHA
-        '\u03B2': '$\\beta$',    # U+03B2 GREEK SMALL LETTER BETA
-        '\u03B3': '$\\gamma$',   # U+03B3 GREEK SMALL LETTER GAMMA
-        '\u03B4': '$\\delta$',   # U+03B4 GREEK SMALL LETTER DELTA
-        '\u03B5': '$\\epsilon$', # U+03B5 GREEK SMALL LETTER EPSILON
-        '\u03B8': '$\\theta$',   # U+03B8 GREEK SMALL LETTER THETA
-        '\u03BB': '$\\lambda$',  # U+03BB GREEK SMALL LETTER LAMBDA
-        '\u03C0': '$\\pi$',      # U+03C0 GREEK SMALL LETTER PI
-        '\u03C3': '$\\sigma$',   # U+03C3 GREEK SMALL LETTER SIGMA
-        '\u03C6': '$\\phi$',     # U+03C6 GREEK SMALL LETTER PHI
-        '\u03BC': '$\\mu$',      # U+03BC GREEK SMALL LETTER MU
-        '\u2080': '$_0$',        # U+2080 SUBSCRIPT ZERO
-        '\u2081': '$_1$',        # U+2081 SUBSCRIPT ONE
-        '\u2082': '$_2$',        # U+2082 SUBSCRIPT TWO
-        '\u2083': '$_3$',        # U+2083 SUBSCRIPT THREE
-        '\u2084': '$_4$',        # U+2084 SUBSCRIPT FOUR
-        '\u2085': '$_5$',        # U+2085 SUBSCRIPT FIVE
-        '\u2086': '$_6$',        # U+2086 SUBSCRIPT SIX
-        '\u2087': '$_7$',        # U+2087 SUBSCRIPT SEVEN
-        '\u2088': '$_8$',        # U+2088 SUBSCRIPT EIGHT
-        '\u2089': '$_9$',        # U+2089 SUBSCRIPT NINE
-        '\u2192': '$\\rightarrow$',  # U+2192 RIGHTWARDS ARROW
-        '\u2713': '$\\checkmark$',   # U+2713 CHECK MARK
-        '\u2717': '$\\times$',       # U+2717 BALLOT X
-        '\u00B2': '$^2$',        # U+00B2 SUPERSCRIPT TWO
-        '\u00B3': '$^3$',        # U+00B3 SUPERSCRIPT THREE
+        "\u223c": "~",  # U+223C TILDE OPERATOR -> regular tilde
+        "\u2212": "-",  # U+2212 MINUS SIGN -> hyphen-minus
+        "\u2019": "'",  # U+2019 RIGHT SINGLE QUOTATION MARK -> apostrophe
+        "\u2018": "'",  # U+2018 LEFT SINGLE QUOTATION MARK -> apostrophe
+        "\u201c": '"',  # U+201C LEFT DOUBLE QUOTATION MARK -> quotation mark
+        "\u201d": '"',  # U+201D RIGHT DOUBLE QUOTATION MARK -> quotation mark
+        "\u2026": "...",  # U+2026 HORIZONTAL ELLIPSIS -> three dots
+        "\u2013": "--",  # U+2013 EN DASH -> double hyphen
+        "\u2014": "---",  # U+2014 EM DASH -> triple hyphen
+        "\u000b": "\n",  # U+000B VERTICAL TAB -> newline
+        "\u00a0": " ",  # U+00A0 NO-BREAK SPACE -> regular space
+        "\u200b": "",  # U+200B ZERO WIDTH SPACE -> remove
+        "\u2010": "-",  # U+2010 HYPHEN -> hyphen-minus
+        "\u00d7": "x",  # U+00D7 MULTIPLICATION SIGN -> letter x
+        "\u00f7": "/",  # U+00F7 DIVISION SIGN -> forward slash
+        "\u2248": "~",  # U+2248 ALMOST EQUAL TO -> tilde
+        "\u2260": "!=",  # U+2260 NOT EQUAL TO -> !=
+        "\u2264": "<=",  # U+2264 LESS-THAN OR EQUAL TO -> <=
+        "\u2265": ">=",  # U+2265 GREATER-THAN OR EQUAL TO -> >=
+        "\u00b1": "+/-",  # U+00B1 PLUS-MINUS SIGN -> +/-
+        "\u00b0": "$^\\circ$",  # U+00B0 DEGREE SIGN -> LaTeX degree symbol
+        "\u00b5": "$\\mu$",  # U+00B5 MICRO SIGN -> LaTeX mu
+        "\u221e": "$\\infty$",  # U+221E INFINITY -> LaTeX infinity
+        "\u221a": "$\\sqrt{}$",  # U+221A SQUARE ROOT -> LaTeX square root
+        "\u2211": "$\\sum$",  # U+2211 N-ARY SUMMATION -> LaTeX sum
+        "\u220f": "$\\prod$",  # U+220F N-ARY PRODUCT -> LaTeX product
+        "\u222b": "$\\int$",  # U+222B INTEGRAL -> LaTeX integral
+        "\u03b1": "$\\alpha$",  # U+03B1 GREEK SMALL LETTER ALPHA
+        "\u03b2": "$\\beta$",  # U+03B2 GREEK SMALL LETTER BETA
+        "\u03b3": "$\\gamma$",  # U+03B3 GREEK SMALL LETTER GAMMA
+        "\u03b4": "$\\delta$",  # U+03B4 GREEK SMALL LETTER DELTA
+        "\u03b5": "$\\epsilon$",  # U+03B5 GREEK SMALL LETTER EPSILON
+        "\u03b8": "$\\theta$",  # U+03B8 GREEK SMALL LETTER THETA
+        "\u03bb": "$\\lambda$",  # U+03BB GREEK SMALL LETTER LAMBDA
+        "\u03c0": "$\\pi$",  # U+03C0 GREEK SMALL LETTER PI
+        "\u03c3": "$\\sigma$",  # U+03C3 GREEK SMALL LETTER SIGMA
+        "\u03c6": "$\\phi$",  # U+03C6 GREEK SMALL LETTER PHI
+        "\u03bc": "$\\mu$",  # U+03BC GREEK SMALL LETTER MU
+        "\u2080": "$_0$",  # U+2080 SUBSCRIPT ZERO
+        "\u2081": "$_1$",  # U+2081 SUBSCRIPT ONE
+        "\u2082": "$_2$",  # U+2082 SUBSCRIPT TWO
+        "\u2083": "$_3$",  # U+2083 SUBSCRIPT THREE
+        "\u2084": "$_4$",  # U+2084 SUBSCRIPT FOUR
+        "\u2085": "$_5$",  # U+2085 SUBSCRIPT FIVE
+        "\u2086": "$_6$",  # U+2086 SUBSCRIPT SIX
+        "\u2087": "$_7$",  # U+2087 SUBSCRIPT SEVEN
+        "\u2088": "$_8$",  # U+2088 SUBSCRIPT EIGHT
+        "\u2089": "$_9$",  # U+2089 SUBSCRIPT NINE
+        "\u2192": "$\\rightarrow$",  # U+2192 RIGHTWARDS ARROW
+        "\u2713": "$\\checkmark$",  # U+2713 CHECK MARK
+        "\u2717": "$\\times$",  # U+2717 BALLOT X
+        "\u00b2": "$^2$",  # U+00B2 SUPERSCRIPT TWO
+        "\u00b3": "$^3$",  # U+00B3 SUPERSCRIPT THREE
     }
 
     # Track what we find and fix
@@ -296,16 +298,18 @@ def check_and_fix_latex_incompatible_chars(markdown_content: str) -> str:
                     end = min(len(content), match.end() + 20)
                     context = content[start:end]
                     # Clean up context for display (remove newlines)
-                    context = context.replace('\n', ' ')
+                    context = context.replace("\n", " ")
 
                     char_code = f"U+{ord(char):04X}"
-                    issues_found.append({
-                        'char': char,
-                        'char_code': char_code,
-                        'replacement': replacement,
-                        'context': f"...{context}...",
-                        'position': match.start()
-                    })
+                    issues_found.append(
+                        {
+                            "char": char,
+                            "char_code": char_code,
+                            "replacement": replacement,
+                            "context": f"...{context}...",
+                            "position": match.start(),
+                        }
+                    )
 
                 # Replace all occurrences
                 content = content.replace(char, replacement)
@@ -317,10 +321,10 @@ def check_and_fix_latex_incompatible_chars(markdown_content: str) -> str:
         # Group by character for cleaner output
         char_groups = {}
         for issue in issues_found:
-            char_key = (issue['char'], issue['char_code'], issue['replacement'])
+            char_key = (issue["char"], issue["char_code"], issue["replacement"])
             if char_key not in char_groups:
                 char_groups[char_key] = []
-            char_groups[char_key].append(issue['context'])
+            char_groups[char_key].append(issue["context"])
 
         for (char, char_code, replacement), contexts in char_groups.items():
             # Format as table: 'char' (code) -> 'replacement'   N occ: context
@@ -330,7 +334,9 @@ def check_and_fix_latex_incompatible_chars(markdown_content: str) -> str:
             context = contexts[0]
             if len(context) > 60:
                 context = context[:57] + "..."
-            _LOGGER.warning(f"  '{char}' ({char_code}) -> '{replacement}'   {count} occurrence{plural}: {context}")
+            _LOGGER.warning(
+                f"  '{char}' ({char_code}) -> '{replacement}'   {count} occurrence{plural}: {context}"
+            )
 
         _LOGGER.warning("Note: Review document to ensure replacements are appropriate.")
 
@@ -345,23 +351,25 @@ def check_and_fix_latex_incompatible_chars(markdown_content: str) -> str:
 
             context_start = max(0, i - 20)
             context_end = min(len(content), i + 20)
-            context = content[context_start:context_end].replace('\n', ' ')
+            context = content[context_start:context_end].replace("\n", " ")
 
-            remaining_non_ascii.append({
-                'char': char,
-                'char_code': f"U+{ord(char):04X}",
-                'context': f"...{context}...",
-                'position': i
-            })
+            remaining_non_ascii.append(
+                {
+                    "char": char,
+                    "char_code": f"U+{ord(char):04X}",
+                    "context": f"...{context}...",
+                    "position": i,
+                }
+            )
 
     # Deduplicate remaining non-ASCII warnings
     if remaining_non_ascii:
         seen_chars = {}
         for item in remaining_non_ascii:
-            char_key = (item['char'], item['char_code'])
+            char_key = (item["char"], item["char_code"])
             if char_key not in seen_chars:
                 seen_chars[char_key] = []
-            seen_chars[char_key].append(item['context'])
+            seen_chars[char_key].append(item["context"])
 
         if seen_chars:
             _LOGGER.warning("")

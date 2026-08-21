@@ -4,9 +4,7 @@
 def test_input_file_injects_content(mm_target, tmp_path):
     """--input should inject an external file as md_files.content"""
     input_file = tmp_path / "input.md"
-    input_file.write_text(
-        "---\ntitle: External Letter\n---\nDear Sir,\n\nPlease accept this."
-    )
+    input_file.write_text("---\ntitle: External Letter\n---\nDear Sir,\n\nPlease accept this.")
 
     result = mm_target(
         "{{ content }}",
@@ -20,9 +18,7 @@ def test_input_file_injects_content(mm_target, tmp_path):
 def test_input_file_frontmatter_available(mm_target, tmp_path):
     """--input file's frontmatter should be available to the template"""
     input_file = tmp_path / "input.md"
-    input_file.write_text(
-        "---\ntitle: My Letter\nrecipient: Dr. Smith\n---\nBody text here."
-    )
+    input_file.write_text("---\ntitle: My Letter\nrecipient: Dr. Smith\n---\nBody text here.")
 
     result = mm_target(
         "To: {{ recipient }}\n{{ content }}",

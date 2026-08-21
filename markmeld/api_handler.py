@@ -2,14 +2,13 @@
 
 import logging
 import subprocess
-from typing import Dict, List, Optional
 
 import requests
 
 _LOGGER = logging.getLogger(__name__)
 
 
-def get_pass_secret(pass_secret_name: str) -> Optional[str]:
+def get_pass_secret(pass_secret_name: str) -> str | None:
     """Retrieve a secret using the `pass` password manager.
 
     Args:
@@ -62,7 +61,7 @@ class APIHandler:
         self._token = token
 
     @property
-    def token(self) -> Optional[str]:
+    def token(self) -> str | None:
         """Get the API authentication token.
 
         Returns:
@@ -70,7 +69,7 @@ class APIHandler:
         """
         return getattr(self, "_token", None)
 
-    def list_notes(self) -> Optional[List[Dict]]:
+    def list_notes(self) -> list[dict] | None:
         """List all notes available on the API.
 
         Returns:
@@ -90,7 +89,7 @@ class APIHandler:
             _LOGGER.error(f"API request failed: {e}")
             return None
 
-    def fetch_note(self, note_id: str) -> Optional[Dict]:
+    def fetch_note(self, note_id: str) -> dict | None:
         """Fetch a note from the API.
 
         Args:
@@ -119,7 +118,7 @@ class APIHandler:
             _LOGGER.error(f"API request failed: {e}")
             return None
 
-    def fetch_note_content(self, note_id: str) -> Optional[str]:
+    def fetch_note_content(self, note_id: str) -> str | None:
         """Fetch only the content of a note.
 
         Args:

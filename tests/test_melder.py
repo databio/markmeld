@@ -3,9 +3,10 @@ Tests for frontmatter/variable precedence, content sources (md_content /
 yaml_content), section extraction, and target inheritance.
 """
 
+import frontmatter
 import pytest
 import yaml
-import frontmatter
+
 import markmeld
 
 CFG_PATH = "tests/test_data/frontmatter_yaml/_markmeld.yaml"
@@ -20,9 +21,7 @@ class TestPrecedenceChain:
     def test_full_precedence_with_all_sources(self, mm_target, tmp_path):
         template = "".join(f"level{n}={{{{ level{n} }}}}\n" for n in range(1, 7))
         yaml_path = tmp_path / "data.yaml"
-        yaml_path.write_text(
-            yaml.dump({"level4": "yaml", "level5": "yaml", "level6": "yaml"})
-        )
+        yaml_path.write_text(yaml.dump({"level4": "yaml", "level5": "yaml", "level6": "yaml"}))
 
         result = mm_target(
             template,
@@ -63,9 +62,7 @@ class TestPrecedenceChain:
 
     def test_frontmatter_overrides_only(self, mm_target):
         """frontmatter_overrides: can introduce a variable with nothing else defined."""
-        result = mm_target(
-            "version={{ version }}", frontmatter_overrides={"version": "2.0"}
-        )
+        result = mm_target("version={{ version }}", frontmatter_overrides={"version": "2.0"})
         assert "version=2.0" in result.melded_output
 
     def test_variables_override_md_frontmatter(self, mm_target):
@@ -86,10 +83,7 @@ class TestFrontmatterStructure:
             frontmatter={"title": "Global Title"},
         )
         assert "test=Global Title" in result.melded_output
-        assert (
-            result.melded_input["_global_frontmatter"]["dict"]["title"]
-            == "Global Title"
-        )
+        assert result.melded_input["_global_frontmatter"]["dict"]["title"] == "Global Title"
 
     def test_frontmatter_prefix_not_stripped_from_base(self, mm_target):
         """frontmatter: {title: X} needs no legacy 'frontmatter_title' naming."""
@@ -160,9 +154,7 @@ class TestFrontmatterStructure:
     def test_unkeyed_yaml_at_top_level(self, mm_target, tmp_path):
         yaml_path = tmp_path / "data.yaml"
         yaml_path.write_text(yaml.dump({"name": "Jane", "role": "admin"}))
-        result = mm_target(
-            "name={{ name }}", data={"yaml_globs_unkeyed": [str(yaml_path)]}
-        )
+        result = mm_target("name={{ name }}", data={"yaml_globs_unkeyed": [str(yaml_path)]})
         assert "name=Jane" in result.melded_output
 
     def test_md_content_and_md_files_both_contribute_frontmatter(self, mm_target):
@@ -170,9 +162,7 @@ class TestFrontmatterStructure:
             "file_var={{ file_var }}\ncontent_var={{ content_var }}",
             md_files={"file_doc": "---\nfile_var: from_file\n---\n# File Doc"},
             data={
-                "md_content": {
-                    "content_doc": "---\ncontent_var: from_content\n---\n# Content Doc"
-                }
+                "md_content": {"content_doc": "---\ncontent_var: from_content\n---\n# Content Doc"}
             },
         )
         assert "file_var=from_file" in result.melded_output
@@ -192,9 +182,7 @@ class TestContentSources:
 
     def test_md_content_raw_string_with_frontmatter(self, mm_target):
         md_with_fm = "---\ntitle: From Content\nauthor: Memory Author\n---\n# Content\n"
-        result = mm_target(
-            "title={{ title }}", data={"md_content": {"doc": md_with_fm}}
-        )
+        result = mm_target("title={{ title }}", data={"md_content": {"doc": md_with_fm}})
         assert "title=From Content" in result.melded_output
         gf = result.melded_input.get("_global_frontmatter", {}).get("dict", {})
         assert gf.get("title") == "From Content"
@@ -243,18 +231,14 @@ class TestContentSources:
     def test_yaml_content_string(self, mm_target):
         result = mm_target(
             "DB: {{ config.database.host }}:{{ config.database.port }}",
-            data={
-                "yaml_content": {"config": "database:\n  host: localhost\n  port: 5432"}
-            },
+            data={"yaml_content": {"config": "database:\n  host: localhost\n  port: 5432"}},
         )
         assert "DB: localhost:5432" in result.melded_output
 
     def test_combined_file_and_content(self, mm_target):
         result = mm_target(
             "{{ file_doc }}\n---\n{{ memory_doc }}",
-            md_files={
-                "file_doc": "---\ntitle: From File\n---\n# File Content\n\nFrom file."
-            },
+            md_files={"file_doc": "---\ntitle: From File\n---\n# File Content\n\nFrom file."},
             data={"md_content": {"memory_doc": "# Memory Content\n\nFrom memory."}},
         )
         assert "# File Content" in result.melded_output
@@ -279,9 +263,7 @@ class TestSectionExtraction:
 
     def test_extract_abstract_h2_section_span(self, mm_target):
         """An H2 '## Abstract' section ends at the next H2; later sections stay."""
-        body = (
-            "## Abstract\n\nAbstract prose here.\n\n## Methods\n\nMethods prose here."
-        )
+        body = "## Abstract\n\nAbstract prose here.\n\n## Methods\n\nMethods prose here."
         result = mm_target(self.TEMPLATE, data={"md_content": {"body": body}})
         assert "ABSTRACT:Abstract prose here." in result.melded_output
         body_out = result.melded_output.split("BODY:")[1]
@@ -329,8 +311,7 @@ class TestSectionExtraction:
     def test_extract_abstract_shallowest_wins(self, mm_target):
         """Abstract at both H1 and H2: the H1 section is captured."""
         body = (
-            "# Abstract\n\nTop-level abstract.\n\n"
-            "## Details\n\n### Abstract\n\nNested abstract.\n"
+            "# Abstract\n\nTop-level abstract.\n\n## Details\n\n### Abstract\n\nNested abstract.\n"
         )
         result = mm_target(self.TEMPLATE, data={"md_content": {"body": body}})
         assert "ABSTRACT:Top-level abstract." in result.melded_output
@@ -365,9 +346,7 @@ class TestSectionExtraction:
         """Extraction also applies to md_files sources (same code path)."""
         result = mm_target(
             self.TEMPLATE,
-            md_files={
-                "body": "# Abstract\n\nFile abstract text.\n\n# Body\n\nBody text."
-            },
+            md_files={"body": "# Abstract\n\nFile abstract text.\n\n# Body\n\nBody text."},
         )
         assert "ABSTRACT:File abstract text." in result.melded_output
         body_out = result.melded_output.split("BODY:")[1]
@@ -385,11 +364,7 @@ class TestEdgeCases:
                 "output=test",
             ),
             (
-                dict(
-                    frontmatter={
-                        "author": {"name": "John Doe", "email": "john@example.com"}
-                    }
-                ),
+                dict(frontmatter={"author": {"name": "John Doe", "email": "john@example.com"}}),
                 "name={{ author.name }}\nemail={{ author.email }}",
                 "name=John Doe\nemail=john@example.com",
             ),
@@ -512,15 +487,8 @@ class TestFrontmatterYamlMerge:
         """A yaml_files key not prefixed 'frontmatter' stays under its own
         key instead of merging into _global_frontmatter."""
         cfg = markmeld.load_config_wrapper(CFG_PATH)
-        cfg["targets"]["manuscript"]["data"]["yaml_files"][
-            "metadata_extra"
-        ] = "_manuscript.yaml"
+        cfg["targets"]["manuscript"]["data"]["yaml_files"]["metadata_extra"] = "_manuscript.yaml"
         mm_ = markmeld.MarkdownMelder(cfg)
         result = mm_.build_target("manuscript", print_only=True)
-        assert (
-            result.melded_input["metadata_extra"]["title"]
-            == "Test Paper Title From YAML"
-        )
-        assert (
-            "metadata_extra" not in result.melded_input["_global_frontmatter"]["dict"]
-        )
+        assert result.melded_input["metadata_extra"]["title"] == "Test Paper Title From YAML"
+        assert "metadata_extra" not in result.melded_input["_global_frontmatter"]["dict"]

@@ -19,21 +19,21 @@ import yaml
 httpx = pytest.importorskip("httpx")
 respx = pytest.importorskip("respx")
 
+import logmuse
+
 import markmeld
 import markmeld.melder
+from markmeld.const import (
+    AUTHORMARK_BASE_URL_ENV,
+    AUTHORMARK_DEFAULT_BASE_URL,
+    EXTRACT_TITLE_KEY,
+)
 from markmeld.melder import (
     MarkdownMelder,
     Target,
     process_data,
     resolve_authormark_source,
 )
-from markmeld.const import (
-    AUTHORMARK_DEFAULT_BASE_URL,
-    AUTHORMARK_BASE_URL_ENV,
-    EXTRACT_TITLE_KEY,
-)
-
-import logmuse
 
 _LOGGER = logmuse.init_logger(name="markmeld", level="DEBUG")
 
@@ -139,9 +139,7 @@ def test_resolve_bare_slug_default_base():
 
 
 def test_resolve_bare_slug_config_base():
-    base, slug = resolve_authormark_source(
-        "xyz", {"authormark_base_url": "https://cfg.example/"}
-    )
+    base, slug = resolve_authormark_source("xyz", {"authormark_base_url": "https://cfg.example/"})
     assert base == "https://cfg.example"
     assert slug == "xyz"
 
@@ -184,9 +182,7 @@ def test_resolve_bad_url_raises():
 def test_context_injection(cache_root):
     """A config with `authormark:` injects top-level author variables."""
     respx.get(f"{BASE_URL}/p/{SLUG}/modified").mock(
-        return_value=httpx.Response(
-            200, json=_modified_payload(), headers={"ETag": '"v1"'}
-        )
+        return_value=httpx.Response(200, json=_modified_payload(), headers={"ETag": '"v1"'})
     )
     respx.get(f"{BASE_URL}/p/{SLUG}.yaml").mock(
         return_value=httpx.Response(200, text=yaml.safe_dump(CANNED_MARKMELD))
@@ -342,9 +338,7 @@ def test_missing_slug_returns_none(cache_root):
 
 @respx.mock
 def test_404_returns_none(cache_root):
-    respx.get(f"{BASE_URL}/p/{SLUG}.yaml").mock(
-        return_value=httpx.Response(404, text="not found")
-    )
+    respx.get(f"{BASE_URL}/p/{SLUG}.yaml").mock(return_value=httpx.Response(404, text="not found"))
     respx.get(f"{BASE_URL}/p/{SLUG}/modified").mock(
         return_value=httpx.Response(404, text="not found")
     )
@@ -367,9 +361,7 @@ def test_unreachable_with_cache_falls_back(cache_root):
     MarkdownMelder(cfg).build_target("manuscript", print_only=True)
 
     # Now make the service unreachable; cached payload should be used.
-    respx.get(f"{BASE_URL}/p/{SLUG}/modified").mock(
-        side_effect=httpx.ConnectError("boom")
-    )
+    respx.get(f"{BASE_URL}/p/{SLUG}/modified").mock(side_effect=httpx.ConnectError("boom"))
     res = MarkdownMelder(cfg).build_target("manuscript", print_only=True)
     assert res is not None
     assert res.melded_input["title"] == "A Study of Authormark"
@@ -378,9 +370,7 @@ def test_unreachable_with_cache_falls_back(cache_root):
 @respx.mock
 def test_unreachable_without_cache_returns_none(cache_root):
     respx.get(f"{BASE_URL}/p/{SLUG}.yaml").mock(side_effect=httpx.ConnectError("boom"))
-    respx.get(f"{BASE_URL}/p/{SLUG}/modified").mock(
-        side_effect=httpx.ConnectError("boom")
-    )
+    respx.get(f"{BASE_URL}/p/{SLUG}/modified").mock(side_effect=httpx.ConnectError("boom"))
     cfg = _make_config(cache_root)
     res = MarkdownMelder(cfg).build_target("manuscript", print_only=True)
     assert res is None
@@ -573,11 +563,7 @@ def test_authormark_title_renders_and_h1_is_stripped(cache_root, monkeypatch):
         cache_root,
         extra_target={
             "jinja_template": PAPER_TEMPLATE,
-            "data": {
-                "md_content": {
-                    "body": "# Body Heading Title\n\n## Introduction\n\nText.\n"
-                }
-            },
+            "data": {"md_content": {"body": "# Body Heading Title\n\n## Introduction\n\nText.\n"}},
         },
     )
     out = MarkdownMelder(cfg).build_target("manuscript", print_only=True).melded_output

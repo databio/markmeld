@@ -1,14 +1,14 @@
 """Target factory that generates targets from glob patterns."""
 
 import glob
-import os
 import logging
-from typing import Any, Dict
+import os
+from typing import Any
 
 _LOGGER = logging.getLogger(__name__)
 
 
-def glob_factory(vars: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+def glob_factory(vars: dict[str, Any], cfg: dict[str, Any]) -> dict[str, dict[str, Any]]:
     """Generate build targets from a glob pattern.
 
     Creates multiple targets from files matching a glob pattern. Each matched
@@ -26,13 +26,14 @@ def glob_factory(vars: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[str, Dict[st
         Dictionary mapping target names to target configurations.
     """
     from .utilities import make_abspath
+
     path = make_abspath(vars["path"], cfg["_cfg_file_path"])
     name_levels = vars.get("name_levels", 0)
     globs = glob.glob(path)
     _LOGGER.debug(f"Globs: {globs}")
     _LOGGER.debug(f"Path: {path}")
 
-    targets: Dict[str, Dict[str, Any]] = {}
+    targets: dict[str, dict[str, Any]] = {}
     for glob_path in globs:
         # Extract target name from path
         split_path = glob_path.split("/")

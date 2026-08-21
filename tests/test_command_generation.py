@@ -6,6 +6,7 @@ when no explicit 'command' field is provided in the target configuration.
 """
 
 import pytest
+
 from markmeld.melder import Target
 
 
@@ -69,9 +70,7 @@ class TestDefaultCommandGeneration:
 
     def test_lua_filters_generates_flags(self):
         """lua_filters array generates --lua-filter flags in configured order"""
-        target = make_target(
-            lua_filters=["figczar.lua", "change-marker.lua", "multi-refs.lua"]
-        )
+        target = make_target(lua_filters=["figczar.lua", "change-marker.lua", "multi-refs.lua"])
         command = target.meta.get("command", "")
 
         assert "--lua-filter" in command
@@ -120,9 +119,9 @@ class TestDefaultCommandGeneration:
         assert "--csl" in command
         assert "--lua-filter" in command
         # The two configured filters, plus the always-on unicode-symbols filter.
-        assert (
-            command.count("--lua-filter") == 3
-        ), f"Expected 3 --lua-filter flags, found {command.count('--lua-filter')}"
+        assert command.count("--lua-filter") == 3, (
+            f"Expected 3 --lua-filter flags, found {command.count('--lua-filter')}"
+        )
         assert "unicode-symbols.lua" in command
         assert "--citeproc" in command
         assert "-o " in command

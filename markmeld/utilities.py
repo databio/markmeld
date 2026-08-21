@@ -8,28 +8,27 @@ This module contains helper functions for:
 """
 
 import glob
+import logging
 import os
 import platform
 import subprocess
-import yaml
 from collections.abc import Mapping
-import logging
 from pathlib import Path
 from string import Template as StringTemplate
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable
 
+import yaml
 from ubiquerg import expandpath
 
 from .const import FILE_OPENER_MAP
 from .glob_factory import glob_factory
-
-
 
 _LOGGER = logging.getLogger(__name__)
 
 # ====================
 # Configuration and Command Processing
 # ====================
+
 
 class MyTemplate(StringTemplate):
     """Custom string template for command variable substitution.
@@ -65,7 +64,7 @@ class MyTemplate(StringTemplate):
     # braceidpattern = r"[_a-z][_a-z0-9]*(?:\.[_a-z][_a-z0-9]*)*"  # allows dots, to enable nested variable names
 
 
-def expand_dict_templates(d: Dict[str, Any], max_iterations: int = 3) -> Dict[str, Any]:
+def expand_dict_templates(d: dict[str, Any], max_iterations: int = 3) -> dict[str, Any]:
     """Expand template variables in string values of a dictionary.
 
     Iterates over all string values containing '{', substituting template
@@ -80,7 +79,7 @@ def expand_dict_templates(d: Dict[str, Any], max_iterations: int = 3) -> Dict[st
         The dictionary with template variables expanded in-place.
     """
     for key, value in list(d.items()):
-        if isinstance(value, str) and '{' in value:
+        if isinstance(value, str) and "{" in value:
             expanded = value
             for _ in range(max_iterations):
                 new_expanded = MyTemplate(expanded).safe_substitute(**d)
@@ -127,8 +126,8 @@ def format_command(tgt: Any) -> str:
 
 
 def run_cmd(
-    cmd: str, stdin: Optional[bytes] = None, workdir: Optional[str] = None
-) -> Tuple[int, str, str]:
+    cmd: str, stdin: bytes | None = None, workdir: str | None = None
+) -> tuple[int, str, str]:
     """Run a shell command with optional stdin and working directory.
 
     Args:
@@ -158,23 +157,37 @@ def run_cmd(
     if stdin:
         # Call command (default: pandoc), passing the rendered template to stdin
         p = subprocess.Popen(
-            cmd, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE, cwd=cwd
+            cmd,
+            shell=True,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            cwd=cwd,
         )
         stdout, stderr = p.communicate(input=stdin)
-        return p.returncode, stdout.decode('utf-8', errors='replace'), stderr.decode('utf-8', errors='replace')
+        return (
+            p.returncode,
+            stdout.decode("utf-8", errors="replace"),
+            stderr.decode("utf-8", errors="replace"),
+        )
     else:
-        p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE,
-                           stderr=subprocess.PIPE, cwd=cwd)
+        p = subprocess.Popen(
+            cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=cwd
+        )
         stdout, stderr = p.communicate()
-        return p.returncode, stdout.decode('utf-8', errors='replace'), stderr.decode('utf-8', errors='replace')
+        return (
+            p.returncode,
+            stdout.decode("utf-8", errors="replace"),
+            stderr.decode("utf-8", errors="replace"),
+        )
 
 
 # ====================
 # Configuration File Loading
 # ====================
 
-def recursive_get(dat: Dict[str, Any], indices: List[str]) -> Optional[Any]:
+
+def recursive_get(dat: dict[str, Any], indices: list[str]) -> Any | None:
     """Index into a nested dictionary using a list of keys.
 
     Args:
@@ -192,8 +205,8 @@ def recursive_get(dat: Dict[str, Any], indices: List[str]) -> Optional[Any]:
 
 
 def load_config_wrapper(
-    cfg_path: str, workpath: Optional[str] = None, autocomplete: bool = True
-) -> Dict[str, Any]:
+    cfg_path: str, workpath: str | None = None, autocomplete: bool = True
+) -> dict[str, Any]:
     """Load a configuration file with import tracking to prevent duplicates.
 
     Wrapper function that initializes import tracking before loading.
@@ -206,16 +219,16 @@ def load_config_wrapper(
     Returns:
         Loaded configuration dictionary.
     """
-    imported_list: Dict[str, bool] = {}
+    imported_list: dict[str, bool] = {}
     return load_config_file(cfg_path, workpath, autocomplete, imported_list)
 
 
 def load_config_file(
     filepath: str,
-    workpath: Optional[str] = None,
+    workpath: str | None = None,
     autocomplete: bool = True,
-    imported_list: Optional[Dict[str, bool]] = None,
-) -> Dict[str, Any]:
+    imported_list: dict[str, bool] | None = None,
+) -> dict[str, Any]:
     """Load a YAML configuration file.
 
     Args:
@@ -251,7 +264,7 @@ def load_config_file(
         raise e  # Fail on other errors
 
 
-def make_abspath(relpath: str, filepath: str, root: Optional[str] = None) -> str:
+def make_abspath(relpath: str, filepath: str, root: str | None = None) -> str:
     """Convert a relative path to an absolute path.
 
     Args:
@@ -276,11 +289,11 @@ def make_abspath(relpath: str, filepath: str, root: Optional[str] = None) -> str
 
 def load_config_data(
     cfg_data: str,
-    filepath: Optional[str] = None,
-    workpath: Optional[str] = None,
+    filepath: str | None = None,
+    workpath: str | None = None,
     autocomplete: bool = True,
-    imported_list: Optional[Dict[str, bool]] = None,
-) -> Dict[str, Any]:
+    imported_list: dict[str, bool] | None = None,
+) -> dict[str, Any]:
     """Parse YAML config data, process imports, and run target factories.
 
     Args:
@@ -314,9 +327,7 @@ def load_config_data(
     if "imports" in higher_cfg and higher_cfg["imports"]:
         _LOGGER.debug("Found imports")
         for import_file in higher_cfg["imports"]:
-            import_file_abspath = make_abspath(
-                expandpath(import_file), expandpath(filepath)
-            )
+            import_file_abspath = make_abspath(expandpath(import_file), expandpath(filepath))
             if not autocomplete:
                 _LOGGER.info(f"Specified config file to import: {import_file_abspath}")
             deep_update(
@@ -329,13 +340,9 @@ def load_config_data(
     if "imports_relative" in higher_cfg and higher_cfg["imports_relative"]:
         _LOGGER.debug("Found relative imports")
         for import_file in higher_cfg["imports_relative"]:
-            import_file_abspath = make_abspath(
-                expandpath(import_file), expandpath(filepath)
-            )
+            import_file_abspath = make_abspath(expandpath(import_file), expandpath(filepath))
             if not autocomplete:
-                _LOGGER.info(
-                    f"Specified relative config file to import (relative): {import_file}"
-                )
+                _LOGGER.info(f"Specified relative config file to import (relative): {import_file}")
             deep_update(
                 lower_cfg,
                 load_config_file(expandpath(import_file_abspath)),
@@ -359,15 +366,13 @@ def load_config_data(
             for k, v in factory_targets.items():
                 factory_targets[k]["_workpath"] = os.path.dirname(filepath)
                 factory_targets[k]["_defpath"] = filepath
-            deep_update(
-                lower_cfg, {"targets": factory_targets}, warn_override=not autocomplete
-            )
+            deep_update(lower_cfg, {"targets": factory_targets}, warn_override=not autocomplete)
 
     # _LOGGER.debug("Lower cfg: " + str(lower_cfg))
     return lower_cfg
 
 
-def warn_overriding_target(old: Dict[str, Any], new: Dict[str, Any]) -> None:
+def warn_overriding_target(old: dict[str, Any], new: dict[str, Any]) -> None:
     """Check for and raise error on target name conflicts.
 
     Args:
@@ -382,12 +387,10 @@ def warn_overriding_target(old: Dict[str, Any], new: Dict[str, Any]) -> None:
             if tgt in old["targets"]:
                 _LOGGER.error(f"Overriding target: {tgt}")
                 _LOGGER.error(
-                    "Originally defined in: ".rjust(27, " ")
-                    + f"{old['targets'][tgt]['_defpath']}"
+                    "Originally defined in: ".rjust(27, " ") + f"{old['targets'][tgt]['_defpath']}"
                 )
                 _LOGGER.error(
-                    "Redefined in: ".rjust(27, " ")
-                    + f"{new['targets'][tgt]['_defpath']}"
+                    "Redefined in: ".rjust(27, " ") + f"{new['targets'][tgt]['_defpath']}"
                 )
                 raise Exception(
                     "Same target name is defined in imported file. Overriding targets is not allowed."
@@ -395,8 +398,8 @@ def warn_overriding_target(old: Dict[str, Any], new: Dict[str, Any]) -> None:
 
 
 def deep_update(
-    old: Dict[str, Any], new: Dict[str, Any], warn_override: bool = True
-) -> Dict[str, Any]:
+    old: dict[str, Any], new: dict[str, Any], warn_override: bool = True
+) -> dict[str, Any]:
     """Recursively update a dictionary with another dictionary.
 
     Like built-in dict.update(), but merges nested dictionaries instead
@@ -424,7 +427,8 @@ def deep_update(
 # Target Factory Loading
 # ====================
 
-def load_target_factories() -> Dict[str, Callable]:
+
+def load_target_factories() -> dict[str, Callable]:
     """Load target factories from entry points.
 
     Discovers target factories registered under the 'markmeld.factories' entry point
@@ -433,22 +437,11 @@ def load_target_factories() -> Dict[str, Callable]:
     Returns:
         Dictionary mapping factory names to their factory functions.
     """
-    try:
-        # Python 3.10+ has importlib.metadata in stdlib
-        from importlib.metadata import entry_points
-    except ImportError:
-        # Fallback for Python 3.8-3.9
-        from importlib_metadata import entry_points
+    from importlib.metadata import entry_points
 
-    built_in_factories: Dict[str, Callable] = {"glob": glob_factory}
+    built_in_factories: dict[str, Callable] = {"glob": glob_factory}
 
-    # Get entry points for markmeld.factories
-    try:
-        # Python 3.10+ returns SelectableGroups
-        eps = entry_points(group="markmeld.factories")
-    except TypeError:
-        # Python 3.8-3.9 compatibility
-        eps = entry_points().get("markmeld.factories", [])
+    eps = entry_points(group="markmeld.factories")
 
     installed_factories = {ep.name: ep.load() for ep in eps}
     built_in_factories.update(installed_factories)
@@ -459,7 +452,8 @@ def load_target_factories() -> Dict[str, Callable]:
 # File and Path Operations
 # ====================
 
-def globs_to_dict(globs: Optional[List[str]], cfg_path: str) -> Dict[str, str]:
+
+def globs_to_dict(globs: list[str] | None, cfg_path: str) -> dict[str, str]:
     """Resolve glob patterns to a dictionary of file names to paths.
 
     Args:
@@ -470,7 +464,7 @@ def globs_to_dict(globs: Optional[List[str]], cfg_path: str) -> Dict[str, str]:
     Returns:
         Dictionary mapping base file names (without extension) to absolute paths.
     """
-    return_items: Dict[str, str] = {}
+    return_items: dict[str, str] = {}
     if not globs:
         return return_items
 
@@ -502,7 +496,7 @@ def get_file_open_cmd() -> str:
     return FILE_OPENER_MAP.get(system, "xdg-open")
 
 
-def write_to_file(content: str, output_path: Union[str, Path]) -> None:
+def write_to_file(content: str, output_path: str | Path) -> None:
     """Write content to a file, creating parent directories as needed.
 
     Args:
@@ -520,6 +514,7 @@ def write_to_file(content: str, output_path: Union[str, Path]) -> None:
 # Markdown Processing Functions
 # ====================
 
+
 def sanitize_filename(filename: str) -> str:
     """Sanitize a filename by removing or replacing invalid characters.
 
@@ -535,25 +530,25 @@ def sanitize_filename(filename: str) -> str:
     # Remove invalid characters for filenames
     invalid_chars = '<>:"/\\|?*'
     for char in invalid_chars:
-        filename = filename.replace(char, '_')
-    
+        filename = filename.replace(char, "_")
+
     # Remove trailing dots and spaces (Windows compatibility)
-    name_parts = filename.rsplit('.', 1)
+    name_parts = filename.rsplit(".", 1)
     if len(name_parts) == 2:
         name, ext = name_parts
-        name = name.rstrip('. ')
+        name = name.rstrip(". ")
         filename = f"{name}.{ext}" if name else f"file.{ext}"
     else:
-        filename = filename.rstrip('. ')
-    
+        filename = filename.rstrip(". ")
+
     # Limit length to 255 characters
     if len(filename) > 255:
-        name_parts = filename.rsplit('.', 1)
+        name_parts = filename.rsplit(".", 1)
         if len(name_parts) == 2:
             name, ext = name_parts
             if len(name) > 251:
                 filename = f"{name[:251]}.{ext}"
         else:
             filename = filename[:251]
-    
+
     return filename

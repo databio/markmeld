@@ -2,10 +2,12 @@
 Tests for Google Doc target functionality
 """
 
-import pytest
 import os
+
+import pytest
+
+from markmeld.const import GOOGLE_DOC_TARGET_TYPE, GOOGLE_DOCS_KEY, TARGET_TYPE_KEY
 from markmeld.melder import MarkdownMelder, Target
-from markmeld.const import GOOGLE_DOCS_KEY, TARGET_TYPE_KEY, GOOGLE_DOC_TARGET_TYPE
 
 
 @pytest.mark.parametrize(

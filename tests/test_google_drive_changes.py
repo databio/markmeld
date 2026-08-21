@@ -48,13 +48,9 @@ class TestActiveChangesDetection:
                 for call in mock_logger.info.call_args_list
                 if "suggested edits" in str(call) or "change markers" in str(call)
             ]
-            assert (
-                len(info_calls) > 0
-            ), "Expected info about using Docs API with change markers"
+            assert len(info_calls) > 0, "Expected info about using Docs API with change markers"
 
-    def test_check_for_active_changes_with_unresolved_comments(
-        self, google_drive_processor
-    ):
+    def test_check_for_active_changes_with_unresolved_comments(self, google_drive_processor):
         """Test warning when document has unresolved comments."""
         services = google_drive_processor()
 
@@ -66,9 +62,7 @@ class TestActiveChangesDetection:
 
         services.docs.documents().get().execute.return_value = {
             "body": {
-                "content": [
-                    {"paragraph": {"elements": [{"textRun": {"content": "Some text"}}]}}
-                ]
+                "content": [{"paragraph": {"elements": [{"textRun": {"content": "Some text"}}]}}]
             }
         }
 
@@ -100,9 +94,7 @@ class TestActiveChangesDetection:
                 for call in mock_logger.warning.call_args_list
                 if "DISCUSSION COMMENTS" in str(call)
             ]
-            assert (
-                len(warning_calls) > 0
-            ), "Expected warning about unresolved discussion comments"
+            assert len(warning_calls) > 0, "Expected warning about unresolved discussion comments"
 
     def test_check_for_active_changes_no_issues(self, google_drive_processor):
         """Test no warning when document has no active changes."""
@@ -116,9 +108,7 @@ class TestActiveChangesDetection:
 
         services.docs.documents().get().execute.return_value = {
             "body": {
-                "content": [
-                    {"paragraph": {"elements": [{"textRun": {"content": "Some text"}}]}}
-                ]
+                "content": [{"paragraph": {"elements": [{"textRun": {"content": "Some text"}}]}}]
             }
         }
 
@@ -128,9 +118,7 @@ class TestActiveChangesDetection:
             services.processor._check_for_active_changes("test_doc_id")
 
             warning_calls = [
-                call
-                for call in mock_logger.warning.call_args_list
-                if "WARNING" in str(call)
+                call for call in mock_logger.warning.call_args_list if "WARNING" in str(call)
             ]
             assert len(warning_calls) == 0, "Should not warn when no active changes"
 
@@ -186,12 +174,8 @@ class TestActiveChangesDetection:
 
             warning_calls = [str(call) for call in mock_logger.warning.call_args_list]
 
-            has_discussion_warning = any(
-                "DISCUSSION COMMENTS" in call for call in warning_calls
-            )
-            has_one_comment = any(
-                "Found 1 unresolved comment" in call for call in warning_calls
-            )
+            has_discussion_warning = any("DISCUSSION COMMENTS" in call for call in warning_calls)
+            has_one_comment = any("Found 1 unresolved comment" in call for call in warning_calls)
             has_real_comment = any(
                 "real comment that should be shown" in call for call in warning_calls
             )
@@ -204,6 +188,4 @@ class TestActiveChangesDetection:
             assert has_discussion_warning, "Should warn about discussion comments"
             assert has_one_comment, "Should report only 1 unresolved comment"
             assert has_real_comment, "Should show the real comment"
-            assert (
-                not has_deleted_content
-            ), "Should NOT show 'Original content deleted' comments"
+            assert not has_deleted_content, "Should NOT show 'Original content deleted' comments"

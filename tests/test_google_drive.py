@@ -4,8 +4,9 @@ These tests verify the optional Google Drive functionality works correctly
 when the google extras are installed.
 """
 
-import pytest
 from unittest.mock import patch
+
+import pytest
 
 from markmeld.google_drive.figure_paths import extract_csv_paths, update_figure_paths
 

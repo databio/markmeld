@@ -1,22 +1,17 @@
 """Tests for local figure conversion (markmeld.figure_conversion)."""
 
-import os
-import hashlib
 from pathlib import Path
-from unittest.mock import patch, MagicMock
-
-import pytest
+from unittest.mock import MagicMock, patch
 
 from markmeld.figure_conversion import (
+    _compute_file_md5,
+    _save_digest,
+    convert_svg,
     extract_figure_paths,
     parse_figure_label,
     parse_figure_parameters,
-    update_figure_paths,
-    convert_svg,
     process_local_figures,
-    _compute_file_md5,
-    _needs_conversion,
-    _save_digest,
+    update_figure_paths,
 )
 
 

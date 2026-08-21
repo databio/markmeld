@@ -7,11 +7,12 @@ Ensures the height formula:
 """
 
 import shutil
-import pytest
-import pandas as pd
-import tempfile
 import subprocess
+import tempfile
 from pathlib import Path
+
+import pandas as pd
+import pytest
 
 try:
     import weasyprint  # noqa: F401
@@ -37,9 +38,7 @@ def get_page_count(pdf_path: str) -> int:
     return 0
 
 
-def render_table_pdf(
-    df: pd.DataFrame, font_size_pt: float, height_mm: float, output_path: str
-):
+def render_table_pdf(df: pd.DataFrame, font_size_pt: float, height_mm: float, output_path: str):
     """Render DataFrame to PDF with specified height."""
     from weasyprint import HTML
 
@@ -158,9 +157,7 @@ class TestRealisticContent:
         """Create DataFrame with long content similar to real CSVs."""
         return pd.DataFrame(
             {
-                "sample_name": [
-                    f"Sample_name_with_long_prefix_{i:03d}" for i in range(n_rows)
-                ],
+                "sample_name": [f"Sample_name_with_long_prefix_{i:03d}" for i in range(n_rows)],
                 "common_name": ["hg38" for _ in range(n_rows)],
                 "authority": ["institution" for _ in range(n_rows)],
                 "description": [

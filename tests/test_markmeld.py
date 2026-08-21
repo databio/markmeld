@@ -1,20 +1,17 @@
-import markmeld
 import os
+from datetime import date
+
 import pytest
 
-from datetime import date
+import markmeld
 
 today = date.today().strftime("%Y-%m-%d")
 
 # We want our logger to print verbosely during testing
-N_LOGGING_FMT = (
-    "%(filename)12.12s:%(funcName)16.16s:%(lineno)4.4d |%(levelname)5.5s| %(message)s "
-)
+N_LOGGING_FMT = "%(filename)12.12s:%(funcName)16.16s:%(lineno)4.4d |%(levelname)5.5s| %(message)s "
 import logmuse
 
-_LOGGER = logmuse.init_logger(
-    name="markmeld", level="DEBUG", datefmt="%H:%M:%S", fmt=N_LOGGING_FMT
-)
+_LOGGER = logmuse.init_logger(name="markmeld", level="DEBUG", datefmt="%H:%M:%S", fmt=N_LOGGING_FMT)
 
 
 def compare_to_file(file, string_to_compare):
@@ -144,9 +141,7 @@ def test_import():
     res = mm.build_target("imported_target", print_only=True)
     assert "rVEeqUQ1t5" in str(res.melded_output)
 
-    cfg2 = markmeld.load_config_wrapper(
-        "tests/test_data/_markmeld_import_relative.yaml"
-    )
+    cfg2 = markmeld.load_config_wrapper("tests/test_data/_markmeld_import_relative.yaml")
     mm2 = markmeld.MarkdownMelder(cfg2)
 
     res = mm2.build_target("imported_target", print_only=True)
@@ -154,9 +149,7 @@ def test_import():
 
 
 def test_null_jinja_template():
-    cfg = markmeld.load_config_wrapper(
-        "tests/test_data/_markmeld_null_jinja_template.yaml"
-    )
+    cfg = markmeld.load_config_wrapper("tests/test_data/_markmeld_null_jinja_template.yaml")
     mm = markmeld.MarkdownMelder(cfg)
     res = mm.build_target("target_name", print_only=True)
     assert res is not None
@@ -200,9 +193,7 @@ def test_meta_target():
 
 def test_postprocess():
     """Test that postprocess runs shell commands in _workpath after build"""
-    cfg = markmeld.load_config_wrapper(
-        "tests/test_data/postprocess_test/_markmeld.yaml"
-    )
+    cfg = markmeld.load_config_wrapper("tests/test_data/postprocess_test/_markmeld.yaml")
     mm = markmeld.MarkdownMelder(cfg)
 
     test_dir = "tests/test_data/postprocess_test"

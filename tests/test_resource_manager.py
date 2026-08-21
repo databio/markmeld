@@ -6,9 +6,10 @@ substitution functionality of the ResourceManager.
 """
 
 import os
+
 import pytest
 
-from markmeld.resource_manager import ResourceManager, list_filters, get_filter_path
+from markmeld.resource_manager import ResourceManager, get_filter_path, list_filters
 
 
 @pytest.fixture

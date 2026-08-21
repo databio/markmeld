@@ -7,13 +7,13 @@ for LaTeX/pandoc processing.
 import pytest
 
 from markmeld.google_drive.markdown_clean import (
-    clean_markdown,
-    clean_escape_characters,
-    remove_embedded_images,
-    strip_bold_from_headings,
-    ensure_blank_lines_before_headings,
-    replace_svg_extensions,
     check_and_fix_latex_incompatible_chars,
+    clean_escape_characters,
+    clean_markdown,
+    ensure_blank_lines_before_headings,
+    remove_embedded_images,
+    replace_svg_extensions,
+    strip_bold_from_headings,
 )
 
 # ============================================================
@@ -134,9 +134,7 @@ class TestRemoveEmbeddedImages:
             ("![][image1]\nText after.", "image1", "Text after."),
         ],
     )
-    def test_removes_reference_but_preserves_trailing_text(
-        self, md, removed, preserved
-    ):
+    def test_removes_reference_but_preserves_trailing_text(self, md, removed, preserved):
         result = remove_embedded_images(md)
         assert removed not in result
         assert preserved in result

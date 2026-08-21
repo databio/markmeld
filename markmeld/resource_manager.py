@@ -9,9 +9,7 @@ The ResourceManager class discovers and provides paths to all embedded resources
 making them available as variables in command templates.
 """
 
-import os
 from pathlib import Path
-from typing import Dict, List, Optional
 
 
 class ResourceManager:
@@ -29,13 +27,13 @@ class ResourceManager:
     def __init__(self) -> None:
         """Initialize the ResourceManager with resource type paths."""
         self.base_path = Path(__file__).parent
-        self.resource_dirs: Dict[str, Path] = {
+        self.resource_dirs: dict[str, Path] = {
             "filter": self.base_path / "filters",
             "template": self.base_path / "templates",
             "csl": self.base_path / "csl",
         }
 
-        self._resource_cache: Dict[str, Dict[str, str]] = {}
+        self._resource_cache: dict[str, dict[str, str]] = {}
         self._discover_all_resources()
 
     def _discover_all_resources(self) -> None:
@@ -51,7 +49,7 @@ class ResourceManager:
             self._resource_cache["filter"] = {}
             return
 
-        filters: Dict[str, str] = {}
+        filters: dict[str, str] = {}
         for subdir in filters_dir.iterdir():
             if subdir.is_dir() and not subdir.name.startswith("__"):
                 lua_files = list(subdir.glob("*.lua"))
@@ -98,7 +96,7 @@ class ResourceManager:
             self._resource_cache["template"] = {}
             return
 
-        templates: Dict[str, str] = {}
+        templates: dict[str, str] = {}
 
         def scan_directory(directory: Path, prefix: str = "") -> None:
             """Recursively scan directory for .jinja files.
@@ -129,14 +127,14 @@ class ResourceManager:
             self._resource_cache["csl"] = {}
             return
 
-        csl_files: Dict[str, str] = {}
+        csl_files: dict[str, str] = {}
         for csl_file in csl_dir.glob("*.csl"):
             csl_name = csl_file.stem
             csl_files[csl_name] = str(csl_file.absolute())
 
         self._resource_cache["csl"] = csl_files
 
-    def list_resources(self, resource_type: str) -> List[str]:
+    def list_resources(self, resource_type: str) -> list[str]:
         """List all available resources of a given type.
 
         Args:
@@ -149,7 +147,7 @@ class ResourceManager:
             return []
         return sorted(self._resource_cache[resource_type].keys())
 
-    def get_resource_path(self, resource_type: str, resource_name: str) -> Optional[str]:
+    def get_resource_path(self, resource_type: str, resource_name: str) -> str | None:
         """Get the absolute path to a specific resource.
 
         Args:
@@ -175,7 +173,7 @@ class ResourceManager:
         """
         return self.get_resource_path(resource_type, resource_name) is not None
 
-    def get_all_resource_variables(self) -> Dict[str, str]:
+    def get_all_resource_variables(self) -> dict[str, str]:
         """Get all resource variables for command substitution.
 
         Returns a dictionary mapping variable names like {mm-filter-name},
@@ -184,16 +182,14 @@ class ResourceManager:
         Returns:
             Dictionary of variable names to resource paths.
         """
-        variables: Dict[str, str] = {}
+        variables: dict[str, str] = {}
 
         # Add filter variables
         for filter_name, filter_path in self._resource_cache.get("filter", {}).items():
             variables[f"mm-filter-{filter_name}"] = filter_path
 
         # Add template variables
-        for template_name, template_path in self._resource_cache.get(
-            "template", {}
-        ).items():
+        for template_name, template_path in self._resource_cache.get("template", {}).items():
             variables[f"mm-template-{template_name}"] = template_path
 
         # Add CSL variables
@@ -206,7 +202,7 @@ class ResourceManager:
 # Convenience functions for common resource operations
 
 
-def list_filters() -> List[str]:
+def list_filters() -> list[str]:
     """List all available filter names.
 
     Returns:
@@ -216,7 +212,7 @@ def list_filters() -> List[str]:
     return rm.list_resources("filter")
 
 
-def get_filter_path(filter_name: str) -> Optional[str]:
+def get_filter_path(filter_name: str) -> str | None:
     """Get the absolute path to a specific filter.
 
     Args:
@@ -229,7 +225,7 @@ def get_filter_path(filter_name: str) -> Optional[str]:
     return rm.get_resource_path("filter", filter_name)
 
 
-def inject_resource_variables(target_dict: Dict) -> Dict:
+def inject_resource_variables(target_dict: dict) -> dict:
     """Inject all embedded resource variables into a target dictionary.
 
     This function adds all available resource variables (filters, templates,

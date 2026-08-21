@@ -7,8 +7,7 @@ with no external dependencies beyond standard library and typing.
 import logging
 import re
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Any, Dict, List, NamedTuple, Optional, Tuple
+from typing import Any, NamedTuple
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -50,8 +49,8 @@ class ValidationIssue:
     message: str
     line: int
     context: str
-    figure: Optional[str] = None
-    panel: Optional[str] = None
+    figure: str | None = None
+    panel: str | None = None
 
 
 class DocumentChecker:
@@ -64,7 +63,7 @@ class DocumentChecker:
     - Report generation
     """
 
-    def parse_figure_reference(self, ref_text: str) -> Optional[Tuple[str, str]]:
+    def parse_figure_reference(self, ref_text: str) -> tuple[str, str] | None:
         """Parse a figure reference to extract figure number and panels.
 
         Args:
@@ -74,20 +73,20 @@ class DocumentChecker:
             Tuple of (figure_number, panel_letters) or None if parsing fails.
         """
         # Clean up the text - remove parentheses and trailing punctuation
-        ref_text = ref_text.strip('()')
-        if ref_text and ref_text[-1] in ',;':
+        ref_text = ref_text.strip("()")
+        if ref_text and ref_text[-1] in ",;":
             ref_text = ref_text[:-1]
 
         # Handle LaTeX \ref{} style
-        if '\\ref{' in ref_text:
+        if "\\ref{" in ref_text:
             # Extract the label
-            label_match = re.search(r'\\ref\{([^}]+)\}', ref_text)
+            label_match = re.search(r"\\ref\{([^}]+)\}", ref_text)
             if label_match:
                 label = label_match.group(1)
                 # Check for panel letters IMMEDIATELY after the ref (NO space allowed)
                 # Spaces before panel letters are LaTeX errors
-                panel_match = re.search(r'\\ref\{[^}]+\}([A-Z](?:-[A-Z])?)', ref_text)
-                panels = panel_match.group(1) if panel_match else ''
+                panel_match = re.search(r"\\ref\{[^}]+\}([A-Z](?:-[A-Z])?)", ref_text)
+                panels = panel_match.group(1) if panel_match else ""
                 return (label, panels)
 
         # Handle regular figure references
@@ -95,28 +94,26 @@ class DocumentChecker:
         # Now also handles spaces before panels
         patterns = [
             # Standard format with optional space before panel
-            r'(?:Supplemental\s+)?Fig(?:ure)?\.?\s*(S?\d+)\s*([A-Z](?:-[A-Z])?)?',
+            r"(?:Supplemental\s+)?Fig(?:ure)?\.?\s*(S?\d+)\s*([A-Z](?:-[A-Z])?)?",
             # Handle single panel letter
-            r'(?:Supplemental\s+)?Fig(?:ure)?\.?\s*(S?\d+)\s*([A-Z])',
+            r"(?:Supplemental\s+)?Fig(?:ure)?\.?\s*(S?\d+)\s*([A-Z])",
             # Handle comma-separated panels like "3B, 3C"
-            r'(\d+)\s*([A-Z](?:\s*,\s*[A-Z])*)',
+            r"(\d+)\s*([A-Z](?:\s*,\s*[A-Z])*)",
         ]
 
         for pattern in patterns:
             match = re.search(pattern, ref_text, re.IGNORECASE)
             if match:
                 figure_num = match.group(1)
-                panels = match.group(2) if len(match.groups()) > 1 and match.group(2) else ''
+                panels = match.group(2) if len(match.groups()) > 1 and match.group(2) else ""
                 # Clean up panels - remove spaces
                 if panels:
-                    panels = panels.replace(' ', '')
+                    panels = panels.replace(" ", "")
                 return (figure_num, panels)
 
         return None
 
-    def parse_multi_figure_reference(
-        self, ref_text: str
-    ) -> Optional[List[Tuple[str, str]]]:
+    def parse_multi_figure_reference(self, ref_text: str) -> list[tuple[str, str]] | None:
         """Parse multi-figure references like "(Fig. 3A, 3B)" or "(Fig. S3, S4)".
 
         Args:
@@ -127,7 +124,7 @@ class DocumentChecker:
         """
         # First try to find all complete figure references with "Fig." prefix
         # Pattern to match "Fig. X" or "Figure X" with optional panel
-        complete_fig_pattern = r'Fig(?:ure)?\.?\s*(S?\d+)([A-Z](?:-[A-Z])?)?'
+        complete_fig_pattern = r"Fig(?:ure)?\.?\s*(S?\d+)([A-Z](?:-[A-Z])?)?"
         complete_matches = list(re.finditer(complete_fig_pattern, ref_text, re.IGNORECASE))
 
         if len(complete_matches) > 1:
@@ -135,13 +132,13 @@ class DocumentChecker:
             refs = []
             for match in complete_matches:
                 fig_num = match.group(1)
-                panel = match.group(2) or ''
+                panel = match.group(2) or ""
                 refs.append((fig_num, panel))
             return refs
 
         # Fall back to original abbreviated format handling: "(Fig. 3A, 3B)" or "(Fig. S3, S4)"
         # Pattern: Fig. followed by figure number, then comma-separated additional refs
-        pattern = r'\(?\s*Fig(?:ure)?\.?\s*(S?\d+)([A-Z](?:-[A-Z])?)?(?:\s*,\s*([S\d]+[A-Z]?(?:-[A-Z])?(?:\s*,\s*[S\d]+[A-Z]?(?:-[A-Z])?)*))?\)?'
+        pattern = r"\(?\s*Fig(?:ure)?\.?\s*(S?\d+)([A-Z](?:-[A-Z])?)?(?:\s*,\s*([S\d]+[A-Z]?(?:-[A-Z])?(?:\s*,\s*[S\d]+[A-Z]?(?:-[A-Z])?)*))?\)?"
 
         match = re.match(pattern, ref_text, re.IGNORECASE)
         if match and match.group(3):  # Has comma-separated parts
@@ -149,32 +146,30 @@ class DocumentChecker:
 
             # First figure
             fig_num = match.group(1)
-            panel = match.group(2) or ''
+            panel = match.group(2) or ""
             refs.append((fig_num, panel))
 
             # Additional figures
             additional = match.group(3)
             if additional:
                 # Split by comma and process each
-                for part in additional.split(','):
+                for part in additional.split(","):
                     part = part.strip()
                     # Check if it's just a panel letter (e.g., "3B")
-                    if re.match(r'^[A-Z](?:-[A-Z])?$', part):
+                    if re.match(r"^[A-Z](?:-[A-Z])?$", part):
                         # Just a panel for the same figure
                         refs.append((fig_num, part))
-                    elif re.match(r'^S?\d+[A-Z]?(?:-[A-Z])?$', part):
+                    elif re.match(r"^S?\d+[A-Z]?(?:-[A-Z])?$", part):
                         # Parse figure number and optional panel
-                        num_match = re.match(r'^(S?\d+)([A-Z](?:-[A-Z])?)?$', part)
+                        num_match = re.match(r"^(S?\d+)([A-Z](?:-[A-Z])?)?$", part)
                         if num_match:
-                            refs.append((num_match.group(1), num_match.group(2) or ''))
+                            refs.append((num_match.group(1), num_match.group(2) or ""))
 
             return refs if len(refs) > 1 else None
 
         return None
 
-    def extract_figure_references(
-        self, markdown_content: str
-    ) -> List[FigureReference]:
+    def extract_figure_references(self, markdown_content: str) -> list[FigureReference]:
         """Extract all figure references from markdown content.
 
         Finds references in formats like:
@@ -191,11 +186,11 @@ class DocumentChecker:
             List of FigureReference objects found in the content.
         """
         references = []
-        lines = markdown_content.split('\n')
+        lines = markdown_content.split("\n")
 
         for line_num, line in enumerate(lines, 1):
             # Skip lines that are image definitions
-            if line.strip().startswith('![') or re.match(r'^\s*\[[^\]]+\]:\s*', line):
+            if line.strip().startswith("![") or re.match(r"^\s*\[[^\]]+\]:\s*", line):
                 continue
 
             # Track positions already matched to avoid duplicates
@@ -205,19 +200,19 @@ class DocumentChecker:
             # Order matters! More specific patterns should come first to avoid being masked by general ones
             patterns = [
                 # Context phrases (including "shown in") - MUST come first to capture the full phrase
-                r'(?:as\s+shown\s+in\s+|see\s+|shown\s+in\s+|described\s+in\s+|illustrated\s+in\s+)Fig(?:ure)?\.?\s*(?:\\ref\{[^}]+\}|S?\d+)[A-Z]?(?:-[A-Z])?',
+                r"(?:as\s+shown\s+in\s+|see\s+|shown\s+in\s+|described\s+in\s+|illustrated\s+in\s+)Fig(?:ure)?\.?\s*(?:\\ref\{[^}]+\}|S?\d+)[A-Z]?(?:-[A-Z])?",
                 # LaTeX ref style with panel - NO space allowed before panel letter
                 # Include optional parentheses in capture
-                r'\(?\s*Fig(?:ure)?\.?\s*\\ref\{[^}]+\}[A-Z]?(?:-[A-Z])?\)?',
+                r"\(?\s*Fig(?:ure)?\.?\s*\\ref\{[^}]+\}[A-Z]?(?:-[A-Z])?\)?",
                 # LaTeX ref style WITHOUT panel but potentially with space (error case)
-                r'\(\s*Fig(?:ure)?\.?\s*\\ref\{[^}]+\}\s+[A-Z]?\)',
+                r"\(\s*Fig(?:ure)?\.?\s*\\ref\{[^}]+\}\s+[A-Z]?\)",
                 # Multi-panel references in parentheses - MUST come before simple pattern
                 # Matches "(Fig. 3A, 3B)" or "(Fig. S3, S4)" etc.
-                r'\(\s*Fig(?:ure)?\.?\s*S?\d+[A-Z]?(?:-[A-Z])?(?:\s*,\s*(?:Fig(?:ure)?\.?\s*)?[S\d]+[A-Z]?(?:-[A-Z])?)*\s*\)',
+                r"\(\s*Fig(?:ure)?\.?\s*S?\d+[A-Z]?(?:-[A-Z])?(?:\s*,\s*(?:Fig(?:ure)?\.?\s*)?[S\d]+[A-Z]?(?:-[A-Z])?)*\s*\)",
                 # Simple figure references (parenthetic or not) - catches figures anywhere including inside parentheses
                 # This will match Fig. 2C even when preceded by other text like "AUC >98%; Fig. 2C"
                 # Include optional parentheses in capture
-                r'\(?\s*(?:Supplemental\s+)?Fig(?:ure)?\.?\s*S?\d+[A-Z]?(?:-[A-Z])?\)?',
+                r"\(?\s*(?:Supplemental\s+)?Fig(?:ure)?\.?\s*S?\d+[A-Z]?(?:-[A-Z])?\)?",
             ]
 
             for pattern in patterns:
@@ -233,7 +228,7 @@ class DocumentChecker:
                     ref_text = match.group(0).strip()
 
                     # Clean up the reference text (remove trailing punctuation that's not part of parentheses)
-                    if ref_text and ref_text[-1] in ',;' and not ref_text.startswith('('):
+                    if ref_text and ref_text[-1] in ",;" and not ref_text.startswith("("):
                         ref_text = ref_text[:-1]
 
                     # Check if this is a multi-figure reference
@@ -248,14 +243,16 @@ class DocumentChecker:
                         # Add each figure reference separately
                         # Include match position for sorting (will be removed before return)
                         for figure_num, panels in multi_refs:
-                            references.append((
-                                ref_text,  # Keep original text for reporting
-                                figure_num,
-                                panels,
-                                line_num,
-                                context,
-                                match.start()  # Track position within line for sorting
-                            ))
+                            references.append(
+                                (
+                                    ref_text,  # Keep original text for reporting
+                                    figure_num,
+                                    panels,
+                                    line_num,
+                                    context,
+                                    match.start(),  # Track position within line for sorting
+                                )
+                            )
                     else:
                         # Single reference - parse normally
                         parsed = self.parse_figure_reference(ref_text)
@@ -267,14 +264,16 @@ class DocumentChecker:
                             end_pos = min(len(line), match.end() + 30)
                             context = line[start_pos:end_pos].strip()
 
-                            references.append((
-                                ref_text,
-                                figure_num,
-                                panels,
-                                line_num,
-                                context,
-                                match.start()  # Track position within line for sorting
-                            ))
+                            references.append(
+                                (
+                                    ref_text,
+                                    figure_num,
+                                    panels,
+                                    line_num,
+                                    context,
+                                    match.start(),  # Track position within line for sorting
+                                )
+                            )
 
         # Sort by (line_number, position) to ensure correct text order
         # Multiple patterns can match different references out of order
@@ -283,9 +282,7 @@ class DocumentChecker:
         # Convert to FigureReference NamedTuple (removing position element)
         return [FigureReference(ref[0], ref[1], ref[2], ref[3], ref[4]) for ref in references]
 
-    def extract_figure_labels(
-        self, markdown_content: str
-    ) -> Dict[str, Tuple[int, str]]:
+    def extract_figure_labels(self, markdown_content: str) -> dict[str, tuple[int, str]]:
         r"""Extract figure label definitions from figure captions.
 
         Finds labels in patterns like:
@@ -300,30 +297,30 @@ class DocumentChecker:
             where figure_type is 'main' or 'supplemental'.
         """
         labels = {}
-        lines = markdown_content.split('\n')
+        lines = markdown_content.split("\n")
 
         # Pattern to match: ![**\label{name} Supplemental Figure ...
         # or: ![**\label{name} Figure ...
-        pattern = r'!\[\*\*\\label\{([^}]+)\}\s*(Supplemental\s+)?Figure'
+        pattern = r"!\[\*\*\\label\{([^}]+)\}\s*(Supplemental\s+)?Figure"
 
         for line_num, line in enumerate(lines, 1):
             # Only look at lines that start image definitions
-            if not line.strip().startswith('!['):
+            if not line.strip().startswith("!["):
                 continue
 
             match = re.search(pattern, line)
             if match:
                 label_name = match.group(1)
                 is_supplemental = match.group(2) is not None
-                figure_type = 'supplemental' if is_supplemental else 'main'
+                figure_type = "supplemental" if is_supplemental else "main"
 
                 labels[label_name] = (line_num, figure_type)
 
         return labels
 
     def build_label_order_map(
-        self, label_definitions: Dict[str, Tuple[int, str]]
-    ) -> Dict[str, int]:
+        self, label_definitions: dict[str, tuple[int, str]]
+    ) -> dict[str, int]:
         """Build mapping from label names to sequential order within figure type.
 
         Args:
@@ -334,10 +331,16 @@ class DocumentChecker:
             Main and supplemental figures numbered separately.
         """
         # Separate main and supplemental figures
-        main_labels = [(label, line_num) for label, (line_num, fig_type) in label_definitions.items()
-                       if fig_type == 'main']
-        supp_labels = [(label, line_num) for label, (line_num, fig_type) in label_definitions.items()
-                       if fig_type == 'supplemental']
+        main_labels = [
+            (label, line_num)
+            for label, (line_num, fig_type) in label_definitions.items()
+            if fig_type == "main"
+        ]
+        supp_labels = [
+            (label, line_num)
+            for label, (line_num, fig_type) in label_definitions.items()
+            if fig_type == "supplemental"
+        ]
 
         # Sort by line number (definition order)
         main_labels.sort(key=lambda x: x[1])
@@ -354,9 +357,9 @@ class DocumentChecker:
 
     def validate_figure_order(
         self,
-        references: List[FigureReference],
-        markdown_content: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
+        references: list[FigureReference],
+        markdown_content: str | None = None,
+    ) -> list[dict[str, Any]]:
         """Validate that figure references appear in logical order.
 
         Checks both numeric and LaTeX label references. Detects:
@@ -381,7 +384,7 @@ class DocumentChecker:
             ref_text, fig_num, panels, line_num, context = ref
 
             # Handle LaTeX label references
-            if '\\ref{' in str(ref_text):
+            if "\\ref{" in str(ref_text):
                 # Store label references for later processing
                 label_references.append((fig_num, line_num, ref_text, context))
                 continue
@@ -389,31 +392,33 @@ class DocumentChecker:
             # Track first occurrence of numeric references
             if fig_num not in first_occurrences:
                 first_occurrences[fig_num] = {
-                    'line': line_num,
-                    'text': ref_text,
-                    'context': context
+                    "line": line_num,
+                    "text": ref_text,
+                    "context": context,
                 }
                 figure_order.append(fig_num)
 
         # Check if main figures are in order
-        main_figures = [f for f in figure_order if not f.startswith('S')]
-        supplemental_figures = [f for f in figure_order if f.startswith('S')]
+        main_figures = [f for f in figure_order if not f.startswith("S")]
+        supplemental_figures = [f for f in figure_order if f.startswith("S")]
 
         # Check main figure ordering
         for i in range(1, len(main_figures)):
             try:
                 curr_num = int(main_figures[i])
-                prev_num = int(main_figures[i-1])
+                prev_num = int(main_figures[i - 1])
 
                 if curr_num < prev_num:
-                    violations.append({
-                        'type': 'out_of_order',
-                        'figure': main_figures[i],
-                        'expected_after': main_figures[i-1],
-                        'line': first_occurrences[main_figures[i]]['line'],
-                        'context': first_occurrences[main_figures[i]]['context'],
-                        'message': f"Figure {curr_num} appears after Figure {prev_num}"
-                    })
+                    violations.append(
+                        {
+                            "type": "out_of_order",
+                            "figure": main_figures[i],
+                            "expected_after": main_figures[i - 1],
+                            "line": first_occurrences[main_figures[i]]["line"],
+                            "context": first_occurrences[main_figures[i]]["context"],
+                            "message": f"Figure {curr_num} appears after Figure {prev_num}",
+                        }
+                    )
             except ValueError:
                 # Skip if not a simple number
                 pass
@@ -422,17 +427,19 @@ class DocumentChecker:
         for i in range(1, len(supplemental_figures)):
             try:
                 curr_num = int(supplemental_figures[i][1:])  # Remove 'S' prefix
-                prev_num = int(supplemental_figures[i-1][1:])
+                prev_num = int(supplemental_figures[i - 1][1:])
 
                 if curr_num < prev_num:
-                    violations.append({
-                        'type': 'out_of_order',
-                        'figure': supplemental_figures[i],
-                        'expected_after': supplemental_figures[i-1],
-                        'line': first_occurrences[supplemental_figures[i]]['line'],
-                        'context': first_occurrences[supplemental_figures[i]]['context'],
-                        'message': f"Figure {supplemental_figures[i]} appears after Figure {supplemental_figures[i-1]}"
-                    })
+                    violations.append(
+                        {
+                            "type": "out_of_order",
+                            "figure": supplemental_figures[i],
+                            "expected_after": supplemental_figures[i - 1],
+                            "line": first_occurrences[supplemental_figures[i]]["line"],
+                            "context": first_occurrences[supplemental_figures[i]]["context"],
+                            "message": f"Figure {supplemental_figures[i]} appears after Figure {supplemental_figures[i - 1]}",
+                        }
+                    )
             except (ValueError, IndexError):
                 # Skip if not a simple number
                 pass
@@ -449,14 +456,16 @@ class DocumentChecker:
                     later_figures = [f for f in main_nums if f > missing]
                     if later_figures:
                         first_later = str(later_figures[0])
-                        violations.append({
-                            'type': 'missing_figure',
-                            'figure': str(missing),
-                            'referenced_after': first_later,
-                            'line': first_occurrences[first_later]['line'],
-                            'context': first_occurrences[first_later]['context'],
-                            'message': f"Figure {first_later} referenced, but Figure {missing} was never referenced"
-                        })
+                        violations.append(
+                            {
+                                "type": "missing_figure",
+                                "figure": str(missing),
+                                "referenced_after": first_later,
+                                "line": first_occurrences[first_later]["line"],
+                                "context": first_occurrences[first_later]["context"],
+                                "message": f"Figure {first_later} referenced, but Figure {missing} was never referenced",
+                            }
+                        )
             except (ValueError, TypeError):
                 pass
 
@@ -466,21 +475,23 @@ class DocumentChecker:
                 # Extract numeric parts
                 supp_nums = [int(f[1:]) for f in supplemental_figures]
                 expected_supps = list(range(min(supp_nums), max(supp_nums) + 1))
-                missing_supps = [f for f in expected_supps if f'S{f}' not in supplemental_figures]
+                missing_supps = [f for f in expected_supps if f"S{f}" not in supplemental_figures]
 
                 for missing in missing_supps:
                     # Find the first figure after the gap
                     later_supps = [f for f in supp_nums if f > missing]
                     if later_supps:
-                        first_later = f'S{later_supps[0]}'
-                        violations.append({
-                            'type': 'missing_figure',
-                            'figure': f'S{missing}',
-                            'referenced_after': first_later,
-                            'line': first_occurrences[first_later]['line'],
-                            'context': first_occurrences[first_later]['context'],
-                            'message': f"Figure {first_later} referenced, but Figure S{missing} was never referenced"
-                        })
+                        first_later = f"S{later_supps[0]}"
+                        violations.append(
+                            {
+                                "type": "missing_figure",
+                                "figure": f"S{missing}",
+                                "referenced_after": first_later,
+                                "line": first_occurrences[first_later]["line"],
+                                "context": first_occurrences[first_later]["context"],
+                                "message": f"Figure {first_later} referenced, but Figure S{missing} was never referenced",
+                            }
+                        )
             except (ValueError, TypeError, IndexError):
                 pass
 
@@ -502,64 +513,87 @@ class DocumentChecker:
                             _, fig_type = label_definitions[label]
                             label_ref_order.append((label, line_num, ref_text, context, fig_type))
 
-                    # Separate main and supplemental label references
-                    main_label_refs = [r for r in label_ref_order if r[4] == 'main']
-                    supp_label_refs = [r for r in label_ref_order if r[4] == 'supplemental']
+                    supp_label_refs = [r for r in label_ref_order if r[4] == "supplemental"]
 
                     # Check supplemental label order
                     for i in range(1, len(supp_label_refs)):
                         curr_label, curr_line, curr_text, curr_context, _ = supp_label_refs[i]
-                        prev_label, prev_line, prev_text, prev_context, _ = supp_label_refs[i-1]
+                        prev_label, prev_line, prev_text, prev_context, _ = supp_label_refs[i - 1]
 
                         curr_order = label_order_map.get(curr_label, 0)
                         prev_order = label_order_map.get(prev_label, 0)
 
                         if curr_order > 0 and prev_order > 0 and curr_order < prev_order:
-                            violations.append({
-                                'type': 'label_out_of_order',
-                                'figure': curr_label,
-                                'expected_after': prev_label,
-                                'line': curr_line,
-                                'context': curr_context,
-                                'message': f"Supplemental figure '{curr_label}' (appears {curr_order} in supplement) "
-                                          f"is referenced before '{prev_label}' (appears {prev_order} in supplement)"
-                            })
+                            violations.append(
+                                {
+                                    "type": "label_out_of_order",
+                                    "figure": curr_label,
+                                    "expected_after": prev_label,
+                                    "line": curr_line,
+                                    "context": curr_context,
+                                    "message": f"Supplemental figure '{curr_label}' (appears {curr_order} in supplement) "
+                                    f"is referenced before '{prev_label}' (appears {prev_order} in supplement)",
+                                }
+                            )
 
                     # Check for gaps in supplemental label references
                     if len(supp_label_refs) > 1:
-                        referenced_orders = sorted([label_order_map[label] for label, _, _, _, _ in supp_label_refs
-                                                   if label in label_order_map])
+                        referenced_orders = sorted(
+                            [
+                                label_order_map[label]
+                                for label, _, _, _, _ in supp_label_refs
+                                if label in label_order_map
+                            ]
+                        )
 
                         if referenced_orders:
-                            expected_range = list(range(min(referenced_orders), max(referenced_orders) + 1))
-                            missing_orders = [o for o in expected_range if o not in referenced_orders]
+                            expected_range = list(
+                                range(min(referenced_orders), max(referenced_orders) + 1)
+                            )
+                            missing_orders = [
+                                o for o in expected_range if o not in referenced_orders
+                            ]
 
                             if missing_orders:
                                 # Find which labels correspond to missing orders
                                 for missing_order in missing_orders:
-                                    missing_labels = [label for label, order in label_order_map.items()
-                                                     if order == missing_order and label_definitions.get(label, (0, ''))[1] == 'supplemental']
+                                    missing_labels = [
+                                        label
+                                        for label, order in label_order_map.items()
+                                        if order == missing_order
+                                        and label_definitions.get(label, (0, ""))[1]
+                                        == "supplemental"
+                                    ]
 
                                     for missing_label in missing_labels:
-                                        violations.append({
-                                            'type': 'missing_supplemental_label',
-                                            'figure': missing_label,
-                                            'message': f"Supplemental figure '{missing_label}' (position {missing_order}) "
-                                                      f"is never referenced in text"
-                                        })
+                                        violations.append(
+                                            {
+                                                "type": "missing_supplemental_label",
+                                                "figure": missing_label,
+                                                "message": f"Supplemental figure '{missing_label}' (position {missing_order}) "
+                                                f"is never referenced in text",
+                                            }
+                                        )
 
                     # Check for mixed referencing style (warning only)
-                    numeric_supps = [f for f in supplemental_figures if f.startswith('S') and f[1:].isdigit()]
-                    label_supps = [label for label, (_, fig_type) in label_definitions.items()
-                                  if fig_type == 'supplemental']
+                    numeric_supps = [
+                        f for f in supplemental_figures if f.startswith("S") and f[1:].isdigit()
+                    ]
+                    label_supps = [
+                        label
+                        for label, (_, fig_type) in label_definitions.items()
+                        if fig_type == "supplemental"
+                    ]
 
                     if numeric_supps and label_supps:
-                        violations.append({
-                            'type': 'mixed_reference_style',
-                            'message': f"Document uses both numeric ({len(numeric_supps)} refs) and "
-                                      f"label-based ({len(label_supps)} refs) for supplemental figures. "
-                                      f"Consider using one consistent style."
-                        })
+                        violations.append(
+                            {
+                                "type": "mixed_reference_style",
+                                "message": f"Document uses both numeric ({len(numeric_supps)} refs) and "
+                                f"label-based ({len(label_supps)} refs) for supplemental figures. "
+                                f"Consider using one consistent style.",
+                            }
+                        )
 
             except Exception as e:
                 # Don't fail validation if label processing has issues
@@ -567,9 +601,7 @@ class DocumentChecker:
 
         return violations
 
-    def validate_panel_order(
-        self, references: List[FigureReference]
-    ) -> List[Dict[str, Any]]:
+    def validate_panel_order(self, references: list[FigureReference]) -> list[dict[str, Any]]:
         """Validate that figure panels appear in correct alphabetical order.
 
         Args:
@@ -587,9 +619,9 @@ class DocumentChecker:
             ref_text, fig_num, panels, line_num, context = ref
 
             # Skip LaTeX references with labels for now
-            if '\\ref{' in str(fig_num):
+            if "\\ref{" in str(fig_num):
                 # For LaTeX refs, extract base figure name without 'fig:' prefix
-                if fig_num.startswith('fig:'):
+                if fig_num.startswith("fig:"):
                     fig_num = fig_num[4:]
 
             # Skip if no panels
@@ -601,7 +633,7 @@ class DocumentChecker:
                 figure_panels[fig_num] = {}
 
             # Handle multi-panel references (e.g., "B-D")
-            if '-' in panels:
+            if "-" in panels:
                 # Extract range (e.g., "B-D" -> ['B', 'C', 'D'])
                 start_panel = panels[0]
                 end_panel = panels[2] if len(panels) >= 3 else panels[0]
@@ -611,7 +643,7 @@ class DocumentChecker:
                         figure_panels[fig_num][panel] = (line_num, context)
             else:
                 # Single panel or comma-separated panels
-                panel_list = panels.split(',') if ',' in panels else [panels]
+                panel_list = panels.split(",") if "," in panels else [panels]
                 for panel in panel_list:
                     panel = panel.strip()
                     if panel and panel not in figure_panels[fig_num]:
@@ -626,21 +658,25 @@ class DocumentChecker:
             panels_seen = sorted(panels_dict.keys())
 
             # Check if first panel is not 'A'
-            if panels_seen and panels_seen[0] != 'A':
+            if panels_seen and panels_seen[0] != "A":
                 first_panel = panels_seen[0]
                 line_num, context = panels_dict[first_panel]
-                violations.append({
-                    'type': 'missing_panel_A',
-                    'figure': fig_num,
-                    'first_panel': first_panel,
-                    'line': line_num,
-                    'context': context,
-                    'message': f"Figure {fig_num} starts with panel {first_panel}, but panel A was never referenced"
-                })
+                violations.append(
+                    {
+                        "type": "missing_panel_A",
+                        "figure": fig_num,
+                        "first_panel": first_panel,
+                        "line": line_num,
+                        "context": context,
+                        "message": f"Figure {fig_num} starts with panel {first_panel}, but panel A was never referenced",
+                    }
+                )
 
             # Check for gaps in panel sequence
             if len(panels_seen) > 1:
-                expected_panels = [chr(ord('A') + i) for i in range(ord(panels_seen[-1]) - ord('A') + 1)]
+                expected_panels = [
+                    chr(ord("A") + i) for i in range(ord(panels_seen[-1]) - ord("A") + 1)
+                ]
                 missing_panels = [p for p in expected_panels if p not in panels_seen]
 
                 if missing_panels:
@@ -651,15 +687,17 @@ class DocumentChecker:
                         if later_panels:
                             first_later = later_panels[0]
                             line_num, context = panels_dict[first_later]
-                            violations.append({
-                                'type': 'missing_panel',
-                                'figure': fig_num,
-                                'missing_panel': missing,
-                                'referenced_panel': first_later,
-                                'line': line_num,
-                                'context': context,
-                                'message': f"Figure {fig_num} panel {first_later} referenced, but panel {missing} was never referenced"
-                            })
+                            violations.append(
+                                {
+                                    "type": "missing_panel",
+                                    "figure": fig_num,
+                                    "missing_panel": missing,
+                                    "referenced_panel": first_later,
+                                    "line": line_num,
+                                    "context": context,
+                                    "message": f"Figure {fig_num} panel {first_later} referenced, but panel {missing} was never referenced",
+                                }
+                            )
 
             # Check if panels appear in correct alphabetical order
             # Sort by line number to get the order panels were first mentioned
@@ -667,22 +705,22 @@ class DocumentChecker:
             prev_panel = None
             for panel, (line_num, context) in panel_order_by_line:
                 if prev_panel and panel < prev_panel:
-                    violations.append({
-                        'type': 'panel_out_of_order',
-                        'figure': fig_num,
-                        'panel': panel,
-                        'expected_after': prev_panel,
-                        'line': line_num,
-                        'context': context,
-                        'message': f"Figure {fig_num} panel {panel} appears before panel {prev_panel} (expected alphabetical order)"
-                    })
+                    violations.append(
+                        {
+                            "type": "panel_out_of_order",
+                            "figure": fig_num,
+                            "panel": panel,
+                            "expected_after": prev_panel,
+                            "line": line_num,
+                            "context": context,
+                            "message": f"Figure {fig_num} panel {panel} appears before panel {prev_panel} (expected alphabetical order)",
+                        }
+                    )
                 prev_panel = panel
 
         return violations
 
-    def detect_figure_warnings(
-        self, references: List[FigureReference]
-    ) -> List[Dict[str, Any]]:
+    def detect_figure_warnings(self, references: list[FigureReference]) -> list[dict[str, Any]]:
         """Detect potential issues with figure references.
 
         Args:
@@ -698,24 +736,24 @@ class DocumentChecker:
             ref_text, fig_num, panels, line_num, context = ref
 
             # Skip if it's in a figure caption (starts with **)
-            if context.startswith('**'):
+            if context.startswith("**"):
                 continue
 
             # Check if ref_text starts with '(' or if it's within parentheses in the context
-            in_parentheses = ref_text.startswith('(')
+            in_parentheses = ref_text.startswith("(")
 
             # If ref_text doesn't start with '(', check if it appears within parentheses in context
             if not in_parentheses and context:
                 # Find where the reference appears in the context
                 # Strip the leading/trailing parts of ref_text that might include closing parens
-                ref_core = ref_text.rstrip(')')
+                ref_core = ref_text.rstrip(")")
                 ref_pos = context.find(ref_core)
                 if ref_pos > 0:
                     # Check if there's an opening paren before the reference
                     text_before = context[:ref_pos]
                     # Count parens - if there's an unmatched '(' before us, we're in parentheses
-                    open_count = text_before.count('(')
-                    close_count = text_before.count(')')
+                    open_count = text_before.count("(")
+                    close_count = text_before.count(")")
                     in_parentheses = open_count > close_count
 
             # Warning for references not in parentheses (unless in specific contexts)
@@ -723,32 +761,32 @@ class DocumentChecker:
                 # Check if the reference text itself contains acceptable context phrases
                 # These are typically part of the match when using our combined pattern
                 acceptable_starts = [
-                    'as shown in',
-                    'see fig',
-                    'shown in fig',
-                    'described in fig',
-                    'illustrated in fig'
+                    "as shown in",
+                    "see fig",
+                    "shown in fig",
+                    "described in fig",
+                    "illustrated in fig",
                 ]
 
                 ref_lower = ref_text.lower()
                 if not any(ref_lower.startswith(ctx) for ctx in acceptable_starts):
                     # For standalone "Figure X" references, check context
-                    if ref_lower.startswith('fig'):
+                    if ref_lower.startswith("fig"):
                         # This is a standalone figure reference - warn about it
-                        warnings.append({
-                            'type': 'no_parentheses',
-                            'figure': fig_num,
-                            'line': line_num,
-                            'text': ref_text,
-                            'context': context,
-                            'message': f"Figure reference '{ref_text}' is not in parentheses"
-                        })
+                        warnings.append(
+                            {
+                                "type": "no_parentheses",
+                                "figure": fig_num,
+                                "line": line_num,
+                                "text": ref_text,
+                                "context": context,
+                                "message": f"Figure reference '{ref_text}' is not in parentheses",
+                            }
+                        )
 
         return warnings
 
-    def check_prefix_consistency(
-        self, references: List[FigureReference]
-    ) -> List[Dict[str, Any]]:
+    def check_prefix_consistency(self, references: list[FigureReference]) -> list[dict[str, Any]]:
         """Check for inconsistent use of "Fig." vs "Figure" prefixes.
 
         Args:
@@ -761,35 +799,31 @@ class DocumentChecker:
 
         # Count the usage of different prefixes
         prefix_counts = {
-            'Fig.': 0,
-            'Figure': 0,
-            'Fig': 0  # Without period
+            "Fig.": 0,
+            "Figure": 0,
+            "Fig": 0,  # Without period
         }
 
-        prefix_examples = {
-            'Fig.': [],
-            'Figure': [],
-            'Fig': []
-        }
+        prefix_examples = {"Fig.": [], "Figure": [], "Fig": []}
 
         for ref in references:
             ref_text, fig_num, panels, line_num, context = ref
 
             # Skip LaTeX references as they might have different patterns
-            if '\\ref{' in ref_text:
+            if "\\ref{" in ref_text:
                 continue
 
             # Determine which prefix is used
             ref_lower = ref_text.lower()
-            if 'fig.' in ref_lower:
-                prefix_counts['Fig.'] += 1
-                prefix_examples['Fig.'].append((ref_text, line_num, context))
-            elif 'figure' in ref_lower:
-                prefix_counts['Figure'] += 1
-                prefix_examples['Figure'].append((ref_text, line_num, context))
-            elif 'fig' in ref_lower:
-                prefix_counts['Fig'] += 1
-                prefix_examples['Fig'].append((ref_text, line_num, context))
+            if "fig." in ref_lower:
+                prefix_counts["Fig."] += 1
+                prefix_examples["Fig."].append((ref_text, line_num, context))
+            elif "figure" in ref_lower:
+                prefix_counts["Figure"] += 1
+                prefix_examples["Figure"].append((ref_text, line_num, context))
+            elif "fig" in ref_lower:
+                prefix_counts["Fig"] += 1
+                prefix_examples["Fig"].append((ref_text, line_num, context))
 
         # Determine the dominant prefix
         total_refs = sum(prefix_counts.values())
@@ -804,29 +838,35 @@ class DocumentChecker:
             for prefix, count in prefix_counts.items():
                 if prefix != dominant_prefix and count > 0:
                     # Add warnings for the minority prefix usage
-                    for ref_text, line_num, context in prefix_examples[prefix][:3]:  # Show first 3 examples
-                        warnings.append({
-                            'type': 'prefix_inconsistency',
-                            'prefix': prefix,
-                            'dominant_prefix': dominant_prefix,
-                            'line': line_num,
-                            'text': ref_text,
-                            'context': context,
-                            'message': f"Inconsistent prefix: '{prefix}' used here, but '{dominant_prefix}' is used in {dominant_count}/{total_refs} references"
-                        })
+                    for ref_text, line_num, context in prefix_examples[prefix][
+                        :3
+                    ]:  # Show first 3 examples
+                        warnings.append(
+                            {
+                                "type": "prefix_inconsistency",
+                                "prefix": prefix,
+                                "dominant_prefix": dominant_prefix,
+                                "line": line_num,
+                                "text": ref_text,
+                                "context": context,
+                                "message": f"Inconsistent prefix: '{prefix}' used here, but '{dominant_prefix}' is used in {dominant_count}/{total_refs} references",
+                            }
+                        )
 
                     # If there are more than 3, add a summary
                     if len(prefix_examples[prefix]) > 3:
                         remaining = len(prefix_examples[prefix]) - 3
-                        warnings.append({
-                            'type': 'prefix_inconsistency_summary',
-                            'prefix': prefix,
-                            'dominant_prefix': dominant_prefix,
-                            'line': 0,
-                            'text': '',
-                            'context': '',
-                            'message': f"... and {remaining} more instances of '{prefix}' instead of '{dominant_prefix}'"
-                        })
+                        warnings.append(
+                            {
+                                "type": "prefix_inconsistency_summary",
+                                "prefix": prefix,
+                                "dominant_prefix": dominant_prefix,
+                                "line": 0,
+                                "text": "",
+                                "context": "",
+                                "message": f"... and {remaining} more instances of '{prefix}' instead of '{dominant_prefix}'",
+                            }
+                        )
 
         return warnings
 
@@ -876,7 +916,7 @@ class DocumentChecker:
         unique_figure_bases = set()  # Just the figure numbers without panels
         for ref in references:
             _, fig_num, panels, _, _ = ref
-            if not '\\ref{' in str(fig_num):
+            if "\\ref{" not in str(fig_num):
                 # Add the full figure+panel combination
                 if panels:
                     unique_figures.add(f"{fig_num}{panels}")
@@ -902,36 +942,42 @@ class DocumentChecker:
 
             if key not in first_occurrences:
                 first_occurrences[key] = {
-                    'line': line_num,
-                    'text': display_text,  # Use normalized text for cleaner display
-                    'panels': panels,
-                    'fig_num': fig_num,
-                    'original_text': ref_text  # Keep original for reference
+                    "line": line_num,
+                    "text": display_text,  # Use normalized text for cleaner display
+                    "panels": panels,
+                    "fig_num": fig_num,
+                    "original_text": ref_text,  # Keep original for reference
                 }
 
         if first_occurrences:
             report_lines.append("First occurrence of each figure (ordered by appearance):")
             # Sort by line number (order of appearance)
-            for key in sorted(first_occurrences.keys(),
-                            key=lambda x: first_occurrences[x]['line']):
+            for key in sorted(first_occurrences.keys(), key=lambda x: first_occurrences[x]["line"]):
                 info = first_occurrences[key]
                 # No need for panel_info since it's in the normalized text
                 report_lines.append(f"  Line {info['line']:4d}: {info['text']}")
             report_lines.append("")
 
         # Report figure order violations (separate numeric and label-based)
-        numeric_violations = [v for v in figure_violations
-                             if v['type'] in ['out_of_order', 'missing_figure']]
-        label_violations = [v for v in figure_violations
-                           if v['type'] in ['label_out_of_order', 'missing_supplemental_label', 'mixed_reference_style']]
+        numeric_violations = [
+            v for v in figure_violations if v["type"] in ["out_of_order", "missing_figure"]
+        ]
+        label_violations = [
+            v
+            for v in figure_violations
+            if v["type"]
+            in ["label_out_of_order", "missing_supplemental_label", "mixed_reference_style"]
+        ]
 
         if numeric_violations:
             report_lines.append("NUMERIC FIGURE ORDER VIOLATIONS:")
             report_lines.append("")
             for violation in numeric_violations:
                 report_lines.append(f"  - {violation['message']}")
-                if 'line' in violation and violation['line'] > 0:
-                    report_lines.append(f"    Line {violation['line']}: {violation.get('context', '')}")
+                if "line" in violation and violation["line"] > 0:
+                    report_lines.append(
+                        f"    Line {violation['line']}: {violation.get('context', '')}"
+                    )
                 report_lines.append("")
 
         if label_violations:
@@ -939,8 +985,10 @@ class DocumentChecker:
             report_lines.append("")
             for violation in label_violations:
                 report_lines.append(f"  - {violation['message']}")
-                if 'line' in violation and violation['line'] > 0:
-                    report_lines.append(f"    Line {violation['line']}: {violation.get('context', '')}")
+                if "line" in violation and violation["line"] > 0:
+                    report_lines.append(
+                        f"    Line {violation['line']}: {violation.get('context', '')}"
+                    )
                 report_lines.append("")
 
         # Report panel order violations
@@ -949,7 +997,7 @@ class DocumentChecker:
             report_lines.append("")
             for violation in panel_violations:
                 report_lines.append(f"  - {violation['message']}")
-                if violation['line'] > 0:  # Some violations may not have a specific line
+                if violation["line"] > 0:  # Some violations may not have a specific line
                     report_lines.append(f"    Line {violation['line']}: {violation['context']}")
                 report_lines.append("")
 
@@ -959,7 +1007,7 @@ class DocumentChecker:
             report_lines.append("")
             for warning in prefix_warnings:
                 report_lines.append(f"  - {warning['message']}")
-                if warning['line'] > 0:
+                if warning["line"] > 0:
                     report_lines.append(f"    Line {warning['line']}: {warning['context']}")
                 report_lines.append("")
 
@@ -972,11 +1020,17 @@ class DocumentChecker:
                 report_lines.append(f"    Line {warning['line']}: {warning['context']}")
                 report_lines.append("")
 
-        if not numeric_violations and not label_violations and not panel_violations and not warnings and not prefix_warnings:
+        if (
+            not numeric_violations
+            and not label_violations
+            and not panel_violations
+            and not warnings
+            and not prefix_warnings
+        ):
             report_lines.append("All figure references appear to be in order!")
             report_lines.append("")
 
         report_lines.append("=" * 70)
         report_lines.append("")
 
-        return '\n'.join(report_lines)
+        return "\n".join(report_lines)

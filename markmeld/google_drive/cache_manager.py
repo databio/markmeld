@@ -11,7 +11,7 @@ import shutil
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -47,32 +47,30 @@ class CloudCacheManager:
 
     # File type categories
     FILE_CATEGORIES = {
-        'figures': ['svg', 'png', 'jpg', 'jpeg', 'gif'],
-        'csvs': ['csv'],
-        'bibliographies': ['bib']
+        "figures": ["svg", "png", "jpg", "jpeg", "gif"],
+        "csvs": ["csv"],
+        "bibliographies": ["bib"],
     }
 
     # Conversion mappings
     CONVERSION_TARGETS = {
-        'svg': 'pdf',
-        'csv': 'pdf'
+        "svg": "pdf",
+        "csv": "pdf",
         # png, jpg, etc. don't need conversion
     }
 
     # Cache subdirectory types
     CACHE_SUBDIRS = {
-        'docs': 'docs',           # Cached markdown documents
-        'converted': 'converted',  # Modern: document-referenced figures
-        'pdf': 'pdf',             # Legacy: bulk SVG folder processing
-        'digest': 'digest',       # MD5 checksums for tracking changes
-        'csv': 'csv',             # CSV data files
-        'fig': 'fig',             # Cached figure source files (SVG, etc.)
-        'bib': 'bib'              # Bibliography files
+        "docs": "docs",  # Cached markdown documents
+        "converted": "converted",  # Modern: document-referenced figures
+        "pdf": "pdf",  # Legacy: bulk SVG folder processing
+        "digest": "digest",  # MD5 checksums for tracking changes
+        "csv": "csv",  # CSV data files
+        "fig": "fig",  # Cached figure source files (SVG, etc.)
+        "bib": "bib",  # Bibliography files
     }
 
-    def __init__(
-        self, cache_root: Union[str, Path] = ".cache", create_dirs: bool = True
-    ) -> None:
+    def __init__(self, cache_root: str | Path = ".cache", create_dirs: bool = True) -> None:
         """Initialize the CloudCacheManager.
 
         Args:
@@ -90,9 +88,9 @@ class CloudCacheManager:
             self.cache_root.mkdir(parents=True, exist_ok=True, mode=0o755)
 
             # Create a .gitignore file to prevent accidental commits
-            gitignore_path = self.cache_root / '.gitignore'
+            gitignore_path = self.cache_root / ".gitignore"
             if not gitignore_path.exists():
-                gitignore_path.write_text('# Ignore all cache contents\n*\n')
+                gitignore_path.write_text("# Ignore all cache contents\n*\n")
 
     def get_cache_dir(self, doc_id: str, subdir_type: str) -> Path:
         """Get the cache directory path for a document and subdirectory type.
@@ -112,7 +110,9 @@ class CloudCacheManager:
             Path('.cache/doc123/docs')
         """
         if subdir_type not in self.CACHE_SUBDIRS:
-            raise ValueError(f"Invalid subdir_type: {subdir_type}. Must be one of {list(self.CACHE_SUBDIRS.keys())}")
+            raise ValueError(
+                f"Invalid subdir_type: {subdir_type}. Must be one of {list(self.CACHE_SUBDIRS.keys())}"
+            )
 
         cache_dir = self.cache_root / doc_id / self.CACHE_SUBDIRS[subdir_type]
 
@@ -121,9 +121,7 @@ class CloudCacheManager:
 
         return cache_dir
 
-    def get_cache_path(
-        self, doc_id: str, subdir_type: str, filename: Union[str, Path]
-    ) -> Path:
+    def get_cache_path(self, doc_id: str, subdir_type: str, filename: str | Path) -> Path:
         """Get the full cache path for a specific file.
 
         Args:
@@ -142,52 +140,54 @@ class CloudCacheManager:
         file_path = cache_dir / filename
 
         # Ensure parent directory exists if we're creating nested paths
-        if self.create_dirs and '/' in str(filename):
+        if self.create_dirs and "/" in str(filename):
             file_path.parent.mkdir(parents=True, exist_ok=True)
 
-        _LOGGER.debug(f"get_cache_path() returning: {file_path} (is_absolute: {file_path.is_absolute()})")
+        _LOGGER.debug(
+            f"get_cache_path() returning: {file_path} (is_absolute: {file_path.is_absolute()})"
+        )
         return file_path
 
-    def _init_document_metadata(self) -> Dict[str, Any]:
+    def _init_document_metadata(self) -> dict[str, Any]:
         """Initialize empty document metadata structure.
 
         Returns:
             Dictionary with all document metadata fields set to None.
         """
         return {
-            'doc_id': None,
-            'doc_name': None,
-            'cleaned_state': None,
-            'modified_time': None,
-            'folder_id': None,
-            'last_accessed': None,
-            'created_at': None,
-            'filename': None,
-            'source_path': None,
-            'size': None,
-            'downloaded_at': None,
-            'digest': None
+            "doc_id": None,
+            "doc_name": None,
+            "cleaned_state": None,
+            "modified_time": None,
+            "folder_id": None,
+            "last_accessed": None,
+            "created_at": None,
+            "filename": None,
+            "source_path": None,
+            "size": None,
+            "downloaded_at": None,
+            "digest": None,
         }
 
-    def _init_cache_stats(self) -> Dict[str, Any]:
+    def _init_cache_stats(self) -> dict[str, Any]:
         """Initialize empty cache statistics.
 
         Returns:
             Dictionary with all cache statistics set to zero/now.
         """
         return {
-            'total_files': 0,
-            'total_size': 0,
-            'figures_count': 0,
-            'csvs_count': 0,
-            'bibliographies_count': 0,
-            'conversions_successful': 0,
-            'conversions_failed': 0,
-            'conversions_pending': 0,
-            'last_updated': datetime.now().isoformat()
+            "total_files": 0,
+            "total_size": 0,
+            "figures_count": 0,
+            "csvs_count": 0,
+            "bibliographies_count": 0,
+            "conversions_successful": 0,
+            "conversions_failed": 0,
+            "conversions_pending": 0,
+            "last_updated": datetime.now().isoformat(),
         }
 
-    def _get_file_category(self, filename: str) -> Optional[str]:
+    def _get_file_category(self, filename: str) -> str | None:
         """Determine file category based on extension.
 
         Args:
@@ -201,7 +201,6 @@ class CloudCacheManager:
             if ext in extensions:
                 return category
         return None
-
 
     def compute_md5(self, file_path: Path) -> str:
         """Compute MD5 hash of a file.
@@ -218,24 +217,28 @@ class CloudCacheManager:
                 hash_md5.update(chunk)
         return hash_md5.hexdigest()
 
-    def _update_cache_stats(self, metadata: Dict[str, Any]) -> None:
+    def _update_cache_stats(self, metadata: dict[str, Any]) -> None:
         """Update cache_stats section from figures, csvs, and bibliographies.
 
         Args:
             metadata: Metadata dictionary to update (modified in place).
         """
-        all_files = metadata.get('figures', []) + metadata.get('csvs', []) + metadata.get('bibliographies', [])
+        all_files = (
+            metadata.get("figures", [])
+            + metadata.get("csvs", [])
+            + metadata.get("bibliographies", [])
+        )
 
         # Include document in total if it has size info
-        if 'document' in metadata and metadata['document'].get('size'):
-            total_size = metadata['document']['size']
+        if "document" in metadata and metadata["document"].get("size"):
+            total_size = metadata["document"]["size"]
             total_files = 1
         else:
             total_size = 0
             total_files = 0
 
         # Add figure and CSV sizes
-        total_size += sum(f.get('size', 0) for f in all_files)
+        total_size += sum(f.get("size", 0) for f in all_files)
         total_files += len(all_files)
 
         # Count conversions
@@ -244,30 +247,30 @@ class CloudCacheManager:
         conversions_pending = 0
 
         for f in all_files:
-            if 'conversion' in f:
-                status = f['conversion'].get('status', 'pending')
-                if status == 'success':
+            if "conversion" in f:
+                status = f["conversion"].get("status", "pending")
+                if status == "success":
                     conversions_successful += 1
                     # Add converted file size to total (handle None values)
-                    total_size += f['conversion'].get('output_size') or 0
-                elif status == 'failed':
+                    total_size += f["conversion"].get("output_size") or 0
+                elif status == "failed":
                     conversions_failed += 1
-                elif status == 'pending':
+                elif status == "pending":
                     conversions_pending += 1
 
-        metadata['cache_stats'] = {
-            'total_files': total_files,
-            'total_size': total_size,
-            'figures_count': len(metadata.get('figures', [])),
-            'csvs_count': len(metadata.get('csvs', [])),
-            'bibliographies_count': len(metadata.get('bibliographies', [])),
-            'conversions_successful': conversions_successful,
-            'conversions_failed': conversions_failed,
-            'conversions_pending': conversions_pending,
-            'last_updated': datetime.now().isoformat()
+        metadata["cache_stats"] = {
+            "total_files": total_files,
+            "total_size": total_size,
+            "figures_count": len(metadata.get("figures", [])),
+            "csvs_count": len(metadata.get("csvs", [])),
+            "bibliographies_count": len(metadata.get("bibliographies", [])),
+            "conversions_successful": conversions_successful,
+            "conversions_failed": conversions_failed,
+            "conversions_pending": conversions_pending,
+            "last_updated": datetime.now().isoformat(),
         }
 
-    def load_metadata(self, doc_id: str) -> Optional[Dict[str, Any]]:
+    def load_metadata(self, doc_id: str) -> dict[str, Any] | None:
         """Load document metadata from cache.
 
         Only supports v3.0+ format. Includes in-memory caching for performance.
@@ -285,13 +288,13 @@ class CloudCacheManager:
             if time.time() - cached_time < self._cache_ttl:
                 return cached_data
 
-        metadata_path = self.cache_root / doc_id / 'metadata.json'
+        metadata_path = self.cache_root / doc_id / "metadata.json"
 
         if not metadata_path.exists():
             return None
 
         try:
-            with open(metadata_path, 'r') as f:
+            with open(metadata_path, "r") as f:
                 metadata = json.load(f)
         except json.JSONDecodeError as e:
             _LOGGER.error(f"Corrupt metadata.json at {metadata_path}: {e}")
@@ -301,20 +304,22 @@ class CloudCacheManager:
             return None
 
         # Only support v3.0, v3.1, v3.2, and v3.3 formats
-        cache_version = metadata.get('cache_version')
-        if cache_version not in ['3.0', '3.1', '3.2', '3.3']:
-            _LOGGER.warning(f"  Old cache format (v{cache_version}) detected - will rebuild cache with fresh download")
+        cache_version = metadata.get("cache_version")
+        if cache_version not in ["3.0", "3.1", "3.2", "3.3"]:
+            _LOGGER.warning(
+                f"  Old cache format (v{cache_version}) detected - will rebuild cache with fresh download"
+            )
             return None
 
         # Validate required fields
-        required = ['document', 'figures', 'csvs', 'cache_stats', 'cache_version']
+        required = ["document", "figures", "csvs", "cache_stats", "cache_version"]
         if not all(k in metadata for k in required):
-            _LOGGER.warning(f"  Invalid metadata structure - will rebuild cache")
+            _LOGGER.warning("  Invalid metadata structure - will rebuild cache")
             return None
 
         # Reject legacy root-level fields (should be nested in 'document')
-        if any(k in metadata for k in ('doc_id', 'doc_name', 'folder_id')):
-            _LOGGER.warning(f"  Legacy metadata format detected - will rebuild cache")
+        if any(k in metadata for k in ("doc_id", "doc_name", "folder_id")):
+            _LOGGER.warning("  Legacy metadata format detected - will rebuild cache")
             return None
 
         # Cache the result in memory
@@ -322,7 +327,7 @@ class CloudCacheManager:
 
         return metadata
 
-    def save_metadata(self, doc_id: str, metadata: Dict[str, Any]) -> None:
+    def save_metadata(self, doc_id: str, metadata: dict[str, Any]) -> None:
         """Save document metadata to cache as v3.3 format.
 
         Merges provided metadata with existing cached metadata to prevent
@@ -335,56 +340,56 @@ class CloudCacheManager:
         Raises:
             IOError: If metadata file cannot be written.
         """
-        metadata_path = self.cache_root / doc_id / 'metadata.json'
+        metadata_path = self.cache_root / doc_id / "metadata.json"
 
         # Load existing metadata from disk for merging
         existing = None
         if metadata_path.exists():
             try:
-                with open(metadata_path, 'r') as f:
+                with open(metadata_path, "r") as f:
                     existing = json.load(f)
             except (json.JSONDecodeError, IOError):
                 existing = None
 
         # Merge with existing if both have proper v3.x structure
-        if existing and 'document' in existing and 'document' in metadata:
+        if existing and "document" in existing and "document" in metadata:
             # Copy non-null document fields from metadata to existing
-            for key, value in metadata['document'].items():
+            for key, value in metadata["document"].items():
                 if value is not None:
-                    existing['document'][key] = value
+                    existing["document"][key] = value
             # Replace lists if metadata has content (preserves new items)
-            for list_key in ('figures', 'csvs', 'bibliographies'):
+            for list_key in ("figures", "csvs", "bibliographies"):
                 if list_key in metadata and metadata[list_key]:
                     existing[list_key] = metadata[list_key]
             # Update cache_stats
-            if 'cache_stats' in metadata:
-                existing['cache_stats'] = metadata['cache_stats']
+            if "cache_stats" in metadata:
+                existing["cache_stats"] = metadata["cache_stats"]
             metadata = existing
 
         # Ensure required structure exists
-        if 'document' not in metadata:
-            metadata['document'] = self._init_document_metadata()
-        if 'figures' not in metadata:
-            metadata['figures'] = []
-        if 'csvs' not in metadata:
-            metadata['csvs'] = []
-        if 'bibliographies' not in metadata:
-            metadata['bibliographies'] = []
-        if 'cache_stats' not in metadata:
-            metadata['cache_stats'] = self._init_cache_stats()
+        if "document" not in metadata:
+            metadata["document"] = self._init_document_metadata()
+        if "figures" not in metadata:
+            metadata["figures"] = []
+        if "csvs" not in metadata:
+            metadata["csvs"] = []
+        if "bibliographies" not in metadata:
+            metadata["bibliographies"] = []
+        if "cache_stats" not in metadata:
+            metadata["cache_stats"] = self._init_cache_stats()
 
         # Always save as v3.3
-        metadata['cache_version'] = self.CACHE_VERSION
+        metadata["cache_version"] = self.CACHE_VERSION
 
         # Clean up any legacy root-level fields (doc_id, doc_name, folder_id should be in 'document')
-        for field in ('doc_id', 'doc_name', 'folder_id'):
+        for field in ("doc_id", "doc_name", "folder_id"):
             if field in metadata:
                 del metadata[field]
 
         # Write to file
         metadata_path.parent.mkdir(parents=True, exist_ok=True)
         try:
-            with open(metadata_path, 'w') as f:
+            with open(metadata_path, "w") as f:
                 json.dump(metadata, f, indent=2, sort_keys=True)
         except IOError as e:
             _LOGGER.error(f"Failed to save metadata for {doc_id}: {e}")
@@ -397,8 +402,8 @@ class CloudCacheManager:
     def update_cached_file(
         self,
         file_path: Path,
-        content: Union[str, bytes],
-        drive_metadata: Optional[Dict[str, Any]] = None,
+        content: str | bytes,
+        drive_metadata: dict[str, Any] | None = None,
     ) -> None:
         """Update a cached file with new content and metadata.
 
@@ -414,7 +419,7 @@ class CloudCacheManager:
         file_path.parent.mkdir(parents=True, exist_ok=True)
 
         if isinstance(content, str):
-            content_bytes = content.encode('utf-8')
+            content_bytes = content.encode("utf-8")
         else:
             content_bytes = content
 
@@ -460,38 +465,38 @@ class CloudCacheManager:
 
         # Find and update existing file record
         files_list = metadata[category]
-        existing = next((f for f in files_list if f['filename'] == filename), None)
+        existing = next((f for f in files_list if f["filename"] == filename), None)
 
         if existing:
             # Update existing record
-            existing['size'] = new_size
-            existing['digest'] = new_md5
-            existing['downloaded_at'] = datetime.now().isoformat()
+            existing["size"] = new_size
+            existing["digest"] = new_md5
+            existing["downloaded_at"] = datetime.now().isoformat()
 
             # Update Drive metadata if provided
             if drive_metadata:
-                if 'id' in drive_metadata:
-                    existing['drive_file_id'] = drive_metadata['id']
-                if 'modifiedTime' in drive_metadata:
-                    existing['modified_time'] = drive_metadata['modifiedTime']
+                if "id" in drive_metadata:
+                    existing["drive_file_id"] = drive_metadata["id"]
+                if "modifiedTime" in drive_metadata:
+                    existing["modified_time"] = drive_metadata["modifiedTime"]
 
             _LOGGER.info(f"Updated metadata for existing file: {filename}")
         else:
             # Create new record
             file_record = {
-                'filename': filename,
-                'source_path': source_path,
-                'size': new_size,
-                'digest': new_md5,
-                'downloaded_at': datetime.now().isoformat(),
+                "filename": filename,
+                "source_path": source_path,
+                "size": new_size,
+                "digest": new_md5,
+                "downloaded_at": datetime.now().isoformat(),
             }
 
             # Add Drive metadata if provided
             if drive_metadata:
-                if 'id' in drive_metadata:
-                    file_record['drive_file_id'] = drive_metadata['id']
-                if 'modifiedTime' in drive_metadata:
-                    file_record['modified_time'] = drive_metadata['modifiedTime']
+                if "id" in drive_metadata:
+                    file_record["drive_file_id"] = drive_metadata["id"]
+                if "modifiedTime" in drive_metadata:
+                    file_record["modified_time"] = drive_metadata["modifiedTime"]
 
             files_list.append(file_record)
             _LOGGER.info(f"Added new file record to metadata: {filename}")
@@ -510,13 +515,13 @@ class CloudCacheManager:
         filename: str,
         source_path: str,
         size: int,
-        drive_file_id: Optional[str] = None,
-        digest: Optional[str] = None,
-        reference_order: Optional[int] = None,
-        first_reference_line: Optional[int] = None,
-        reference_count: Optional[int] = None,
-        legend: Optional[str] = None,
-        label: Optional[str] = None,
+        drive_file_id: str | None = None,
+        digest: str | None = None,
+        reference_order: int | None = None,
+        first_reference_line: int | None = None,
+        reference_count: int | None = None,
+        legend: str | None = None,
+        label: str | None = None,
     ) -> None:
         """Record that a file was downloaded and cached.
 
@@ -537,12 +542,12 @@ class CloudCacheManager:
         if not metadata:
             # Initialize new metadata structure
             metadata = {
-                'document': self._init_document_metadata(),
-                'figures': [],
-                'csvs': [],
-                'bibliographies': [],
-                'cache_stats': self._init_cache_stats(),
-                'cache_version': self.CACHE_VERSION
+                "document": self._init_document_metadata(),
+                "figures": [],
+                "csvs": [],
+                "bibliographies": [],
+                "cache_stats": self._init_cache_stats(),
+                "cache_version": self.CACHE_VERSION,
             }
 
         # Determine file category
@@ -554,65 +559,65 @@ class CloudCacheManager:
 
         # Create file record
         file_record = {
-            'filename': filename,
-            'source_path': source_path,
-            'size': size,
-            'downloaded_at': datetime.now().isoformat(),
+            "filename": filename,
+            "source_path": source_path,
+            "size": size,
+            "downloaded_at": datetime.now().isoformat(),
         }
 
         # Add optional fields
         if drive_file_id:
-            file_record['drive_file_id'] = drive_file_id
+            file_record["drive_file_id"] = drive_file_id
         if digest:
-            file_record['digest'] = digest
+            file_record["digest"] = digest
         if reference_order is not None:
-            file_record['reference_order'] = reference_order
+            file_record["reference_order"] = reference_order
         if first_reference_line is not None:
-            file_record['first_reference_line'] = first_reference_line
+            file_record["first_reference_line"] = first_reference_line
         if reference_count is not None:
-            file_record['reference_count'] = reference_count
+            file_record["reference_count"] = reference_count
         if legend is not None:
-            file_record['legend'] = legend
+            file_record["legend"] = legend
         if label is not None:
-            file_record['label'] = label
+            file_record["label"] = label
 
         # Add format field for figures
-        if category == 'figures':
-            file_record['format'] = Path(filename).suffix[1:].lower()
+        if category == "figures":
+            file_record["format"] = Path(filename).suffix[1:].lower()
 
         # Add conversion placeholder if file type needs conversion
         ext = Path(filename).suffix[1:].lower()
         if ext in self.CONVERSION_TARGETS:
-            file_record['conversion'] = {
-                'status': 'pending',
-                'output_path': None,
-                'output_size': None,
-                'converted_at': None,
-                'error': None
+            file_record["conversion"] = {
+                "status": "pending",
+                "output_path": None,
+                "output_size": None,
+                "converted_at": None,
+                "error": None,
             }
         else:
-            file_record['conversion'] = {
-                'status': 'skipped',
-                'output_path': None,
-                'output_size': None,
-                'converted_at': None,
-                'error': None
+            file_record["conversion"] = {
+                "status": "skipped",
+                "output_path": None,
+                "output_size": None,
+                "converted_at": None,
+                "error": None,
             }
 
         # Update or append to category
         existing_files = metadata[category]
-        existing = next((f for f in existing_files if f['filename'] == filename), None)
+        existing = next((f for f in existing_files if f["filename"] == filename), None)
 
         if existing:
             # Update existing record, but preserve downloaded_at if digest unchanged
-            old_digest = existing.get('digest')
-            old_downloaded_at = existing.get('downloaded_at')
+            old_digest = existing.get("digest")
+            old_downloaded_at = existing.get("downloaded_at")
 
             existing.update(file_record)
 
             # If digest unchanged, preserve original download timestamp
             if digest and old_digest and digest == old_digest and old_downloaded_at:
-                existing['downloaded_at'] = old_downloaded_at
+                existing["downloaded_at"] = old_downloaded_at
         else:
             # Append new record
             existing_files.append(file_record)
@@ -634,10 +639,10 @@ class CloudCacheManager:
         self,
         doc_id: str,
         filename: str,
-        output_path: Optional[str] = None,
-        output_size: Optional[int] = None,
+        output_path: str | None = None,
+        output_size: int | None = None,
         status: str = "success",
-        error: Optional[str] = None,
+        error: str | None = None,
     ) -> None:
         """Record the result of a file conversion (e.g., SVG -> PDF).
 
@@ -656,28 +661,30 @@ class CloudCacheManager:
 
         # Find the file in metadata - check figures, csvs, and bibliographies
         file_record = None
-        for category in ['figures', 'csvs', 'bibliographies']:
+        for category in ["figures", "csvs", "bibliographies"]:
             if category in metadata:
-                file_record = next((f for f in metadata[category] if f['filename'] == filename), None)
+                file_record = next(
+                    (f for f in metadata[category] if f["filename"] == filename), None
+                )
                 if file_record:
                     break
 
         if not file_record:
             # Debug: list what files ARE in metadata
-            csv_files = [f['filename'] for f in metadata.get('csvs', [])]
-            fig_files = [f['filename'] for f in metadata.get('figures', [])]
+            csv_files = [f["filename"] for f in metadata.get("csvs", [])]
+            fig_files = [f["filename"] for f in metadata.get("figures", [])]
             _LOGGER.warning(f"Cannot record conversion for {filename}: file not found in metadata")
             _LOGGER.warning(f"  CSVs in metadata: {csv_files}")
             _LOGGER.warning(f"  Figures in metadata: {fig_files}")
             return
 
         # Update conversion record
-        file_record['conversion'] = {
-            'status': status,
-            'output_path': output_path,
-            'output_size': output_size,
-            'converted_at': datetime.now().isoformat() if status != 'failed' else None,
-            'error': error
+        file_record["conversion"] = {
+            "status": status,
+            "output_path": output_path,
+            "output_size": output_size,
+            "converted_at": datetime.now().isoformat() if status != "failed" else None,
+            "error": error,
         }
 
         # Update stats
@@ -710,7 +717,7 @@ class CloudCacheManager:
         from markmeld.document_checker import DocumentChecker
 
         metadata = self.load_metadata(doc_id)
-        if not metadata or not metadata.get('figures'):
+        if not metadata or not metadata.get("figures"):
             return
 
         markdown_content = doc_path.read_text()
@@ -727,8 +734,8 @@ class CloudCacheManager:
 
         # Match figure records by reference_order to figure_num
         updated = False
-        for fig_record in metadata['figures']:
-            order = fig_record.get('reference_order')
+        for fig_record in metadata["figures"]:
+            order = fig_record.get("reference_order")
             if order is None:
                 continue
 
@@ -737,8 +744,8 @@ class CloudCacheManager:
                 continue
 
             lines = ref_lines[figure_num]
-            fig_record['first_reference_line'] = min(lines)
-            fig_record['reference_count'] = len(lines)
+            fig_record["first_reference_line"] = min(lines)
+            fig_record["reference_count"] = len(lines)
             updated = True
 
         if updated:
@@ -748,7 +755,7 @@ class CloudCacheManager:
                 del self._metadata_cache[cache_key]
             _LOGGER.debug("Enriched figure metadata with reference info for %s", doc_id)
 
-    def get_cached_files_summary(self, doc_id: str) -> Dict[str, Any]:
+    def get_cached_files_summary(self, doc_id: str) -> dict[str, Any]:
         """Get summary of all cached files for a document.
 
         Args:
@@ -763,14 +770,14 @@ class CloudCacheManager:
             return {}
 
         return {
-            'document': metadata.get('document', {}),
-            'figures': metadata.get('figures', []),
-            'csvs': metadata.get('csvs', []),
-            'bibliographies': metadata.get('bibliographies', []),
-            'cache_stats': metadata.get('cache_stats', self._init_cache_stats())
+            "document": metadata.get("document", {}),
+            "figures": metadata.get("figures", []),
+            "csvs": metadata.get("csvs", []),
+            "bibliographies": metadata.get("bibliographies", []),
+            "cache_stats": metadata.get("cache_stats", self._init_cache_stats()),
         }
 
-    def get_folder_id(self, doc_id: str) -> Optional[str]:
+    def get_folder_id(self, doc_id: str) -> str | None:
         """Get the folder ID associated with a document from cached metadata.
 
         Args:
@@ -780,13 +787,11 @@ class CloudCacheManager:
             Folder ID or None if not found.
         """
         metadata = self.load_metadata(doc_id)
-        if metadata and 'document' in metadata:
-            return metadata['document'].get('folder_id')
+        if metadata and "document" in metadata:
+            return metadata["document"].get("folder_id")
         return None
 
-    def ensure_directories(
-        self, doc_id: str, subdirs: Optional[List[str]] = None
-    ) -> None:
+    def ensure_directories(self, doc_id: str, subdirs: list[str] | None = None) -> None:
         """Ensure cache directories exist for a document.
 
         Args:
@@ -799,9 +804,7 @@ class CloudCacheManager:
         for subdir_type in subdirs:
             self.get_cache_dir(doc_id, subdir_type)
 
-    def clear_cache(
-        self, doc_id: Optional[str] = None, subdirs: Optional[List[str]] = None
-    ) -> None:
+    def clear_cache(self, doc_id: str | None = None, subdirs: list[str] | None = None) -> None:
         """Clear cache for a specific document or all documents.
 
         Args:
@@ -830,7 +833,7 @@ class CloudCacheManager:
                     if subdir_path.exists():
                         shutil.rmtree(subdir_path)
 
-    def list_cached_documents(self) -> List[str]:
+    def list_cached_documents(self) -> list[str]:
         """List all document IDs with cache.
 
         Returns:
@@ -841,12 +844,12 @@ class CloudCacheManager:
 
         doc_ids = []
         for item in self.cache_root.iterdir():
-            if item.is_dir() and not item.name.startswith('.'):
+            if item.is_dir() and not item.name.startswith("."):
                 doc_ids.append(item.name)
 
         return sorted(doc_ids)
 
-    def get_cache_size(self, doc_id: Optional[str] = None) -> int:
+    def get_cache_size(self, doc_id: str | None = None) -> int:
         """Get cache size in bytes for a document or all documents.
 
         Args:
@@ -855,10 +858,11 @@ class CloudCacheManager:
         Returns:
             Size in bytes.
         """
+
         def get_dir_size(path: Path) -> int:
             total = 0
             if path.exists():
-                for item in path.rglob('*'):
+                for item in path.rglob("*"):
                     if item.is_file():
                         total += item.stat().st_size
             return total
@@ -868,7 +872,7 @@ class CloudCacheManager:
         else:
             return get_dir_size(self.cache_root / doc_id)
 
-    def prune_cache(self, days_old: int = 30) -> List[str]:
+    def prune_cache(self, days_old: int = 30) -> list[str]:
         """Remove cached documents older than specified days.
 
         Args:
@@ -885,7 +889,7 @@ class CloudCacheManager:
             metadata = self.load_metadata(doc_id)
 
             if metadata:
-                last_accessed = metadata.get('last_accessed')
+                last_accessed = metadata.get("last_accessed")
                 if last_accessed:
                     try:
                         access_date = datetime.fromisoformat(last_accessed)
@@ -899,7 +903,7 @@ class CloudCacheManager:
 
         return pruned
 
-    def load_digest(self, doc_id: str, file_identifier: str) -> Optional[str]:
+    def load_digest(self, doc_id: str, file_identifier: str) -> str | None:
         """Load stored digest from local filesystem.
 
         Automatically handles path structure based on whether file_identifier
@@ -914,8 +918,8 @@ class CloudCacheManager:
         """
         # Create digest path that mirrors the original structure
         # Don't use with_suffix as it replaces the last suffix, which breaks .params files
-        digest_path = Path(str(file_identifier) + '.digest')
-        digest_file = self.get_cache_path(doc_id, 'digest', digest_path)
+        digest_path = Path(str(file_identifier) + ".digest")
+        digest_file = self.get_cache_path(doc_id, "digest", digest_path)
 
         if digest_file.exists():
             try:
@@ -939,8 +943,8 @@ class CloudCacheManager:
         """
         # Create digest path that mirrors the original structure
         # Don't use with_suffix as it replaces the last suffix, which breaks .params files
-        digest_path = Path(str(file_identifier) + '.digest')
-        digest_file = self.get_cache_path(doc_id, 'digest', digest_path)
+        digest_path = Path(str(file_identifier) + ".digest")
+        digest_file = self.get_cache_path(doc_id, "digest", digest_path)
 
         try:
             # Parent directories are created automatically by get_cache_path

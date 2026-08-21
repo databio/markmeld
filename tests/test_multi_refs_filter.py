@@ -3,10 +3,11 @@ Test the multi-refs pandoc filter to ensure it works correctly regardless of
 --citeproc flag placement (before filter, after filter, or not at all).
 """
 
-import pytest
-import subprocess
 import shutil
+import subprocess
 from pathlib import Path
+
+import pytest
 
 PANDOC_PATH = shutil.which("pandoc")
 PANDOC_AVAILABLE = PANDOC_PATH is not None
@@ -75,8 +76,7 @@ def test_multi_refs_bibliography_regardless_of_citeproc_position(
     # Output should stay compact -- if all refs ended up in every section,
     # we'd see way more than ~3000 chars.
     assert len(content) < 3000, (
-        f"Output too large ({len(content)} chars) - "
-        "likely dumping all refs in every section"
+        f"Output too large ({len(content)} chars) - likely dumping all refs in every section"
     )
 
 
@@ -98,6 +98,6 @@ def test_multiref_no_duplicates_option(test_dir, sample_files, tmp_path):
     dames_count = content.count("ref-dames:physiology")
 
     # It should appear exactly once (in the first section where it's cited)
-    assert (
-        dames_count == 1
-    ), f"Dames reference should appear once with multiref_no_duplicates: true, found {dames_count}"
+    assert dames_count == 1, (
+        f"Dames reference should appear once with multiref_no_duplicates: true, found {dames_count}"
+    )

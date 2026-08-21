@@ -5,20 +5,20 @@ target building, and output management. The CLI is accessed via the `mm` command
 """
 
 import argparse
-import logmuse
 import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
+import logmuse
 from ubiquerg import VersionInHelpParser
 
+from . import __version__
 from .exceptions import ConfigError, TargetError
 from .melder import MarkdownMelder
-from .utilities import load_config_wrapper, get_file_open_cmd
-from ._version import __version__
-from .resource_manager import list_filters, get_filter_path
+from .resource_manager import get_filter_path, list_filters
+from .utilities import get_file_open_cmd, load_config_wrapper
 
 tpl = """imports: null
 version: 1
@@ -227,14 +227,15 @@ def csv2pdf_main(argv) -> int:
     during document builds.
     """
     import pandas as pd
-    from .figure_conversion import prepare_table_parameters, df_to_pdf
+
+    from .figure_conversion import df_to_pdf, prepare_table_parameters
 
     parser = build_csv2pdf_argparser()
     args = parser.parse_args(argv)
 
     logmuse.init_logger(name="markmeld", level="INFO", devmode=True)
 
-    params: Dict[str, Any] = {}
+    params: dict[str, Any] = {}
     if args.width is not None:
         params["fig_width"] = args.width
     if args.height is not None:
@@ -263,7 +264,7 @@ def csv2pdf_main(argv) -> int:
     return 0
 
 
-def main(test_args: Optional[Dict[str, Any]] = None) -> None:
+def main(test_args: dict[str, Any] | None = None) -> None:
     """Run the markmeld command-line interface.
 
     Main entry point for the `mm` command. Handles argument parsing,
@@ -335,7 +336,7 @@ def main(test_args: Optional[Dict[str, Any]] = None) -> None:
 
     if args.autocomplete:
         if "targets" not in cfg:
-            raise TargetError(f"No targets specified in config.")
+            raise TargetError("No targets specified in config.")
         for t, k in cfg["targets"].items():
             if "abstract" in cfg["targets"][t]:
                 continue
@@ -344,21 +345,21 @@ def main(test_args: Optional[Dict[str, Any]] = None) -> None:
 
     if not args.target and not args.list:
         if "targets" not in cfg:
-            raise TargetError(f"No targets specified in config.")
+            raise TargetError("No targets specified in config.")
         tarlist = [x for x, k in cfg["targets"].items()]
         tarlist_txt = ", ".join(sorted(tarlist))
         _LOGGER.error(f"Targets: {tarlist_txt}.")
         sys.exit(0)
     if args.list:
         if "targets" not in cfg:
-            raise TargetError(f"No targets specified in config.")
+            raise TargetError("No targets specified in config.")
 
         tarlist = {}
         for t, k in cfg["targets"].items():
             if "abstract" in cfg["targets"][t]:
                 continue
             tarlist[t] = k["description"] if "description" in k else "---"
-        _LOGGER.error(f"Targets:")
+        _LOGGER.error("Targets:")
         for k, v in tarlist.items():
             _LOGGER.error(f"  {k}: {v}")
         sys.exit(0)
@@ -368,18 +369,14 @@ def main(test_args: Optional[Dict[str, Any]] = None) -> None:
 
     # Handle cache management for Google Doc targets
     if args.cache_status or args.clear_cache or args.force_refresh:
+        from .const import GOOGLE_DOC_TARGET_TYPE, TARGET_TYPE_KEY
         from .melder import Target
-        from .const import TARGET_TYPE_KEY, GOOGLE_DOC_TARGET_TYPE
 
         # Check if target is a google-doc type
         if args.target:
             tgt = Target(mm.cfg, args.target)
-            if (
-                TARGET_TYPE_KEY in tgt.meta
-                and tgt.meta[TARGET_TYPE_KEY] == GOOGLE_DOC_TARGET_TYPE
-            ):
+            if TARGET_TYPE_KEY in tgt.meta and tgt.meta[TARGET_TYPE_KEY] == GOOGLE_DOC_TARGET_TYPE:
                 from .google_drive import CloudCacheManager
-                from .google_drive import GoogleDriveProcessor
 
                 # Get google_docs dictionary from target configuration
                 if "data" in tgt.meta and "google_docs" in tgt.meta["data"]:
@@ -393,9 +390,7 @@ def main(test_args: Optional[Dict[str, Any]] = None) -> None:
                             # Show cache status for all documents
                             for var_name, doc_id in google_docs.items():
                                 if doc_id:
-                                    cache_dir = cache_manager.get_cache_dir(
-                                        doc_id, "docs"
-                                    )
+                                    cache_dir = cache_manager.get_cache_dir(doc_id, "docs")
                                     if cache_dir.exists():
                                         _LOGGER.info(
                                             f"Cache exists for '{var_name}' document {doc_id}"
@@ -404,9 +399,7 @@ def main(test_args: Optional[Dict[str, Any]] = None) -> None:
                                         # Check for cached files
                                         cached_files = list(cache_dir.glob("*.md"))
                                         if cached_files:
-                                            _LOGGER.info(
-                                                f"Cached documents: {len(cached_files)}"
-                                            )
+                                            _LOGGER.info(f"Cached documents: {len(cached_files)}")
                                             for f in cached_files:
                                                 _LOGGER.info(f"  - {f.name}")
                                     else:
@@ -427,13 +420,9 @@ def main(test_args: Optional[Dict[str, Any]] = None) -> None:
                                         import shutil
 
                                         shutil.rmtree(doc_cache_root)
-                                        _LOGGER.info(
-                                            f"Cache cleared successfully for '{var_name}'"
-                                        )
+                                        _LOGGER.info(f"Cache cleared successfully for '{var_name}'")
                                     else:
-                                        _LOGGER.info(
-                                            f"No cache to clear for '{var_name}'"
-                                        )
+                                        _LOGGER.info(f"No cache to clear for '{var_name}'")
 
                         if args.force_refresh:
                             # Set flag to bypass cache
@@ -445,12 +434,10 @@ def main(test_args: Optional[Dict[str, Any]] = None) -> None:
                 # authormark) and is propagated to build_target separately, so
                 # only the cache-status/clear-cache flags are google-doc-only.
                 if args.cache_status or args.clear_cache:
-                    _LOGGER.warning(
-                        "Cache status/clear flags only work with google-doc targets"
-                    )
+                    _LOGGER.warning("Cache status/clear flags only work with google-doc targets")
 
     if args.explain:
-        explained_target = mm.describe_target(args.target)
+        mm.describe_target(args.target)
         sys.exit(0)
 
     if args.template:
@@ -485,15 +472,9 @@ def main(test_args: Optional[Dict[str, Any]] = None) -> None:
         if isinstance(built_target, dict):  # Multi-output target
             for i, tgt in built_target.items():
                 _LOGGER.info(f"\n\nOutput {i}:")
-                _LOGGER.info(
-                    json.dumps(tgt.melded_output, sort_keys=True, indent=2, default=str)
-                )
+                _LOGGER.info(json.dumps(tgt.melded_output, sort_keys=True, indent=2, default=str))
         else:
-            print(
-                json.dumps(
-                    built_target.melded_output, sort_keys=True, indent=2, default=str
-                )
-            )
+            print(json.dumps(built_target.melded_output, sort_keys=True, indent=2, default=str))
 
     if args.print:
         if isinstance(built_target, dict):  # Multi-output target
@@ -516,7 +497,7 @@ def main(test_args: Optional[Dict[str, Any]] = None) -> None:
             built_target.returncode == 0
             and "output_file" in built_target.meta
             and built_target.meta["output_file"]
-            and not "stopopen" in built_target.meta
+            and "stopopen" not in built_target.meta
             and not args.print
             and not args.dump
         ):

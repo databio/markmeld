@@ -1,39 +1,34 @@
 import datetime
-import frontmatter
-import jinja2
+import logging
 import os
 import re
-import sys
 import time
-import yaml
-from pathlib import Path
-
 from copy import deepcopy
-from typing import Any, Dict, List, NamedTuple, Optional, Tuple, Union
-
 from datetime import date
+from pathlib import Path
+from typing import Any, NamedTuple
+
+import frontmatter
+import yaml
 from jinja2 import Template
 from jinja2.filters import FILTERS, pass_environment
-import logging
-
-from ubiquerg import expandpath
 from ubiquerg import is_url
 
+from .api_handler import APIHandler
 from .const import (
-    GOOGLE_DOCS_KEY,
-    TARGET_TYPE_KEY,
-    GOOGLE_DOC_TARGET_TYPE,
+    AUTHORMARK_ALLOWED_META_KEYS,
+    AUTHORMARK_BASE_URL_ENV,
+    AUTHORMARK_BASE_URL_KEY,
+    AUTHORMARK_DEFAULT_BASE_URL,
+    AUTHORMARK_KEY,
     EXTRACT_SECTIONS_KEY,
     EXTRACT_TITLE_KEY,
-    AUTHORMARK_KEY,
-    AUTHORMARK_BASE_URL_KEY,
-    AUTHORMARK_BASE_URL_ENV,
-    AUTHORMARK_DEFAULT_BASE_URL,
-    AUTHORMARK_ALLOWED_META_KEYS,
+    GOOGLE_DOC_TARGET_TYPE,
+    GOOGLE_DOCS_KEY,
+    TARGET_TYPE_KEY,
 )
 from .exceptions import *
 from .utilities import *
-from .api_handler import APIHandler
 
 MD_FILES_KEY = "md_files"
 MD_GLOBS_KEY = "md_globs"
@@ -53,8 +48,8 @@ class MarkdownResult(NamedTuple):
     key: str
     content: str
     raw: str
-    metadata: Dict[str, Any]
-    md_info: Dict[str, Any]
+    metadata: dict[str, Any]
+    md_info: dict[str, Any]
 
 
 tpl_generic = """
@@ -95,7 +90,7 @@ def datetimeformat(
 
 
 @pass_environment
-def extract_refs(environment: Any, value: str) -> List[str]:
+def extract_refs(environment: Any, value: str) -> list[str]:
     """Extract BibTeX reference keys from a string.
 
     A Jinja2 filter used by the nih_biosketch template to find references
@@ -114,7 +109,7 @@ def extract_refs(environment: Any, value: str) -> List[str]:
     """
     try:
         m = re.findall("@([a-zA-Z0-9_]+)", value)
-    except TypeError as TE:
+    except TypeError:
         valtype = type(value)
         msg = f"Error: Can't extract references from a '{valtype}'."
         msg += "Your template may refer to a variable incorrectly. "
@@ -134,7 +129,7 @@ FILTERS["extract_refs"] = extract_refs
 # m
 
 
-def get_frontmatter_formats(frontmatter: Dict[str, Any]) -> Dict[str, Any]:
+def get_frontmatter_formats(frontmatter: dict[str, Any]) -> dict[str, Any]:
     """Convert frontmatter dict to multiple format representations.
 
     Given a dictionary of content, returns three versions:
@@ -178,7 +173,7 @@ _AUTHORMARK_LINE_RE = re.compile(r"^authormark:[ \t]+\S+[ \t]*\n?", re.MULTILINE
 _EMPHASIS_RE = re.compile(r"[*_`]")
 
 
-def extract_body_title(content: str) -> Tuple[Optional[str], str]:
+def extract_body_title(content: str) -> tuple[str | None, str]:
     """Extract the first H1 heading's text as the title.
 
     Returns (title_text, remaining_content). title_text is None if no H1 is
@@ -206,9 +201,7 @@ def _normalize_heading(text: str) -> str:
     return _EMPHASIS_RE.sub("", text).strip().lower()
 
 
-def extract_body_section(
-    content: str, heading_names: list
-) -> Tuple[Optional[str], str]:
+def extract_body_section(content: str, heading_names: list) -> tuple[str | None, str]:
     """Find a markdown section by heading text and split it out of the body.
 
     Returns (section_text, remaining_content). section_text is None if no
@@ -263,9 +256,9 @@ def resolve_extract_sections(target_meta: dict) -> dict:
 def _parse_markdown_source(
     key: str,
     post: Any,
-    path: Optional[str] = None,
+    path: str | None = None,
     ext: str = "md",
-    extract_sections: Optional[Dict[str, list]] = None,
+    extract_sections: dict[str, list] | None = None,
     extract_title: bool = False,
 ) -> MarkdownResult:
     """Parse a markdown source into a structured result.
@@ -317,13 +310,13 @@ def _parse_markdown_source(
 
 
 def process_data(
-    data_block: Dict[str, Any],
+    data_block: dict[str, Any],
     filepath: str,
-    frontmatter_base: Optional[Dict[str, Any]] = None,
-    frontmatter_overrides: Optional[Dict[str, Any]] = None,
-    extract_sections: Optional[Dict[str, list]] = None,
+    frontmatter_base: dict[str, Any] | None = None,
+    frontmatter_overrides: dict[str, Any] | None = None,
+    extract_sections: dict[str, list] | None = None,
     extract_title: bool = False,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Process a data block and extract metadata from all sources.
 
     The data_block is the 'data:' section from a target in _markmeld.yaml.
@@ -362,7 +355,7 @@ def process_data(
         - '_local_frontmatter': Per-file frontmatter
         - '_global_vars': All template variables
     """
-    _LOGGER.info(f"MM | Processing data block...")
+    _LOGGER.info("MM | Processing data block...")
     data = {"_raw": {}, "_md": {}, "_yaml": {}}  # Initialize return value
     frontmatter_temp = {}
     local_frontmatter_temp = {}
@@ -393,13 +386,13 @@ def process_data(
     yaml_content = {}
 
     if MD_GLOBS_KEY in data_block and data_block[MD_GLOBS_KEY]:
-        _LOGGER.info(f"MM | Populating md data globs...")
+        _LOGGER.info("MM | Populating md data globs...")
         md_files.update(globs_to_dict(data_block[MD_GLOBS_KEY], filepath))
     if YAML_GLOBS_KEY in data_block and data_block[YAML_GLOBS_KEY]:
-        _LOGGER.info(f"MM | Populating yaml data globs...")
+        _LOGGER.info("MM | Populating yaml data globs...")
         yaml_files.update(globs_to_dict(data_block[YAML_GLOBS_KEY], filepath))
     if YAML_GLOBS_UNKEYED_KEY in data_block and data_block[YAML_GLOBS_UNKEYED_KEY]:
-        _LOGGER.info(f"MM | Populating unkeyed yaml globs...")
+        _LOGGER.info("MM | Populating unkeyed yaml globs...")
         tmp_files = globs_to_dict(data_block[YAML_GLOBS_UNKEYED_KEY], filepath)
         yaml_files.update(tmp_files)
         unkeyed_yaml_files = tmp_files
@@ -454,7 +447,9 @@ def process_data(
         note_content = apih.fetch_note_content(v)
         p = frontmatter.loads(note_content)
         _apply_markdown_result(
-            _parse_markdown_source(k, p, path=v, extract_sections=extract_sections, extract_title=extract_title)
+            _parse_markdown_source(
+                k, p, path=v, extract_sections=extract_sections, extract_title=extract_title
+            )
         )
 
     for k, v in md_content.items():
@@ -479,7 +474,9 @@ def process_data(
             continue
 
         _apply_markdown_result(
-            _parse_markdown_source(k, p, extract_sections=extract_sections, extract_title=extract_title)
+            _parse_markdown_source(
+                k, p, extract_sections=extract_sections, extract_title=extract_title
+            )
         )
 
     # Process yaml_files AFTER md so yaml values can override md frontmatter
@@ -623,7 +620,7 @@ def assess_variable_matches(template_source: str, provided_vars: dict) -> dict:
     }
 
 
-def load_template(cfg: Dict[str, Any]) -> Optional[Template]:
+def load_template(cfg: dict[str, Any]) -> Template | None:
     """Load a Jinja2 template from a file or URL.
 
     Reads the jinja_template path from configuration and loads the template
@@ -658,9 +655,7 @@ def load_template(cfg: Dict[str, Any]) -> Optional[Template]:
     if os.path.isabs(jinja_template_substituted):
         jinja_tpl = jinja_template_substituted
     else:
-        jinja_tpl = make_abspath(
-            jinja_template_substituted, cfg["_cfg_file_path"], root
-        )
+        jinja_tpl = make_abspath(jinja_template_substituted, cfg["_cfg_file_path"], root)
     _LOGGER.info(f"MM | jinja template: {jinja_tpl}")
     # # if os.path.isfile(cfg["md_template"]):
     # #     jinja_tpl = cfg["md_template"]
@@ -695,8 +690,8 @@ def load_template(cfg: Dict[str, Any]) -> Optional[Template]:
 
 
 def resolve_authormark_source(
-    slug_or_url: str, cfg: Optional[Dict[str, Any]] = None
-) -> Tuple[str, str]:
+    slug_or_url: str, cfg: dict[str, Any] | None = None
+) -> tuple[str, str]:
     """Resolve an ``authormark:`` config value into a (base_url, slug) pair.
 
     The config value is either a bare capability slug
@@ -781,9 +776,9 @@ class Target:
 
     def __init__(
         self,
-        root_cfg: Optional[Dict[str, Any]] = None,
-        target_name: Optional[str] = None,
-        vardata: Optional[List[str]] = None,
+        root_cfg: dict[str, Any] | None = None,
+        target_name: str | None = None,
+        vardata: list[str] | None = None,
     ) -> None:
         """Initialize a Target object.
 
@@ -825,7 +820,7 @@ class Target:
 
         if target_name:
             if "targets" not in root_cfg:
-                error_msg = f"No targets specified in config."
+                error_msg = "No targets specified in config."
                 _LOGGER.error(error_msg)
                 raise TargetError(error_msg)
             if target_name not in list(root_cfg["targets"].keys()):
@@ -833,7 +828,7 @@ class Target:
                 _LOGGER.error(error_msg)
                 raise TargetError(error_msg)
             meta = deep_update(meta, self.resolve_target_inheritance(target_name))
-            _LOGGER.debug(f'Config for this target: {root_cfg["targets"][target_name]}')
+            _LOGGER.debug(f"Config for this target: {root_cfg['targets'][target_name]}")
 
         # del meta["targets"]
         meta["_cfg_file_path"] = root_cfg["_cfg_file_path"]
@@ -868,7 +863,7 @@ class Target:
             _LOGGER.info(f"MM | Output file: {self.meta['output_file']}")
 
     @staticmethod
-    def _build_default_command(meta: Dict[str, Any]) -> str:
+    def _build_default_command(meta: dict[str, Any]) -> str:
         """Build a default pandoc command from target metadata."""
         from .resource_manager import get_filter_path
 
@@ -885,9 +880,7 @@ class Target:
 
         # Citation group targets: add the consistent-citations Lua filter
         # and skip --citeproc (the filter handles citeproc internally)
-        has_citation_group = (
-            "_citation_group_sources" in meta and meta["_citation_group_sources"]
-        )
+        has_citation_group = "_citation_group_sources" in meta and meta["_citation_group_sources"]
 
         if has_citation_group:
             filter_path = get_filter_path("consistent-citations")
@@ -895,9 +888,7 @@ class Target:
                 options_array.append(f'--lua-filter "{filter_path}"')
                 # Add citation_group_sources as metadata
                 for source_path in meta["_citation_group_sources"]:
-                    options_array.append(
-                        f"--metadata=citation_group_sources:{source_path}"
-                    )
+                    options_array.append(f"--metadata=citation_group_sources:{source_path}")
                 # Add suppress-bibliography and bibliography-only metadata if set
                 if meta.get("suppress-bibliography"):
                     options_array.append("--metadata=suppress-bibliography:true")
@@ -973,9 +964,7 @@ class Target:
                 color_code = color_red
             else:
                 color_code = color_green
-            _LOGGER.info(
-                f"{color_code}{item['status']}: {item['message']}{color_reset}"
-            )
+            _LOGGER.info(f"{color_code}{item['status']}: {item['message']}{color_reset}")
 
         # Print captured stdout/stderr from subprocess commands
         if self.stdout and self.stdout.strip():
@@ -988,9 +977,7 @@ class Target:
 
         # Report success/failure
         if self.returncode != 0:
-            _LOGGER.error(
-                f"{color_red}Building target '{self.target_name}' failed.{color_reset}"
-            )
+            _LOGGER.error(f"{color_red}Building target '{self.target_name}' failed.{color_reset}")
             return
 
         # Report output location
@@ -1003,7 +990,7 @@ class Target:
 
         _LOGGER.info(f"Return code: {self.returncode}")
 
-    def resolve_target_inheritance(self, target_name: str) -> Dict[str, Any]:
+    def resolve_target_inheritance(self, target_name: str) -> dict[str, Any]:
         """Resolve configuration inheritance for a target.
 
         Recursively resolves the 'inherit_from' chain to build the complete
@@ -1020,7 +1007,7 @@ class Target:
         """
         root_cfg = self.root_cfg
         if "targets" not in root_cfg:
-            error_msg = f"No targets specified in config."
+            error_msg = "No targets specified in config."
             _LOGGER.debug(error_msg)
             return {}
         if target_name not in list(root_cfg["targets"].keys()):
@@ -1061,7 +1048,7 @@ class MarkdownMelder:
         target_objects: Cache of built Target objects.
     """
 
-    def __init__(self, cfg: Dict[str, Any]) -> None:
+    def __init__(self, cfg: dict[str, Any]) -> None:
         """Initialize a MarkdownMelder instance.
 
         Args:
@@ -1090,9 +1077,7 @@ class MarkdownMelder:
         )
         return cache_root
 
-    def _update_bibliography_path(
-        self, content: str, cached_bib_path: Union[str, List[str]]
-    ) -> str:
+    def _update_bibliography_path(self, content: str, cached_bib_path: str | list[str]) -> str:
         """Update the bibliography path in document frontmatter to the cached file.
 
         Args:
@@ -1102,8 +1087,8 @@ class MarkdownMelder:
         Returns:
             Updated markdown content with bibliography path pointing to cached file.
         """
+
         import frontmatter
-        import re
 
         # Parse the content to extract frontmatter
         post = frontmatter.loads(content)
@@ -1116,7 +1101,7 @@ class MarkdownMelder:
         # Convert back to string with frontmatter
         return frontmatter.dumps(post)
 
-    def open_target(self, target_name: str) -> Union[str, bool]:
+    def open_target(self, target_name: str) -> str | bool:
         """Get the output file path for a target if it should be opened.
 
         Args:
@@ -1147,7 +1132,7 @@ class MarkdownMelder:
         _LOGGER.info(tgt)
         return True
 
-    def preprocess_google_doc(self, tgt: Target) -> Optional[Target]:
+    def preprocess_google_doc(self, tgt: Target) -> Target | None:
         """Preprocess a Google Doc target by fetching document and figures.
 
         Downloads the Google Doc content and associated figures to local cache,
@@ -1162,9 +1147,7 @@ class MarkdownMelder:
         try:
             # Extract Google Doc configuration
             if "data" not in tgt.meta or GOOGLE_DOCS_KEY not in tgt.meta["data"]:
-                _LOGGER.error(
-                    f"Google Doc target missing 'data.{GOOGLE_DOCS_KEY}' configuration"
-                )
+                _LOGGER.error(f"Google Doc target missing 'data.{GOOGLE_DOCS_KEY}' configuration")
                 return None
 
             google_docs = tgt.meta["data"][GOOGLE_DOCS_KEY]
@@ -1178,9 +1161,7 @@ class MarkdownMelder:
                 return None
 
             if not google_docs:
-                _LOGGER.error(
-                    f"Google Doc target 'data.{GOOGLE_DOCS_KEY}' dictionary is empty"
-                )
+                _LOGGER.error(f"Google Doc target 'data.{GOOGLE_DOCS_KEY}' dictionary is empty")
                 return None
 
             force_refresh = tgt.meta.get("force_refresh", False)
@@ -1190,9 +1171,7 @@ class MarkdownMelder:
 
             cache_root = self.get_cache_root()
             _LOGGER.info(f"MM | Using cache root from config: {cache_root}")
-            _LOGGER.debug(
-                f"MM | Initializing GoogleDriveProcessor with cache_root: {cache_root}"
-            )
+            _LOGGER.debug(f"MM | Initializing GoogleDriveProcessor with cache_root: {cache_root}")
             gdp = GoogleDriveProcessor(cache_root=cache_root)
 
             md_content = {}
@@ -1257,9 +1236,7 @@ class MarkdownMelder:
 
                 if bib_result and bib_result.get("bibliography_path"):
                     # Update the frontmatter to point to the cached bibliography
-                    _LOGGER.info(
-                        f"MM | Updating bibliography path to cached location..."
-                    )
+                    _LOGGER.info("MM | Updating bibliography path to cached location...")
                     md_content[var_name] = self._update_bibliography_path(
                         md_content[var_name], bib_result["bibliography_path"]
                     )
@@ -1283,18 +1260,14 @@ class MarkdownMelder:
             # Transform target data: preserve existing fields (like variables),
             # remove processed google_docs, add md_content
             existing_data = tgt.meta.get("data", {})
-            _LOGGER.info(
-                f"MM | Existing data keys before transform: {list(existing_data.keys())}"
-            )
+            _LOGGER.info(f"MM | Existing data keys before transform: {list(existing_data.keys())}")
             if "variables" in existing_data:
                 _LOGGER.info(f"MM | Preserving variables: {existing_data['variables']}")
             existing_data.pop(GOOGLE_DOCS_KEY, None)  # Remove processed google_docs
             tgt.meta["data"] = deep_update(
                 existing_data, {"md_content": md_content}, warn_override=False
             )
-            _LOGGER.info(
-                f"MM | Final data keys after transform: {list(tgt.meta['data'].keys())}"
-            )
+            _LOGGER.info(f"MM | Final data keys after transform: {list(tgt.meta['data'].keys())}")
 
             # Remove the type field so it processes as a normal target
             del tgt.meta[TARGET_TYPE_KEY]
@@ -1309,7 +1282,7 @@ class MarkdownMelder:
             _LOGGER.error(f"Full traceback:\n{traceback.format_exc()}")
             return None
 
-    def preprocess_authormark(self, tgt: Target) -> Optional[Target]:
+    def preprocess_authormark(self, tgt: Target) -> Target | None:
         """Fetch a paper's author block from authormark and inject it as data.
 
         When a target (or the project root config) has an ``authormark:`` key,
@@ -1381,9 +1354,7 @@ class MarkdownMelder:
                 # which is the force-refresh path. Otherwise the client probes
                 # the cheap /modified endpoint and reuses the cached payload when
                 # the version/etag still matches.
-                author_data = client.get_markmeld_data(
-                    slug, use_cache=not force_refresh
-                )
+                author_data = client.get_markmeld_data(slug, use_cache=not force_refresh)
             except Exception as e:
                 # On a network/service error, fall back to a valid cache entry
                 # if one exists (cache-as-fallback); otherwise fail clearly.
@@ -1406,9 +1377,7 @@ class MarkdownMelder:
             client.close()
 
         if not isinstance(author_data, dict) or not author_data:
-            _LOGGER.error(
-                f"authormark returned no usable author data for slug '{slug}'."
-            )
+            _LOGGER.error(f"authormark returned no usable author data for slug '{slug}'.")
             return None
 
         # Split the payload: the reserved `metadata` key is target config, and
@@ -1443,8 +1412,7 @@ class MarkdownMelder:
             overrides["author"] = pandoc_authors
         if "affiliations" in author_data and "institutions" not in author_data:
             overrides["institutions"] = [
-                {"key": aff["marker"], "name": aff["name"]}
-                for aff in author_data["affiliations"]
+                {"key": aff["marker"], "name": aff["name"]} for aff in author_data["affiliations"]
             ]
 
         # The `metadata` block: `frontmatter` sub-key goes into
@@ -1458,8 +1426,7 @@ class MarkdownMelder:
         for k, v in am_metadata.items():
             if k not in AUTHORMARK_ALLOWED_META_KEYS:
                 _LOGGER.warning(
-                    f"authormark metadata key '{k}' is not an allowed "
-                    f"target-config key; ignoring."
+                    f"authormark metadata key '{k}' is not an allowed target-config key; ignoring."
                 )
                 continue
             if k in tgt.meta:  # explicit local config always wins
@@ -1478,7 +1445,7 @@ class MarkdownMelder:
         )
         return tgt
 
-    def _resolve_citation_group_sources(self, target_name: str) -> Optional[List[str]]:
+    def _resolve_citation_group_sources(self, target_name: str) -> list[str] | None:
         """Resolve absolute file paths for all markdown sources in a target's citation group.
 
         Args:
@@ -1498,9 +1465,7 @@ class MarkdownMelder:
 
         for sibling_name in group_targets:
             if sibling_name not in self.cfg.get("targets", {}):
-                _LOGGER.warning(
-                    f"Citation group target '{sibling_name}' not found in config"
-                )
+                _LOGGER.warning(f"Citation group target '{sibling_name}' not found in config")
                 continue
             sibling_cfg = self.cfg["targets"][sibling_name]
             data_block = sibling_cfg.get("data", {})
@@ -1537,7 +1502,6 @@ class MarkdownMelder:
             Pandoc-processed output as plain text.
         """
         import subprocess
-        import tempfile
 
         from .resource_manager import get_filter_path
 
@@ -1670,11 +1634,11 @@ class MarkdownMelder:
         print_only: bool = False,
         vardump: bool = False,
         report: bool = True,
-        input_file: Optional[str] = None,
-        output_file: Optional[str] = None,
-        vardata: Optional[List[str]] = None,
+        input_file: str | None = None,
+        output_file: str | None = None,
+        vardata: list[str] | None = None,
         force_refresh: bool = False,
-    ) -> Union[Target, Dict[int, Target], None]:
+    ) -> Target | dict[int, Target] | None:
         """Build a target by processing inputs and running the command.
 
         Main entry point for building targets. Handles preprocessing for
@@ -1734,10 +1698,7 @@ class MarkdownMelder:
             tgt.meta["output_file"] = str(input_path.with_suffix(".pdf"))
 
         # Check for Google Doc type and preprocess if needed
-        if (
-            TARGET_TYPE_KEY in tgt.meta
-            and tgt.meta[TARGET_TYPE_KEY] == GOOGLE_DOC_TARGET_TYPE
-        ):
+        if TARGET_TYPE_KEY in tgt.meta and tgt.meta[TARGET_TYPE_KEY] == GOOGLE_DOC_TARGET_TYPE:
             _LOGGER.info("MM | Processing Google Doc target...")
             tgt = self.preprocess_google_doc(tgt)
             if not tgt:
@@ -1770,11 +1731,7 @@ class MarkdownMelder:
         result = self.run_command_for_target(tgt, print_only, vardump)
 
         # Run postprocess commands (shell commands in _workpath)
-        if (
-            "postprocess" in tgt.meta
-            and tgt.meta["postprocess"]
-            and result.returncode == 0
-        ):
+        if "postprocess" in tgt.meta and tgt.meta["postprocess"] and result.returncode == 0:
             postprocess_result = self.run_postprocess(result)
             if not postprocess_result:
                 return result
@@ -1828,7 +1785,7 @@ class MarkdownMelder:
             tgt.returncode = returncode
             return False
 
-        tgt.add_message(f"Postprocess completed successfully", "success")
+        tgt.add_message("Postprocess completed successfully", "success")
         return True
 
     def build_side_targets(self, tgt: Target, side_list_key: str = "prebuild") -> bool:
@@ -1916,9 +1873,7 @@ class MarkdownMelder:
             # If this target is in a citation group, run pandoc with the
             # consistent-citations filter to produce processed output
             if tgt.meta.get("_citation_group_sources"):
-                tgt.melded_output = self._run_pandoc_citation_group(
-                    tgt.melded_output, tgt
-                )
+                tgt.melded_output = self._run_pandoc_citation_group(tgt.melded_output, tgt)
             elif tgt.meta.get("bibdb"):
                 # For targets with bibliography, run pandoc with citeproc
                 # to resolve citations even in print_only mode
@@ -1944,9 +1899,7 @@ class MarkdownMelder:
                         from .document_checker import DocumentChecker
 
                         dc = DocumentChecker()
-                        analysis_report = dc.generate_figure_analysis_report(
-                            tgt.melded_output
-                        )
+                        analysis_report = dc.generate_figure_analysis_report(tgt.melded_output)
                         if analysis_report:
                             # Log the analysis report as warnings
                             for line in analysis_report.split("\n"):
@@ -1986,7 +1939,7 @@ class MarkdownMelder:
         print_only: bool = False,
         vardump: bool = False,
         report: bool = True,
-    ) -> Dict[int, Target]:
+    ) -> dict[int, Target]:
         """Build a target multiple times using loop configuration.
 
         Implements mail-merge functionality by iterating over a data collection
@@ -2029,15 +1982,11 @@ class MarkdownMelder:
             _LOGGER.debug(tgt_copy.meta)
             # _LOGGER.debug(cmd_data)
             self.render_template(tgt_copy.melded_input, tgt_copy, double=False)
-            return_target_objects[i] = self.run_command_for_target(
-                tgt_copy, print_only, vardump
-            )
+            return_target_objects[i] = self.run_command_for_target(tgt_copy, print_only, vardump)
 
         # Report loop results if requested
         if report:
-            successful_builds = sum(
-                1 for t in return_target_objects.values() if t.returncode == 0
-            )
+            successful_builds = sum(1 for t in return_target_objects.values() if t.returncode == 0)
             _LOGGER.info(
                 f"Built loop target '{tgt.target_name}': {successful_builds}/{len(return_target_objects)} successful"
             )
@@ -2048,7 +1997,7 @@ class MarkdownMelder:
 
         return return_target_objects
 
-    def meld_inputs(self, tgt: Target) -> Dict[str, Any]:
+    def meld_inputs(self, tgt: Target) -> dict[str, Any]:
         """Process and merge all inputs for a target.
 
         Reads data sources specified in the target configuration, processes
@@ -2113,9 +2062,9 @@ class MarkdownMelder:
 
     def render_template(
         self,
-        melded_input: Dict[str, Any],
+        melded_input: dict[str, Any],
         target: Target,
-        double: Optional[bool] = None,
+        double: bool | None = None,
     ) -> str:
         """Render the Jinja2 template with the melded input data.
 
@@ -2144,9 +2093,7 @@ class MarkdownMelder:
             # cmd_data["jinja_template"] = None
             tpl = Template(tpl_generic)
             tpl.source = tpl_generic
-            _LOGGER.error(
-                "No jinja_template provided. Using generic markmeld jinja_template."
-            )
+            _LOGGER.error("No jinja_template provided. Using generic markmeld jinja_template.")
 
         # Check for variable mismatches before rendering
         if hasattr(tpl, "source") and tpl.source:
@@ -2162,10 +2109,7 @@ class MarkdownMelder:
                 )
 
         if double is None:
-            if (
-                "recursive_render" in target.meta
-                and not target.meta["recursive_render"]
-            ):
+            if "recursive_render" in target.meta and not target.meta["recursive_render"]:
                 double = False
             else:
                 # Recursive rendering allows your template to include variables
