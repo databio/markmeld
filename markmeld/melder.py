@@ -872,7 +872,13 @@ class Target:
         if "latex_template" in meta:
             options_array.append('--template "{latex_template}"')
 
-        if "bibdb" in meta:
+        # Presence is not enough: an empty bibdb yields `--bibliography ""`,
+        # which pandoc rejects outright ("File  not found in resource path").
+        # An empty value is how a target says "I have no bibliography of my own"
+        # -- and for a Google Doc that names its own `bibliography:` in
+        # frontmatter, staying off the command line is what lets that win, since
+        # a CLI --bibliography replaces document metadata rather than merging.
+        if meta.get("bibdb"):
             options_array.append('--bibliography "{bibdb}"')
 
         if "csl" in meta:
@@ -1518,7 +1524,7 @@ class MarkdownMelder:
         cmd_parts.append(f'--lua-filter="{filter_path}"')
 
         # Add bibliography if specified
-        if "bibdb" in tgt.meta:
+        if tgt.meta.get("bibdb"):
             bibdb = tgt.meta["bibdb"]
             if not os.path.isabs(bibdb):
                 bibdb = os.path.normpath(os.path.join(workpath, bibdb))
@@ -1590,7 +1596,7 @@ class MarkdownMelder:
 
         cmd_parts = ["pandoc", "--from=markdown", "--to=plain", "--citeproc"]
 
-        if "bibdb" in tgt.meta:
+        if tgt.meta.get("bibdb"):
             bibdb = tgt.meta["bibdb"]
             if not os.path.isabs(bibdb):
                 bibdb = os.path.normpath(os.path.join(workpath, bibdb))
