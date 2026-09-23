@@ -16,6 +16,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from string import Template as StringTemplate
 from typing import Any, Callable
+from uuid import uuid4
 
 import yaml
 from ubiquerg import expandpath
@@ -24,6 +25,19 @@ from .const import FILE_OPENER_MAP
 from .glob_factory import glob_factory
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def atomic_replace_target(path: str | Path) -> Path:
+    """Return a unique temp path next to ``path`` for write-then-``os.replace``.
+
+    The temp file sits in the same directory (so ``os.replace`` is atomic) and
+    keeps the suffix (so tools like inkscape still see e.g. ``.pdf``). Readers
+    of ``path`` therefore see either the old file or the complete new one,
+    never a half-written file.
+    """
+    path = Path(path)
+    return path.with_name(f".{path.stem}.{uuid4().hex}{path.suffix}")
+
 
 # ====================
 # Configuration and Command Processing

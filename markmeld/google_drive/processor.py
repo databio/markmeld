@@ -24,7 +24,7 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
 
 from ..utilities import sanitize_filename, write_to_file
-from .cache_manager import CloudCacheManager
+from .cache_manager import CloudCacheManager, atomic_replace_target
 from .doc_to_markdown import doc_to_markdown
 from .figure_converter import FigureConverter
 from .figure_paths import create_figure_path_mapping, extract_csv_paths, update_figure_paths
@@ -250,11 +250,18 @@ class GoogleDriveProcessor:
         """
         request = self.drive_service.files().get_media(fileId=file_id)
 
-        with io.FileIO(destination_path, "wb") as fh:
-            downloader = MediaIoBaseDownload(fh, request)
-            done = False
-            while not done:
-                status, done = downloader.next_chunk()
+        # Download to a sibling temp file, then atomically swap it in, so a
+        # concurrent build never reads a truncated file at the final path.
+        tmp_path = atomic_replace_target(destination_path)
+        try:
+            with io.FileIO(tmp_path, "wb") as fh:
+                downloader = MediaIoBaseDownload(fh, request)
+                done = False
+                while not done:
+                    status, done = downloader.next_chunk()
+            os.replace(tmp_path, destination_path)
+        finally:
+            tmp_path.unlink(missing_ok=True)
 
     @handle_drive_errors
     def get_metadata(self, file_id: str) -> dict[str, Any]:
@@ -1045,8 +1052,13 @@ class GoogleDriveProcessor:
         try:
             doc_path.parent.mkdir(parents=True, exist_ok=True)
 
-            # Save clean content without HTML comments
-            doc_path.write_text(content, encoding="utf-8")
+            # Save clean content without HTML comments (temp file + atomic swap)
+            tmp_path = atomic_replace_target(doc_path)
+            try:
+                tmp_path.write_text(content, encoding="utf-8")
+                os.replace(tmp_path, doc_path)
+            finally:
+                tmp_path.unlink(missing_ok=True)
             _LOGGER.info(f"Saved to disk: {doc_path}")
 
             # Record modifiedTime and save metadata. The cached modifiedTime is

@@ -141,13 +141,19 @@ class TestConvertSvg:
         mock_result = MagicMock()
         mock_result.returncode = 0
 
-        with patch("markmeld.figure_conversion.subprocess.run", return_value=mock_result):
-            # Simulate inkscape creating the file
-            output.parent.mkdir(parents=True, exist_ok=True)
-            output.write_text("fake pdf")
+        def fake_inkscape(cmd, **kwargs):
+            # Simulate inkscape writing to its --export-filename (a temp path)
+            export = next(a for a in cmd if a.startswith("--export-filename="))
+            Path(export.split("=", 1)[1]).write_text("fake pdf")
+            return mock_result
+
+        with patch("markmeld.figure_conversion.subprocess.run", side_effect=fake_inkscape):
             result = convert_svg(str(svg_file), output)
 
         assert result is True
+        # The temp file was swapped into the final path, leaving nothing behind
+        assert output.read_text() == "fake pdf"
+        assert list(output.parent.iterdir()) == [output]
 
 
 class TestProcessLocalFigures:

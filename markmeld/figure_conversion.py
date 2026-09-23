@@ -14,6 +14,8 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from .utilities import atomic_replace_target
+
 _LOGGER = logging.getLogger(__name__)
 
 INKSCAPE_COMMAND = "inkscape"
@@ -132,6 +134,9 @@ def update_figure_paths(markdown_content: str, path_mapping: dict[str, str]) -> 
 def convert_svg(svg_path: str, output_path: Path) -> bool:
     """Convert SVG to PDF using inkscape.
 
+    Inkscape writes to a sibling temp file that is then atomically swapped in,
+    so a concurrent build never reads a half-written PDF at ``output_path``.
+
     Args:
         svg_path: Path to SVG file.
         output_path: Path for output PDF.
@@ -139,6 +144,8 @@ def convert_svg(svg_path: str, output_path: Path) -> bool:
     Returns:
         True if successful, False otherwise.
     """
+    output_path = Path(output_path)
+    tmp_path = atomic_replace_target(output_path)
     try:
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -146,7 +153,7 @@ def convert_svg(svg_path: str, output_path: Path) -> bool:
             INKSCAPE_COMMAND,
             "--batch-process",
             "--export-type=pdf",
-            f"--export-filename={output_path}",
+            f"--export-filename={tmp_path}",
             svg_path,
         ]
 
@@ -163,9 +170,11 @@ def convert_svg(svg_path: str, output_path: Path) -> bool:
                 _LOGGER.error(f"  stderr: {result.stderr[:500]}")
             return False
 
-        if not output_path.exists():
+        if not tmp_path.exists():
             _LOGGER.error(f"PDF file was not created at {output_path}")
             return False
+
+        os.replace(tmp_path, output_path)
 
         svg_rel = "/".join(Path(svg_path).parts[-2:])
         out_rel = "/".join(output_path.parts[-2:])
@@ -181,6 +190,8 @@ def convert_svg(svg_path: str, output_path: Path) -> bool:
             "Install with: sudo apt-get install inkscape (Ubuntu) or brew install inkscape (macOS)"
         )
         return False
+    finally:
+        tmp_path.unlink(missing_ok=True)
 
 
 DEFAULT_TABLE_PARAMS = {
@@ -205,11 +216,18 @@ def convert_csv(csv_path: str, output_path: Path, params: dict[str, Any]) -> boo
     try:
         import pandas as pd
 
+        output_path = Path(output_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
         df = pd.read_csv(csv_path)
         table_params = prepare_table_parameters(params, df)
-        df_to_pdf(df, str(output_path), **table_params)
+        # Render to a sibling temp file, then atomically swap it in
+        tmp_path = atomic_replace_target(output_path)
+        try:
+            df_to_pdf(df, str(tmp_path), **table_params)
+            os.replace(tmp_path, output_path)
+        finally:
+            tmp_path.unlink(missing_ok=True)
 
         csv_rel = "/".join(Path(csv_path).parts[-2:])
         out_rel = "/".join(output_path.parts[-2:])

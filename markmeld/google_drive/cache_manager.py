@@ -4,14 +4,19 @@ This module provides centralized cache operations for GoogleDriveProcessor
 and FigureConverter, handling document-specific isolation and management.
 """
 
+import fcntl
 import hashlib
 import json
 import logging
+import os
 import shutil
 import time
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
+
+from ..utilities import atomic_replace_target  # noqa: F401 (re-exported)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -91,6 +96,22 @@ class CloudCacheManager:
             gitignore_path = self.cache_root / ".gitignore"
             if not gitignore_path.exists():
                 gitignore_path.write_text("# Ignore all cache contents\n*\n")
+
+    @contextmanager
+    def doc_lock(self, doc_id: str):
+        """Serialize all cache writes for one Google Doc across threads/processes.
+
+        ``flock`` locks belong to the open file description, so two threads
+        that each ``open()`` the lock file block each other too.
+        """
+        lock_dir = self.cache_root / doc_id
+        lock_dir.mkdir(parents=True, exist_ok=True)
+        with open(lock_dir / ".lock", "w") as fh:
+            fcntl.flock(fh, fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(fh, fcntl.LOCK_UN)
 
     def get_cache_dir(self, doc_id: str, subdir_type: str) -> Path:
         """Get the cache directory path for a document and subdirectory type.
@@ -388,10 +409,13 @@ class CloudCacheManager:
 
         # Write to file
         metadata_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = atomic_replace_target(metadata_path)
         try:
-            with open(metadata_path, "w") as f:
+            with open(tmp_path, "w") as f:
                 json.dump(metadata, f, indent=2, sort_keys=True)
+            os.replace(tmp_path, metadata_path)
         except IOError as e:
+            tmp_path.unlink(missing_ok=True)
             _LOGGER.error(f"Failed to save metadata for {doc_id}: {e}")
             raise
 
