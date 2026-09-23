@@ -29,6 +29,7 @@ from .const import (
 )
 from .exceptions import *
 from .utilities import *
+from .utilities import atomic_replace_target
 
 MD_FILES_KEY = "md_files"
 MD_GLOBS_KEY = "md_globs"
@@ -1070,6 +1071,12 @@ class MarkdownMelder:
                 for tgt_name in target_list:
                     self._citation_group_map[tgt_name] = group_name
 
+    def _gdrive_processor(self):
+        """Create a GoogleDriveProcessor rooted at this config's cache root."""
+        from .google_drive import GoogleDriveProcessor
+
+        return GoogleDriveProcessor(cache_root=self.get_cache_root())
+
     def get_cache_root(self) -> str:
         """
         Get the cache root directory from configuration.
@@ -1173,12 +1180,8 @@ class MarkdownMelder:
             force_refresh = tgt.meta.get("force_refresh", False)
 
             # Initialize Google Drive processor with cache root
-            from .google_drive import GoogleDriveProcessor
-
-            cache_root = self.get_cache_root()
-            _LOGGER.info(f"MM | Using cache root from config: {cache_root}")
-            _LOGGER.debug(f"MM | Initializing GoogleDriveProcessor with cache_root: {cache_root}")
-            gdp = GoogleDriveProcessor(cache_root=cache_root)
+            _LOGGER.info(f"MM | Using cache root from config: {self.get_cache_root()}")
+            gdp = self._gdrive_processor()
 
             md_content = {}
 
@@ -1211,12 +1214,15 @@ class MarkdownMelder:
                 _LOGGER.info(
                     f"MM | Processing document '{var_name}' and all associated figures/CSVs/bibliography..."
                 )
-                result = gdp.process_document_figures(
-                    doc_id,
-                    folder_id,  # reserved folder_id if given; else parent is auto-resolved
-                    skip_unchanged=(not force_refresh),
-                    force_refresh=force_refresh,
-                )
+                # Per-doc lock: concurrent builds sharing this doc wait here,
+                # then see fresh digests and skip re-conversion.
+                with gdp.cache_manager.doc_lock(doc_id):
+                    result = gdp.process_document_figures(
+                        doc_id,
+                        folder_id,  # reserved folder_id if given; else parent is auto-resolved
+                        skip_unchanged=(not force_refresh),
+                        force_refresh=force_refresh,
+                    )
 
                 # Store content using the variable name as the key
                 md_content[var_name] = result["document"]
@@ -1451,16 +1457,53 @@ class MarkdownMelder:
         )
         return tgt
 
-    def _resolve_citation_group_sources(self, target_name: str) -> list[str] | None:
+    def _gdoc_citation_source(self, gdp: Any, doc_id: str, force_refresh: bool) -> str:
+        """Fetch (cache-aware) a Google Doc's markdown and write it to a stable,
+        absolute path the consistent-citations filter can read.
+
+        ``download_doc`` picks the same variant (plain or suggestions) the build
+        uses and refreshes it when the Doc's modifiedTime changes, so
+        ``citation_source.md`` is always the exact text that was just fetched.
+        """
+        with gdp.cache_manager.doc_lock(doc_id):
+            content = gdp.download_doc(
+                doc_id,
+                clean=True,
+                parse_frontmatter=False,
+                update_figure_paths=False,
+                force_refresh=force_refresh,
+            )
+            out = Path(self.get_cache_root()).resolve() / doc_id / "citation_source.md"
+            out.parent.mkdir(parents=True, exist_ok=True)
+            tmp = atomic_replace_target(out)
+            try:
+                tmp.write_text(content, encoding="utf-8")
+                os.replace(tmp, out)
+            finally:
+                tmp.unlink(missing_ok=True)
+        return str(out)
+
+    def _resolve_citation_group_sources(
+        self, target_name: str, force_refresh: bool = False
+    ) -> list[str] | None:
         """Resolve absolute file paths for all markdown sources in a target's citation group.
+
+        Handles both ``md_files`` siblings and ``google-doc`` siblings (whose
+        markdown is fetched through the Google Doc cache). Sibling configs are
+        resolved through ``Target`` so ``inherit_from`` is honored.
 
         Args:
             target_name: Name of the target to resolve group sources for.
+            force_refresh: If True, bypass the Google Doc cache.
 
         Returns:
             List of absolute file paths to markdown source files for all targets
-            in the citation group, in group order. Returns None if the target is
-            not in a citation group.
+            in the citation group, in group order, de-duplicated. Returns None if
+            the target is not in a citation group.
+
+        Raises:
+            TargetError: If the target is in a group but a sibling source cannot
+                be resolved, or no sources are found at all.
         """
         if target_name not in self._citation_group_map:
             return None
@@ -1468,31 +1511,54 @@ class MarkdownMelder:
         group_name = self._citation_group_map[target_name]
         group_targets = self.cfg["citation_groups"][group_name]
         source_paths = []
+        seen_paths = set()
+        seen_docs = set()
+        gdp = None
+
+        def add(path: str) -> None:
+            if path not in seen_paths:
+                seen_paths.add(path)
+                source_paths.append(path)
 
         for sibling_name in group_targets:
             if sibling_name not in self.cfg.get("targets", {}):
-                _LOGGER.warning(f"Citation group target '{sibling_name}' not found in config")
-                continue
-            sibling_cfg = self.cfg["targets"][sibling_name]
-            data_block = sibling_cfg.get("data", {})
-            md_files = data_block.get("md_files", {})
+                raise TargetError(
+                    f"Citation group '{group_name}': target '{sibling_name}' not in config"
+                )
+            sib = Target(self.cfg, sibling_name).meta
+            data = sib.get("data", {}) or {}
+            workpath = sib.get("_workpath", os.path.dirname(self.cfg.get("_cfg_file_path", "")))
 
-            # Get the workpath for resolving relative paths
-            workpath = sibling_cfg.get(
-                "_workpath", os.path.dirname(self.cfg.get("_cfg_file_path", ""))
-            )
-
-            for key, md_path in md_files.items():
+            for md_path in (data.get(MD_FILES_KEY) or {}).values():
                 if os.path.isabs(md_path):
                     abs_path = md_path
                 else:
                     abs_path = os.path.normpath(os.path.join(workpath, md_path))
-                if os.path.exists(abs_path):
-                    source_paths.append(abs_path)
-                else:
-                    _LOGGER.warning(f"Citation group source file not found: {abs_path}")
+                if not os.path.exists(abs_path):
+                    raise TargetError(
+                        f"Citation group source not found for '{sibling_name}': {abs_path}"
+                    )
+                add(abs_path)
 
-        return source_paths if source_paths else None
+            if sib.get(TARGET_TYPE_KEY) == GOOGLE_DOC_TARGET_TYPE:
+                for var, doc_id in (data.get(GOOGLE_DOCS_KEY) or {}).items():
+                    if var == "folder_id" or not doc_id or doc_id in seen_docs:
+                        continue
+                    seen_docs.add(doc_id)
+                    try:
+                        gdp = gdp or self._gdrive_processor()
+                        add(self._gdoc_citation_source(gdp, doc_id, force_refresh))
+                    except Exception as e:
+                        raise TargetError(
+                            f"Citation group '{group_name}': could not fetch Google Doc "
+                            f"'{doc_id}' for '{sibling_name}': {e}"
+                        ) from e
+
+        if not source_paths:
+            raise TargetError(
+                f"Citation group '{group_name}': no citation sources found for '{target_name}'"
+            )
+        return source_paths
 
     def _run_pandoc_citation_group(self, markdown_content: str, tgt: "Target") -> str:
         """Run pandoc with the consistent-citations filter for citation group processing.
@@ -1678,17 +1744,6 @@ class MarkdownMelder:
         if force_refresh:
             tgt.meta["force_refresh"] = True
 
-        # Inject citation group sources if this target is in a citation group
-        citation_group_sources = self._resolve_citation_group_sources(target_name)
-        if citation_group_sources:
-            tgt.meta["_citation_group_sources"] = citation_group_sources
-            # Rebuild the command now that we have citation group info
-            # (the original command was built in Target.__init__ before injection)
-            tgt.meta["command"] = Target._build_default_command(tgt.meta)
-            _LOGGER.info(
-                f"MM | Citation group sources for '{target_name}': {citation_group_sources}"
-            )
-
         # Inject ad-hoc input file into target data
         if input_file:
             input_path = str(Path(input_file).resolve())
@@ -1719,6 +1774,25 @@ class MarkdownMelder:
             if not tgt:
                 _LOGGER.error("Failed to preprocess authormark author block")
                 return tgt
+
+        # Inject citation group sources if this target is in a citation group.
+        # Runs after preprocessing so this target's own Google Doc was just
+        # fetched and its download_doc call hits the fresh cache.
+        try:
+            citation_group_sources = self._resolve_citation_group_sources(
+                target_name, force_refresh=force_refresh
+            )
+        except TargetError as e:
+            _LOGGER.error(f"Citation group resolution failed: {e}")
+            return None
+        if citation_group_sources:
+            tgt.meta["_citation_group_sources"] = citation_group_sources
+            # Rebuild the command now that we have citation group info
+            # (the original command was built in Target.__init__ before injection)
+            tgt.meta["command"] = Target._build_default_command(tgt.meta)
+            _LOGGER.info(
+                f"MM | Citation group sources for '{target_name}': {citation_group_sources}"
+            )
 
         # First, run any pre-builds
         prebuild_results = self.build_side_targets(tgt, "prebuild")

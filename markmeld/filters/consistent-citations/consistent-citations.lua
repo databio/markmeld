@@ -17,6 +17,22 @@ end
 
 local has_citeproc_api = PANDOC_VERSION >= {2,19,1}
 
+-- True when the input already contains a top-level Div#refs written by the
+-- author (e.g. a Google Doc ending in "# References" + <div id="refs"></div>).
+-- Citeproc fills an authored div in place and appends a new one otherwise, so
+-- this flag is what tells an authored heading before the refs apart from an
+-- ordinary last section heading.
+local refs_authored = false
+
+--- True if a block is a raw LaTeX page break (\newpage, \clearpage, \pagebreak).
+local function is_pagebreak(b)
+  if b and b.tag == "RawBlock" then
+    local t = b.text:gsub("^%s+", ""):gsub("%s+$", "")
+    return t == "\\newpage" or t == "\\clearpage" or t == "\\pagebreak"
+  end
+  return false
+end
+
 --- Run citeproc on a document, using the Lua API if available or shelling out.
 -- @param doc A pandoc document AST
 -- @return The document with citations resolved
@@ -70,6 +86,13 @@ local function meta_list_to_strings(meta_field)
     return nil
   end
   local result = {}
+  -- A single --metadata=key:value arrives as a plain Lua string
+  if type(meta_field) == "string" then
+    if meta_field ~= "" then
+      table.insert(result, meta_field)
+    end
+    return result
+  end
   -- MetaList: iterate over items
   local items = meta_field
   -- If it's a MetaList, iterate; if single value, wrap in table
@@ -96,6 +119,15 @@ local function collect_and_inject_phantoms(doc)
   if not sources or #sources == 0 then
     -- No citation group sources; pass through unchanged
     return nil
+  end
+
+  -- Record whether the author wrote the refs div into the source
+  refs_authored = false
+  for _, block in ipairs(doc.blocks) do
+    if block.tag == "Div" and block.identifier == "refs" then
+      refs_authored = true
+      break
+    end
   end
 
   -- Collect canonical citation key ordering from all source files
@@ -193,17 +225,34 @@ local function handle_output_mode(doc)
     return s == "true" or s == "yes"
   end
 
-  if meta_to_bool(bib_only) then
-    -- Find the refs div and output ONLY that
-    local refs_div = nil
-    for _, block in ipairs(doc.blocks) do
-      if block.tag == "Div" and block.identifier == "refs" then
-        refs_div = block
-        break
-      end
+  -- Top-level index of the refs div (nil if there is none)
+  local refs_idx = nil
+  for i, block in ipairs(doc.blocks) do
+    if block.tag == "Div" and block.identifier == "refs" then
+      refs_idx = i
+      break
     end
-    if refs_div then
-      doc.blocks = {refs_div}
+  end
+
+  -- An authored heading sits directly before an authored refs div. With
+  -- nothing between them it can only be the bibliography's heading.
+  local function authored_heading_idx()
+    if refs_idx and refs_authored and refs_idx > 1
+        and doc.blocks[refs_idx - 1].tag == "Header" then
+      return refs_idx - 1
+    end
+    return nil
+  end
+
+  if meta_to_bool(bib_only) then
+    -- Output ONLY the refs div, plus its authored heading if there is one
+    if refs_idx then
+      local h = authored_heading_idx()
+      if h then
+        doc.blocks = {doc.blocks[h], doc.blocks[refs_idx]}
+      else
+        doc.blocks = {doc.blocks[refs_idx]}
+      end
     else
       doc.blocks = {}
     end
@@ -211,14 +260,25 @@ local function handle_output_mode(doc)
   end
 
   if meta_to_bool(suppress_bib) then
-    -- Remove the refs div from output
-    local cleaned_blocks = pandoc.List()
-    for _, block in ipairs(doc.blocks) do
-      if not (block.tag == "Div" and block.identifier == "refs") then
-        cleaned_blocks:insert(block)
+    -- Remove the refs div, its orphaned authored heading, and a page break
+    -- left dangling right before them.
+    if refs_idx then
+      local first = refs_idx
+      local h = authored_heading_idx()
+      if h then
+        first = h
       end
+      if first > 1 and is_pagebreak(doc.blocks[first - 1]) then
+        first = first - 1
+      end
+      local cleaned_blocks = pandoc.List()
+      for i, block in ipairs(doc.blocks) do
+        if i < first or i > refs_idx then
+          cleaned_blocks:insert(block)
+        end
+      end
+      doc.blocks = cleaned_blocks
     end
-    doc.blocks = cleaned_blocks
     return doc
   end
 
