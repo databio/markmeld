@@ -264,6 +264,7 @@ def check_and_fix_latex_incompatible_chars(markdown_content: str) -> str:
         "\u03c3": "$\\sigma$",  # U+03C3 GREEK SMALL LETTER SIGMA
         "\u03c6": "$\\phi$",  # U+03C6 GREEK SMALL LETTER PHI
         "\u03bc": "$\\mu$",  # U+03BC GREEK SMALL LETTER MU
+        "\u03c1": "$\\rho$",  # U+03C1 GREEK SMALL LETTER RHO
         "\u2080": "$_0$",  # U+2080 SUBSCRIPT ZERO
         "\u2081": "$_1$",  # U+2081 SUBSCRIPT ONE
         "\u2082": "$_2$",  # U+2082 SUBSCRIPT TWO
@@ -275,6 +276,7 @@ def check_and_fix_latex_incompatible_chars(markdown_content: str) -> str:
         "\u2088": "$_8$",  # U+2088 SUBSCRIPT EIGHT
         "\u2089": "$_9$",  # U+2089 SUBSCRIPT NINE
         "\u2192": "$\\rightarrow$",  # U+2192 RIGHTWARDS ARROW
+        "\u2229": "$\\cap$",  # U+2229 INTERSECTION
         "\u2713": "$\\checkmark$",  # U+2713 CHECK MARK
         "\u2717": "$\\times$",  # U+2717 BALLOT X
         "\u00b2": "$^2$",  # U+00B2 SUPERSCRIPT TWO
