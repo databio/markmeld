@@ -38,10 +38,14 @@ def doc_to_markdown(doc: dict[str, Any]) -> str:
 
     parts: list[str] = []
     in_frontmatter = False
+    prev_was_list_item = False
     for element in content:
         if "paragraph" in element:
-            text = _convert_paragraph(element["paragraph"])
+            para = element["paragraph"]
+            is_list_item = "bullet" in para
+            text = _convert_paragraph(para)
             if not text.strip():
+                prev_was_list_item = False
                 continue
 
             stripped = text.rstrip("\n")
@@ -50,17 +54,22 @@ def doc_to_markdown(doc: dict[str, Any]) -> str:
             # inserting blank lines between frontmatter fields
             if stripped == "---":
                 in_frontmatter = not in_frontmatter
+                prev_was_list_item = False
                 parts.append(stripped)
                 continue
 
             if in_frontmatter:
                 # Frontmatter lines: no blank line separation
                 parts.append(stripped)
+            elif is_list_item and prev_was_list_item:
+                # Consecutive list items: no blank line between them
+                parts.append(stripped)
             else:
                 # Body paragraphs: need blank line separation for markdown
                 if parts and not parts[-1] == "":
                     parts.append("")
                 parts.append(stripped)
+            prev_was_list_item = is_list_item
         elif "table" in element:
             if parts and not parts[-1] == "":
                 parts.append("")
@@ -106,6 +115,14 @@ def _convert_paragraph(paragraph: dict[str, Any]) -> str:
     if prefix and not all_insertion:
         text = text.rstrip("\n")
         return f"{prefix}{text}\n"
+
+    # Bullet/list items: Google Docs stores list membership in paragraph.bullet
+    bullet = paragraph.get("bullet")
+    if bullet:
+        nesting = bullet.get("nestingLevel", 0)
+        indent = "  " * nesting
+        text = text.rstrip("\n")
+        return f"{indent}- {text}\n"
 
     return text
 
