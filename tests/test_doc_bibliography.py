@@ -9,6 +9,8 @@ bibliography itself is now fetched from the target's `bib_source`/`bibliography`
 settings, not from the Doc; see test_project_bibliography.py.)
 """
 
+from unittest.mock import patch
+
 import pytest
 
 from markmeld.google_drive.doc_to_markdown import doc_to_markdown
@@ -67,3 +69,21 @@ def test_bibliography_found_in_block_below_leading_text():
 )
 def test_find_bibliography_follows_pandoc_rules(content, expected):
     assert find_bibliography(content) == expected
+
+
+@pytest.mark.parametrize("method", ["_download_first_tab", "_download_with_changes"])
+def test_docs_api_keeps_first_heading_matching_doc_name(google_drive_processor, method):
+    """The Docs API adds no title, so a real heading equal to the file name stays."""
+    services = google_drive_processor()
+    processor = services.processor
+    services.docs.documents().get().execute.return_value = {
+        "body": {"content": [_para("Project narrative\n"), _para("Body text.\n")]}
+    }
+    services.docs.documents().get().execute.return_value["body"]["content"][0]["paragraph"][
+        "paragraphStyle"
+    ] = {"namedStyleType": "HEADING_1"}
+
+    with patch.object(processor, "get_metadata", return_value={"name": "Project narrative"}):
+        md = getattr(processor, method)("doc")
+
+    assert md.startswith("# Project narrative")

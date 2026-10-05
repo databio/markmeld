@@ -483,8 +483,16 @@ class GoogleDriveProcessor:
     def _remove_auto_title(self, content: str, doc_id: str) -> str:
         """Remove auto-added document title if present.
 
-        Google Docs export sometimes adds the document title as an H1 heading.
-        This method removes it if it matches the document name.
+        ONLY for markdown pulled with Drive's markdown export
+        (``files().export(mimeType="text/markdown")``). That export puts an H1
+        title on top that is not in the Doc's text (e.g. "# Final Specific
+        Aims"). This method removes it if it matches the document name.
+
+        Currently unused. Both download paths read the Docs API
+        (``_download_first_tab``, ``_download_with_changes``), which returns
+        only the Doc's own text. Calling this there would delete a real first
+        heading that happens to match the file name. Kept so that if the Drive
+        markdown export comes back, that path runs its output through here.
 
         Args:
             content: The markdown content.
@@ -533,7 +541,7 @@ class GoogleDriveProcessor:
         doc = self.docs_service.documents().get(documentId=doc_id).execute()
 
         content = doc_to_markdown(doc)
-        content = self._remove_auto_title(content, doc_id)
+        # No _remove_auto_title here: the Docs API adds no title (see its docstring).
 
         return content
 
@@ -564,9 +572,7 @@ class GoogleDriveProcessor:
         )
 
         content = doc_to_markdown(doc)
-
-        # Remove auto-added title (same logic as the export path)
-        content = self._remove_auto_title(content, doc_id)
+        # No _remove_auto_title here: the Docs API adds no title (see its docstring).
 
         return content
 
