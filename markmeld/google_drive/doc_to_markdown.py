@@ -51,11 +51,15 @@ def doc_to_markdown(doc: dict[str, Any]) -> str:
             stripped = text.rstrip("\n")
 
             # Track YAML frontmatter blocks (--- delimited) to avoid
-            # inserting blank lines between frontmatter fields
-            if stripped == "---":
+            # inserting blank lines between frontmatter fields. A soft line
+            # break (Shift+Enter) before the --- arrives as a leading newline.
+            if stripped.strip() == "---":
+                # Pandoc only reads a block mid-document after a blank line
+                if not in_frontmatter and parts and parts[-1] != "":
+                    parts.append("")
                 in_frontmatter = not in_frontmatter
                 prev_was_list_item = False
-                parts.append(stripped)
+                parts.append("---")
                 continue
 
             if in_frontmatter:

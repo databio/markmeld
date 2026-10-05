@@ -202,6 +202,66 @@ add the one `authormark:` key. No dual-path reconciliation is kept.
 (`pip install markmeld[authormark]` or `pip install authormark-client`). It is
 imported lazily, only when the `authormark:` key is present.
 
+## Bibliography (`bibliography`, `bib_source: gdrive`)
+
+`bibliography` is the one bibliography setting. Set it on the target, or on a
+target it inherits from (`inherit_from`), as a path or a list of paths:
+
+```yaml
+targets:
+  manuscript:
+    bibliography: references.bib    # relative: resolved against _defpath, then _workpath
+```
+
+At build time (`MarkdownMelder._apply_target_bibliography`) the value is
+resolved and put into `frontmatter_overrides`, so it beats every other metadata
+source, including a `bibliography:` line in a markdown file or Google Doc. A
+relative path that is not found under `_defpath`/`_workpath` stays relative for
+pandoc's `--resource-path`. When markmeld runs its own default pandoc command,
+it also appends the value as the last metadata block of the rendered markdown
+(pandoc keeps the later block), so it reaches pandoc whatever the Jinja
+template emits. markmeld never adds `--bibliography` to the default pandoc
+command. A custom `command:` gets nothing appended to its input; it may pass
+`{bibliography}` itself.
+
+A document's own `bibliography:` line is ordinary pandoc metadata. It is left
+in place and used when the target sets no `bibliography` (an empty value means
+none).
+
+`bibdb` is gone: a `bibdb` key, or `{bibdb}` in a `command:`, fails with
+"`bibdb` was renamed to `bibliography` (target X)".
+
+### Drive bibliography (`bib_source: gdrive`)
+
+A `type: google-doc` target can fill its `bibliography` from the project's
+Google Drive folder:
+
+```yaml
+targets:
+  research_strategy:
+    type: google-doc
+    bib_source: gdrive
+    bibliography: bib/ref.bib     # file name looked up in the Drive folder
+    data:
+      google_docs:
+        content: <doc id>
+        folder_id: <drive folder id>   # optional; else the first Doc's parent folder
+```
+
+On every build, `MarkdownMelder.preprocess_google_doc` asks Drive for each
+relative entry's md5 and downloads it into `<cache_root>/_project/bib/<name>`
+only when it changed (`MM | Bibliography ref.bib: downloaded|unchanged (Drive
+md5)` in the log). Every target of the project shares that one copy, and the
+entry is replaced by its absolute path. Absolute entries are local files and
+are not fetched. A `<name>.drive.json` sidecar records the Drive file id and
+folder.
+
+- The target setting decides the fetch, never a line inside the Doc.
+- `bib_source: gdrive` with no `bibliography`: the build fails.
+- File missing from the folder: the build fails. Drive unreachable: the cached
+  copy is used with a warning; with no cached copy the build fails.
+- Other `bib_source` values (sciquill's `lumenoia`) are ignored by markmeld.
+
 ## Testing
 
 Tests are in `tests/` and use pytest. Key test files:

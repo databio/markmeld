@@ -31,3 +31,12 @@ AUTHORMARK_ALLOWED_META_KEYS = frozenset(
         EXTRACT_SECTIONS_KEY,
     }
 )
+
+# Sub-directory of the cache root holding project-level files shared by every
+# target, such as the Drive bibliography (`<cache_root>/_project/bib/`).
+PROJECT_CACHE_SUBDIR = "_project"
+
+# Target key naming where the `bibliography` file comes from. markmeld acts only on
+# BIB_SOURCE_GDRIVE; other values (e.g. sciquill's "lumenoia") are ignored.
+BIB_SOURCE_KEY = "bib_source"
+BIB_SOURCE_GDRIVE = "gdrive"

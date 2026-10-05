@@ -21,6 +21,8 @@ from .const import (
     AUTHORMARK_BASE_URL_KEY,
     AUTHORMARK_DEFAULT_BASE_URL,
     AUTHORMARK_KEY,
+    BIB_SOURCE_GDRIVE,
+    BIB_SOURCE_KEY,
     EXTRACT_SECTIONS_KEY,
     EXTRACT_TITLE_KEY,
     GOOGLE_DOC_TARGET_TYPE,
@@ -756,6 +758,34 @@ def resolve_authormark_source(
     return base_url.rstrip("/"), value
 
 
+BIBDB_RENAMED = "`bibdb` was renamed to `bibliography` (target {target})"
+
+
+def reject_bibdb(meta: dict[str, Any], target_name: str | None) -> None:
+    """Fail on the retired `bibdb` key or a `{bibdb}` command placeholder.
+
+    `bibliography` is the one bibliography setting. `bibdb` is not an alias.
+    """
+    command = meta.get("command")
+    if "bibdb" in meta or (isinstance(command, str) and "{bibdb}" in command):
+        raise ConfigError(BIBDB_RENAMED.format(target=target_name))
+
+
+def append_bibliography_block(markdown: str, bibliography: str | list[str] | None) -> str:
+    """Append a metadata block setting `bibliography` to rendered markdown.
+
+    pandoc keeps the later value when two metadata blocks set the same field,
+    so a block at the very end beats any `bibliography:` the document or the
+    template wrote. This is what makes the target's value reach pandoc no
+    matter what the Jinja template emits, without `--bibliography`.
+    """
+    if not bibliography:
+        return markdown
+    block = yaml.safe_dump({"bibliography": bibliography}, default_flow_style=False)
+    body = markdown.rstrip("\n")
+    return f"{body}\n\n---\n{block}---\n"
+
+
 class Target:
     """Represents a single build target in markmeld.
 
@@ -842,13 +872,15 @@ class Target:
         else:
             cli_vars = {}
 
+        reject_bibdb(meta, target_name)
+
         # Inject embedded resource variables EARLY (before command generation)
         # This allows user variables containing resource references to be expanded
         from .resource_manager import inject_resource_variables
 
         meta = inject_resource_variables(meta)
 
-        # Expand template variables in meta values (e.g., bibdb: "{mm-csl-nature}")
+        # Expand template variables in meta values (e.g., csl: "{mm-csl-nature}")
         # before the pandoc command is generated
         from .utilities import expand_dict_templates
 
@@ -856,6 +888,8 @@ class Target:
 
         if "command" not in meta:
             meta["command"] = self._build_default_command(meta)
+            # markmeld's own pandoc command: safe to append metadata to its stdin
+            meta["_default_command"] = True
 
         _LOGGER.debug(f"meta: {meta}")
         self.meta = meta
@@ -873,14 +907,8 @@ class Target:
         if "latex_template" in meta:
             options_array.append('--template "{latex_template}"')
 
-        # Presence is not enough: an empty bibdb yields `--bibliography ""`,
-        # which pandoc rejects outright ("File  not found in resource path").
-        # An empty value is how a target says "I have no bibliography of my own"
-        # -- and for a Google Doc that names its own `bibliography:` in
-        # frontmatter, staying off the command line is what lets that win, since
-        # a CLI --bibliography replaces document metadata rather than merging.
-        if meta.get("bibdb"):
-            options_array.append('--bibliography "{bibdb}"')
+        # No --bibliography: the target's `bibliography` reaches pandoc through
+        # document metadata (see MarkdownMelder._apply_target_bibliography).
 
         if "csl" in meta:
             options_array.append('--csl "{csl}"')
@@ -1090,30 +1118,6 @@ class MarkdownMelder:
         )
         return cache_root
 
-    def _update_bibliography_path(self, content: str, cached_bib_path: str | list[str]) -> str:
-        """Update the bibliography path in document frontmatter to the cached file.
-
-        Args:
-            content: The markdown content with frontmatter.
-            cached_bib_path: Path to the cached bibliography file(s).
-
-        Returns:
-            Updated markdown content with bibliography path pointing to cached file.
-        """
-
-        import frontmatter
-
-        # Parse the content to extract frontmatter
-        post = frontmatter.loads(content)
-
-        # Update the bibliography field to point to the cached file
-        if cached_bib_path:
-            post.metadata["bibliography"] = cached_bib_path
-            _LOGGER.debug(f"Updated bibliography path to: {cached_bib_path}")
-
-        # Convert back to string with frontmatter
-        return frontmatter.dumps(post)
-
     def open_target(self, target_name: str) -> str | bool:
         """Get the output file path for a target if it should be opened.
 
@@ -1144,6 +1148,118 @@ class MarkdownMelder:
         _LOGGER.info(f"MM | Describing target: {tgt.target_name}")
         _LOGGER.info(tgt)
         return True
+
+    def _fetch_drive_bibliography(
+        self, tgt: Target, gdp: Any, google_docs: dict[str, Any], force_refresh: bool
+    ) -> bool:
+        """Fill a ``bib_source: gdrive`` target's ``bibliography`` from Drive.
+
+        Each relative entry of the target's ``bibliography`` (a string or a
+        list) names a file in the project's Drive folder. It is fetched into
+        ``<cache_root>/_project/bib/``, shared by every target of the project,
+        and the entry is replaced by that absolute path. Absolute entries are
+        local files and are left alone. The target setting decides the fetch,
+        never anything written inside the Google Doc.
+
+        Returns:
+            False when the build must fail: no ``bibliography``, no folder, a
+            file not in the folder, or Drive failed with no cached copy.
+        """
+        bibliography = tgt.meta.get("bibliography")
+        if not bibliography:
+            _LOGGER.error(
+                f"MM | bib_source: gdrive needs a bibliography (target {tgt.target_name}): "
+                "set `bibliography: <file name in the Drive folder>` on the target"
+            )
+            return False
+        entries = bibliography if isinstance(bibliography, list) else [bibliography]
+
+        resolved = []
+        folder_id = None
+        for entry in entries:
+            if os.path.isabs(entry):
+                resolved.append(entry)
+                continue
+            if folder_id is None:
+                folder_id = google_docs.get("folder_id")
+                if not folder_id:
+                    first_doc = next(
+                        (v for k, v in google_docs.items() if k != "folder_id" and v), None
+                    )
+                    folder_id = gdp._resolve_folder_id(first_doc) if first_doc else None
+            path = self._fetch_one_drive_bib(gdp, entry, folder_id, force_refresh)
+            if path is None:
+                return False
+            resolved.append(path)
+
+        tgt.meta["bibliography"] = resolved if isinstance(bibliography, list) else resolved[0]
+        return True
+
+    @staticmethod
+    def _fetch_one_drive_bib(
+        gdp: Any, entry: str, folder_id: str | None, force_refresh: bool
+    ) -> str | None:
+        """Fetch one Drive bib; return its local path, or None to fail the build."""
+        name = Path(entry).name
+        if not folder_id:
+            _LOGGER.error(f"MM | Bibliography {name}: no Drive folder to fetch it from")
+            return None
+        try:
+            fetched = gdp.fetch_project_bibliography(entry, folder_id, force_refresh)
+        except BibliographyFetchError as e:
+            _LOGGER.error(f"MM | Bibliography {name}: {e}")
+            return None
+        except Exception as e:
+            cached = gdp.project_bibliography_path(entry)
+            if not cached.exists():
+                _LOGGER.error(f"MM | Bibliography {name}: Drive check failed ({e}), no cached copy")
+                return None
+            _LOGGER.warning(
+                f"MM | Bibliography {name}: Drive check failed ({e}); "
+                f"using cached copy {cached} (may be stale)"
+            )
+            return str(cached)
+        _LOGGER.info(f"MM | Bibliography {name}: {fetched['status']} (Drive md5)")
+        _LOGGER.info(f"MM | Bibliography path: {fetched['path']}")
+        return fetched["path"]
+
+    @staticmethod
+    def _apply_target_bibliography(tgt: Target) -> None:
+        """Make the target's ``bibliography`` the document's, at top priority.
+
+        A relative entry becomes absolute when the file exists under the
+        target's ``_defpath`` (then ``_workpath``); otherwise it is left
+        relative for pandoc's ``--resource-path`` to find. The value goes into
+        ``frontmatter_overrides``, which beats every other metadata source. An
+        empty value means the target has no bibliography of its own, so a
+        document's own ``bibliography:`` line stays in effect.
+        """
+        bibliography = tgt.meta.get("bibliography")
+        if not bibliography:
+            tgt.meta.pop("bibliography", None)
+            return
+
+        bases = [tgt.meta.get("_defpath"), tgt.meta.get("_workpath")]
+
+        def resolve(entry: str) -> str:
+            if os.path.isabs(entry):
+                return entry
+            for base in bases:
+                if base:
+                    candidate = os.path.normpath(os.path.join(base, entry))
+                    if os.path.exists(candidate):
+                        return candidate
+            return entry
+
+        if isinstance(bibliography, list):
+            resolved = [resolve(str(b)) for b in bibliography]
+        else:
+            resolved = resolve(str(bibliography))
+        tgt.meta["bibliography"] = resolved
+        # Copy: frontmatter_overrides may be shared with the root config.
+        overrides = dict(tgt.meta.get("frontmatter_overrides") or {})
+        overrides["bibliography"] = resolved
+        tgt.meta["frontmatter_overrides"] = overrides
 
     def preprocess_google_doc(self, tgt: Target) -> Target | None:
         """Preprocess a Google Doc target by fetching document and figures.
@@ -1186,9 +1302,13 @@ class MarkdownMelder:
             md_content = {}
 
             # `folder_id` is a RESERVED key naming the Drive folder that holds
-            # the docs' figures/bibliography. It is NOT a document to download,
+            # the docs' figures and the project bibliography. It is NOT a document to download,
             # so it is pulled out here and skipped in the download loop below.
             folder_id = google_docs.get("folder_id")
+
+            if tgt.meta.get(BIB_SOURCE_KEY) == BIB_SOURCE_GDRIVE:
+                if not self._fetch_drive_bibliography(tgt, gdp, google_docs, force_refresh):
+                    return None
 
             # Process each Google Doc
             for var_name, doc_id in google_docs.items():
@@ -1210,9 +1330,9 @@ class MarkdownMelder:
 
                 _LOGGER.info(f"MM | Fetching Google Doc '{var_name}': {doc_id}")
 
-                # Process document, figures, and bibliography in one pass
+                # Process document and figures in one pass
                 _LOGGER.info(
-                    f"MM | Processing document '{var_name}' and all associated figures/CSVs/bibliography..."
+                    f"MM | Processing document '{var_name}' and all associated figures/CSVs..."
                 )
                 # Per-doc lock: concurrent builds sharing this doc wait here,
                 # then see fresh digests and skip re-conversion.
@@ -1242,32 +1362,6 @@ class MarkdownMelder:
                         _LOGGER.warning(
                             f"MM | Failed to process {len(results['failed'])} figures/CSVs for '{var_name}'"
                         )
-
-                # Extract bibliography info (processed during same document download)
-                bib_result = result.get("bibliography_info", {})
-
-                if bib_result and bib_result.get("bibliography_path"):
-                    # Update the frontmatter to point to the cached bibliography
-                    _LOGGER.info("MM | Updating bibliography path to cached location...")
-                    md_content[var_name] = self._update_bibliography_path(
-                        md_content[var_name], bib_result["bibliography_path"]
-                    )
-
-                    # Log bibliography processing results
-                    if "results" in bib_result:
-                        bib_results = bib_result["results"]
-                        if bib_results.get("processed"):
-                            _LOGGER.info(
-                                f"MM | Downloaded {len(bib_results['processed'])} bibliography files for '{var_name}'"
-                            )
-                        if bib_results.get("skipped"):
-                            _LOGGER.info(
-                                f"MM | Used cached {len(bib_results['skipped'])} bibliography files for '{var_name}'"
-                            )
-                        if bib_results.get("failed"):
-                            _LOGGER.warning(
-                                f"MM | Failed to download {len(bib_results['failed'])} bibliography files for '{var_name}'"
-                            )
 
             # Transform target data: preserve existing fields (like variables),
             # remove processed google_docs, add md_content
@@ -1589,12 +1683,10 @@ class MarkdownMelder:
         cmd_parts = ["pandoc", "--from=markdown", "--to=plain"]
         cmd_parts.append(f'--lua-filter="{filter_path}"')
 
-        # Add bibliography if specified
-        if tgt.meta.get("bibdb"):
-            bibdb = tgt.meta["bibdb"]
-            if not os.path.isabs(bibdb):
-                bibdb = os.path.normpath(os.path.join(workpath, bibdb))
-            cmd_parts.append(f'--bibliography="{bibdb}"')
+        # The rendered content may not carry the target's bibliography (that
+        # depends on the template), so append it as the last metadata block,
+        # the same way the real build does. No --bibliography.
+        markdown_content = append_bibliography_block(markdown_content, tgt.meta.get("bibliography"))
 
         # Add CSL if specified
         if "csl" in tgt.meta:
@@ -1662,11 +1754,10 @@ class MarkdownMelder:
 
         cmd_parts = ["pandoc", "--from=markdown", "--to=plain", "--citeproc"]
 
-        if tgt.meta.get("bibdb"):
-            bibdb = tgt.meta["bibdb"]
-            if not os.path.isabs(bibdb):
-                bibdb = os.path.normpath(os.path.join(workpath, bibdb))
-            cmd_parts.append(f'--bibliography="{bibdb}"')
+        # The rendered content may not carry the target's bibliography (that
+        # depends on the template), so append it as the last metadata block,
+        # the same way the real build does. No --bibliography.
+        markdown_content = append_bibliography_block(markdown_content, tgt.meta.get("bibliography"))
 
         if "csl" in tgt.meta:
             csl = tgt.meta["csl"]
@@ -1774,6 +1865,10 @@ class MarkdownMelder:
             if not tgt:
                 _LOGGER.error("Failed to preprocess authormark author block")
                 return tgt
+
+        # After preprocessing: a `bib_source: gdrive` fetch has just replaced
+        # the target's Drive bibliography with its local copy.
+        self._apply_target_bibliography(tgt)
 
         # Inject citation group sources if this target is in a citation group.
         # Runs after preprocessing so this target's own Google Doc was just
@@ -1954,7 +2049,7 @@ class MarkdownMelder:
             # consistent-citations filter to produce processed output
             if tgt.meta.get("_citation_group_sources"):
                 tgt.melded_output = self._run_pandoc_citation_group(tgt.melded_output, tgt)
-            elif tgt.meta.get("bibdb"):
+            elif tgt.meta.get("bibliography"):
                 # For targets with bibliography, run pandoc with citeproc
                 # to resolve citations even in print_only mode
                 tgt.melded_output = self._run_pandoc_citeproc(tgt.melded_output, tgt)
@@ -2008,6 +2103,15 @@ class MarkdownMelder:
 
                         _LOGGER.warning(traceback.format_exc())
 
+                # The target's bibliography goes last, so it beats whatever
+                # the document or template set, and it reaches pandoc even
+                # when the template emits no frontmatter. Only for markmeld's
+                # own pandoc command: a custom command may not read markdown
+                # (it can pass `{bibliography}` itself).
+                if tgt.meta.get("_default_command"):
+                    tgt.melded_output = append_bibliography_block(
+                        tgt.melded_output, tgt.meta.get("bibliography")
+                    )
                 tgt.returncode, tgt.stdout, tgt.stderr = run_cmd(
                     cmd_fmt, tgt.melded_output.encode(), tgt.meta["_workpath"]
                 )
@@ -2123,7 +2227,7 @@ class MarkdownMelder:
         _LOGGER.debug("processed_data_block: %s", processed_data_block)
         data_copy.update(processed_data_block)
 
-        # Expand template variables in data_copy values (e.g., bibdb: "{mm-csl-nature}")
+        # Expand template variables in data_copy values (e.g., csl: "{mm-csl-nature}")
         from .utilities import expand_dict_templates
 
         expand_dict_templates(data_copy)

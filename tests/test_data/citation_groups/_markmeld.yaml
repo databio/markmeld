@@ -9,7 +9,7 @@ targets:
     suppress-bibliography: true
     jinja_template: generic.jinja
     csl: "{mm-csl-biomed-central}"
-    bibdb: references.bib
+    bibliography: references.bib
     output_file: out/project_summary.pdf
     data:
       md_files:
@@ -19,7 +19,7 @@ targets:
     suppress-bibliography: true
     jinja_template: generic.jinja
     csl: "{mm-csl-biomed-central}"
-    bibdb: references.bib
+    bibliography: references.bib
     output_file: out/project_description.pdf
     data:
       md_files:
@@ -29,7 +29,7 @@ targets:
     bibliography-only: true
     jinja_template: generic.jinja
     csl: "{mm-csl-biomed-central}"
-    bibdb: references.bib
+    bibliography: references.bib
     output_file: out/references_cited.pdf
     data:
       md_files:
@@ -38,7 +38,7 @@ targets:
   budget_justification:
     jinja_template: generic.jinja
     csl: "{mm-csl-biomed-central}"
-    bibdb: references.bib
+    bibliography: references.bib
     output_file: out/budget_justification.pdf
     data:
       md_files:

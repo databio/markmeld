@@ -196,7 +196,10 @@ class _FakeGDP:
         return DOC1_MD
 
     def process_document_figures(self, doc_id, folder_id=None, **kwargs):
-        return {"document": DOC1_MD, "results": {}, "bibliography_info": {}}
+        return {
+            "document": DOC1_MD,
+            "results": {},
+        }
 
 
 def _group_cfg(tmp_path, targets, group):
@@ -205,7 +208,7 @@ def _group_cfg(tmp_path, targets, group):
     common = {
         "jinja_template": str(tmp_path / "generic.jinja"),
         "csl": "{mm-csl-biomed-central}",
-        "bibdb": str(tmp_path / "references.bib"),
+        "bibliography": str(tmp_path / "references.bib"),
         "_workpath": str(tmp_path),
         "_defpath": str(tmp_path),
     }

@@ -33,12 +33,12 @@ class TestDefaultCommandGeneration:
         "field_kwargs, present, absent",
         [
             ({"latex_template": "article.tex"}, ["--template"], []),
-            ({"bibdb": "references.bib"}, ["--bibliography"], []),
+            ({"bibliography": "references.bib"}, [], ["--bibliography"]),
             ({"csl": "biomed-central.csl"}, ["--csl"], []),
             (
                 {
                     "csl": "biomed-central.csl",
-                    "bibdb": "references.bib",
+                    "bibliography": "references.bib",
                     "citeproc": True,
                 },
                 ["--citeproc"],
@@ -47,7 +47,7 @@ class TestDefaultCommandGeneration:
             (
                 {
                     "csl": "biomed-central.csl",
-                    "bibdb": "references.bib",
+                    "bibliography": "references.bib",
                     "citeproc": False,
                 },
                 [],
@@ -94,7 +94,7 @@ class TestDefaultCommandGeneration:
         """citeproc: true and lua_filters work together"""
         target = make_target(
             csl="biomed-central.csl",
-            bibdb="references.bib",
+            bibliography="references.bib",
             lua_filters=["figczar.lua"],
             citeproc=True,
         )
@@ -107,7 +107,7 @@ class TestDefaultCommandGeneration:
         target = make_target(
             latex_template="article.tex",
             csl="biomed-central.csl",
-            bibdb="references.bib",
+            bibliography="references.bib",
             lua_filters=["figczar.lua", "change-marker.lua"],
             citeproc=True,
         )
@@ -115,7 +115,8 @@ class TestDefaultCommandGeneration:
 
         assert command.startswith("pandoc ")
         assert "--template" in command
-        assert "--bibliography" in command
+        # bibliography reaches pandoc through document metadata, never the CLI
+        assert "--bibliography" not in command
         assert "--csl" in command
         assert "--lua-filter" in command
         # The two configured filters, plus the always-on unicode-symbols filter.
@@ -134,7 +135,7 @@ class TestDefaultCommandGeneration:
         target = make_target(
             command="pandoc -o output.pdf",
             citeproc=True,  # ignored
-            bibdb="references.bib",  # ignored
+            bibliography="references.bib",  # ignored
         )
         command = target.meta.get("command", "")
 

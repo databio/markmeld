@@ -23,6 +23,8 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
 
+from ..const import PROJECT_CACHE_SUBDIR
+from ..exceptions import BibliographyFetchError
 from ..utilities import sanitize_filename, write_to_file
 from .cache_manager import CloudCacheManager, atomic_replace_target
 from .doc_to_markdown import doc_to_markdown
@@ -1201,38 +1203,91 @@ class GoogleDriveProcessor:
 
         return None
 
+    @handle_drive_errors
     def find_file_in_drive(self, file_path: str, folder_id: str) -> dict[str, Any] | None:
-        """Find a file by path in a Google Drive folder.
+        """Find a file by name in a Google Drive folder.
 
         Args:
-            file_path: The file path/name to search for.
+            file_path: The file path/name to search for (only the name is used).
             folder_id: The Google Drive folder ID to search in.
 
         Returns:
-            File metadata dict if found, None otherwise.
+            File metadata dict (id, name, mimeType, md5Checksum, modifiedTime)
+            if found, None if the folder has no such file.
+
+        Raises:
+            Exception: Drive API errors propagate, so a failed request is never
+                mistaken for a missing file.
         """
         filename = Path(file_path).name
-
-        try:
-            response = (
-                self.drive_service.files()
-                .list(
-                    q=f"'{folder_id}' in parents and name='{filename}' and trashed=false",
-                    fields="files(id, name, mimeType)",
-                )
-                .execute()
+        response = (
+            self.drive_service.files()
+            .list(
+                q=f"'{folder_id}' in parents and name='{filename}' and trashed=false",
+                fields="files(id, name, mimeType, md5Checksum, modifiedTime)",
             )
+            .execute()
+        )
+        files = response.get("files", [])
+        return files[0] if files else None
 
-            files = response.get("files", [])
-            return files[0] if files else None
-        except Exception as e:
-            _LOGGER.error(f"Error searching for file {filename}: {e}")
-            return None
+    def project_bibliography_path(self, entry: str) -> Path:
+        """Where a ``bibliography`` entry's Drive file is cached: ``<cache_root>/_project/bib/<name>``."""
+        return self.cache_manager.cache_root / PROJECT_CACHE_SUBDIR / "bib" / Path(entry).name
+
+    def fetch_project_bibliography(
+        self, entry: str, folder_id: str, force_refresh: bool = False
+    ) -> dict[str, str]:
+        """Fetch a ``bibliography`` entry's file from a Drive folder into ``<cache_root>/_project/bib/``.
+
+        One copy serves every target of the project. The download is skipped
+        when the cached copy's md5 matches Drive's. A ``<name>.drive.json``
+        sidecar records the Drive file id and folder for tools that link to or
+        edit the Drive original.
+
+        Args:
+            entry: One relative entry of the target's ``bibliography``; its
+                file name is looked up in the Drive folder.
+            folder_id: The Drive folder holding the bibliography.
+            force_refresh: Download even when the md5 matches.
+
+        Returns:
+            ``{"path": <absolute path>, "status": "downloaded" | "unchanged"}``.
+
+        Raises:
+            BibliographyFetchError: The folder has no file with that name.
+        """
+        dest = self.project_bibliography_path(entry)
+        name = dest.name
+        with self.cache_manager.doc_lock(PROJECT_CACHE_SUBDIR):
+            info = self.find_file_in_drive(name, folder_id)
+            if info is None:
+                raise BibliographyFetchError(f"{name} not found in Drive folder {folder_id}")
+            remote = info.get("md5Checksum")
+            if (
+                not force_refresh
+                and remote
+                and dest.exists()
+                and self.cache_manager.compute_md5(dest) == remote
+            ):
+                return {"path": str(dest), "status": "unchanged"}
+
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            self.download_file(info["id"], str(dest))  # atomic replace
+            sidecar = {
+                "drive_file_id": info["id"],
+                "folder_id": folder_id,
+                "md5Checksum": remote,
+                "modifiedTime": info.get("modifiedTime"),
+                "fetched_at": datetime.now().isoformat(),
+            }
+            write_to_file(json.dumps(sidecar, indent=2), dest.with_name(f"{name}.drive.json"))
+            return {"path": str(dest), "status": "downloaded"}
 
     def _prepare_document_and_folder(
         self, doc_id: str, folder_id: str | None, force_refresh: bool = False
-    ) -> tuple[str, list, str, dict]:
-        """Prepare document content, determine folder ID, and process bibliography.
+    ) -> tuple[str, list, str | None]:
+        """Prepare document content and determine folder ID.
 
         Args:
             doc_id: The Google Doc ID.
@@ -1241,7 +1296,7 @@ class GoogleDriveProcessor:
                 Doc's modifiedTime is unchanged.
 
         Returns:
-            Tuple of (doc_content, figure_data, folder_id, bibliography_info).
+            Tuple of (doc_content, figure_data, folder_id).
         """
         # Download and read the document (with cleaning to remove embedded images)
         doc_content = self.download_doc(
@@ -1256,27 +1311,8 @@ class GoogleDriveProcessor:
         figure_data = self.extract_figure_paths(doc_content)
         _LOGGER.info(f"Found {len(figure_data)} figure references in document")
 
-        # Resolve folder ID
         folder_id = self._resolve_folder_id(doc_id, folder_id)
-
-        # Extract bibliography from frontmatter (already unescaped by clean=True)
-        bibliography_info = {
-            "bibliography_path": None,
-            "results": {"processed": [], "skipped": [], "failed": []},
-        }
-        if folder_id:
-            import frontmatter
-
-            doc_post = frontmatter.loads(doc_content)
-            bibliography = doc_post.metadata.get("bibliography")
-
-            if bibliography:
-                _LOGGER.info("Processing bibliography files from frontmatter")
-                bibliography_info = self._process_bibliography_files(
-                    doc_id, bibliography, folder_id
-                )
-
-        return doc_content, figure_data, folder_id, bibliography_info
+        return doc_content, figure_data, folder_id
 
     def _log_figure_processing_summary(self, results: dict[str, Any]) -> None:
         """Log summary of figure processing results.
@@ -1474,14 +1510,13 @@ class GoogleDriveProcessor:
         skip_unchanged: bool = True,
         force_refresh: bool = False,
     ) -> dict[str, Any]:
-        """Process all figures and bibliography referenced in the document.
+        """Process all figures referenced in the document.
 
         This method processes:
         - SVG files -> PDF conversion
         - CSV files -> PDF table conversion
         - Google Sheets -> PDF table conversion
         - PDF files -> direct download
-        - Bibliography files (.bib) -> cache for citation processing
 
         Args:
             doc_id: The Google Doc ID.
@@ -1492,13 +1527,12 @@ class GoogleDriveProcessor:
                 skip_unchanged, which governs figure re-conversion).
 
         Returns:
-            Dict with 'document' (updated content), 'results' (processing summary),
-            and 'bibliography_info' (bibliography path and results).
+            Dict with 'document' (updated content) and 'results' (processing summary).
         """
         _LOGGER.info(f"Processing figures for document: {doc_id}")
 
-        # Prepare document and determine folder (also processes bibliography during same download)
-        doc_content, figure_data, folder_id, bibliography_info = self._prepare_document_and_folder(
+        # Prepare document and determine folder
+        doc_content, figure_data, folder_id = self._prepare_document_and_folder(
             doc_id, folder_id, force_refresh=force_refresh
         )
 
@@ -1683,7 +1717,6 @@ class GoogleDriveProcessor:
         return {
             "document": updated_content,
             "results": results,
-            "bibliography_info": bibliography_info,  # Includes bibliography_path and processing results
         }
 
     def process_document_csvs(
@@ -1804,147 +1837,6 @@ class GoogleDriveProcessor:
                 results["failed"].append(csv_path)
 
         return results
-
-    def process_document_bibliography(
-        self, doc_id: str, folder_id: str | None = None, skip_unchanged: bool = True
-    ) -> dict[str, Any]:
-        """Process bibliography files referenced in the document's frontmatter.
-
-        NOTE: This is now a wrapper around process_document_figures() which processes
-        bibliography during the same document download. For efficiency, prefer calling
-        process_document_figures() directly which returns both figures AND bibliography.
-
-        Args:
-            doc_id: The ID of the Google Doc to process.
-            folder_id: Optional folder ID to search for bibliography files.
-            skip_unchanged: Whether to skip unchanged files based on MD5 checksum.
-
-        Returns:
-            Dict with 'bibliography_path' (cached path) and 'results' containing processing outcome.
-        """
-        # Call process_document_figures which now handles bibliography too
-        result = self.process_document_figures(doc_id, folder_id, skip_unchanged)
-        # Return just the bibliography info for backwards compatibility
-        return result.get(
-            "bibliography_info",
-            {"bibliography_path": None, "results": {"processed": [], "skipped": [], "failed": []}},
-        )
-
-    def _process_bibliography_files(
-        self,
-        doc_id: str,
-        bibliography: str | list[str],
-        folder_id: str,
-        skip_unchanged: bool = True,
-    ) -> dict[str, Any]:
-        """Process bibliography files (called during document preparation).
-
-        Args:
-            doc_id: The ID of the Google Doc.
-            bibliography: Bibliography field from frontmatter (string or list).
-            folder_id: Folder ID to search for bibliography files.
-            skip_unchanged: Whether to skip unchanged files based on MD5 checksum.
-
-        Returns:
-            Dict with 'bibliography_path' (cached path or list) and 'results' containing
-            processing outcome.
-        """
-        # Support both string and list of bibliography files
-        if isinstance(bibliography, str):
-            bib_files = [bibliography]
-        elif isinstance(bibliography, list):
-            bib_files = bibliography
-        else:
-            _LOGGER.warning(f"Unexpected bibliography type: {type(bibliography)}")
-            return {
-                "bibliography_path": None,
-                "results": {"processed": [], "skipped": [], "failed": []},
-            }
-
-        _LOGGER.info(f"Found {len(bib_files)} bibliography file(s) in frontmatter")
-
-        # Process bibliography files (folder_id already determined by caller)
-        results = {"processed": [], "skipped": [], "failed": []}
-        cached_bib_paths = []
-
-        for bib_path in bib_files:
-            _LOGGER.info(f"Processing bibliography: {bib_path}")
-
-            # Search for the bibliography file in the folder
-            file_info = self.find_file_in_drive(bib_path, folder_id) if folder_id else None
-
-            if not file_info:
-                _LOGGER.error(f"  Failed: Bibliography file not found in Google Drive: {bib_path}")
-                results["failed"].append(bib_path)
-                continue
-
-            # Create local cache path for the bibliography
-            cached_path = self.cache_manager.get_cache_path(doc_id, "bib", Path(bib_path).name)
-
-            # Ensure the parent directory exists
-            cached_path.parent.mkdir(parents=True, exist_ok=True)
-
-            # Store relative path for frontmatter (e.g., "bib/references.bib")
-            # This matches the directory structure created by symlinks in build directory
-            relative_bib_path = f"bib/{Path(bib_path).name}"
-
-            # Check if unchanged (using MD5 checksum)
-            remote_digest = file_info.get("md5Checksum", "")
-            if skip_unchanged and remote_digest and cached_path.exists():
-                # Check if local file has same digest
-                local_digest = self.cache_manager.compute_md5(cached_path)
-                if local_digest == remote_digest:
-                    _LOGGER.info(f"  Using cached: {relative_bib_path}")
-                    results["skipped"].append(bib_path)
-                    cached_bib_paths.append(relative_bib_path)
-
-                    # Record in metadata even if skipped
-                    self.cache_manager.record_cached_file(
-                        doc_id=doc_id,
-                        filename=Path(bib_path).name,
-                        source_path=f"bib/{Path(bib_path).name}",
-                        size=cached_path.stat().st_size,
-                        drive_file_id=file_info.get("id"),
-                        digest=remote_digest,
-                    )
-                    continue
-
-            # Download bibliography file
-            try:
-                self.download_file(file_info["id"], str(cached_path))
-                _LOGGER.info(f"  Downloaded: {bib_path} -> {cached_path}")
-                results["processed"].append(bib_path)
-                cached_bib_paths.append(relative_bib_path)
-
-                # Record in cache metadata
-                self.cache_manager.record_cached_file(
-                    doc_id=doc_id,
-                    filename=Path(bib_path).name,
-                    source_path=f"bib/{Path(bib_path).name}",
-                    size=cached_path.stat().st_size,
-                    drive_file_id=file_info.get("id"),
-                    digest=remote_digest,
-                )
-
-            except Exception as e:
-                _LOGGER.error(f"  Error downloading {bib_path}: {str(e)}")
-                results["failed"].append(bib_path)
-
-        # Summary
-        _LOGGER.info("\n=== Bibliography Processing Complete ===")
-        _LOGGER.info(f"✓ Processed: {len(results['processed'])} bibliography files")
-        _LOGGER.info(f"⏭ Skipped: {len(results['skipped'])} unchanged bibliography files")
-        _LOGGER.info(f"✗ Failed: {len(results['failed'])} bibliography files")
-
-        # Return the first successful cached path (or list if multiple)
-        if len(cached_bib_paths) == 1:
-            bibliography_path = cached_bib_paths[0]
-        elif len(cached_bib_paths) > 1:
-            bibliography_path = cached_bib_paths
-        else:
-            bibliography_path = None
-
-        return {"bibliography_path": bibliography_path, "results": results}
 
     def _batch_fetch_folder_metadata(
         self, figure_paths: list[str], parent_folder_id: str, csv_paths: list[str] | None = None
