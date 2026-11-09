@@ -46,9 +46,42 @@ def clean_markdown(
 
     markdown_content = collapse_blank_lines_in_code_fences(markdown_content)
 
+    markdown_content = collapse_blank_lines_in_math_envs(markdown_content)
+
     markdown_content = ensure_blank_lines_before_headings(markdown_content)
 
     return markdown_content
+
+
+_MATH_ENVS = r"equation|align|gather|multline|flalign|eqnarray|displaymath|math"
+_MATH_BEGIN_RE = re.compile(r"\\begin\{(" + _MATH_ENVS + r")(\*?)\}")
+
+
+def collapse_blank_lines_in_math_envs(markdown_content: str) -> str:
+    """Remove blank lines inside LaTeX math environments.
+
+    Google Docs exports each line as a separate paragraph, so an equation typed
+    over several lines (\\begin{equation}, \\label, formula, \\end{equation})
+    gets a blank line between every line. LaTeX forbids paragraph breaks in
+    math mode ("Missing $ inserted"), so strip them.
+    """
+    out = []
+    end_marker = None
+    for line in markdown_content.split("\n"):
+        if end_marker is None:
+            out.append(line)
+            m = _MATH_BEGIN_RE.search(line)
+            if m:
+                marker = "\\end{" + m.group(1) + m.group(2) + "}"
+                if marker not in line[m.end() :]:
+                    end_marker = marker
+        elif line.strip() == "":
+            continue  # drop paragraph-separator blank line inside math
+        else:
+            out.append(line)
+            if end_marker in line:
+                end_marker = None
+    return "\n".join(out)
 
 
 def collapse_blank_lines_in_code_fences(markdown_content: str) -> str:

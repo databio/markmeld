@@ -10,6 +10,7 @@ from markmeld.google_drive.markdown_clean import (
     check_and_fix_latex_incompatible_chars,
     clean_escape_characters,
     clean_markdown,
+    collapse_blank_lines_in_math_envs,
     ensure_blank_lines_before_headings,
     remove_embedded_images,
     replace_svg_extensions,
@@ -340,3 +341,36 @@ class TestCleanMarkdownIntegration:
         # Vertical tab replaced with newline, then blank line ensured before heading
         assert "\x0b" not in result
         assert "\n\n## Next Section" in result
+
+
+# ============================================================
+# collapse_blank_lines_in_math_envs
+# ============================================================
+
+
+class TestCollapseBlankLinesInMathEnvs:
+    """Google Docs puts a blank line between every line of a multi-line equation."""
+
+    def test_multiline_equation_collapsed(self):
+        md = (
+            "Text before.\n\n\\begin{equation} \n\n\\label{eq:one} \n\n"
+            "x = y \n\n\\end{equation}\n\nText after."
+        )
+        result = collapse_blank_lines_in_math_envs(md)
+        assert result == (
+            "Text before.\n\n\\begin{equation} \n\\label{eq:one} \n"
+            "x = y \n\\end{equation}\n\nText after."
+        )
+
+    def test_starred_and_align(self):
+        md = "\\begin{align*}\n\na &= b \\\\\n\nc &= d\n\n\\end{align*}\n\nAfter."
+        result = collapse_blank_lines_in_math_envs(md)
+        assert result == "\\begin{align*}\na &= b \\\\\nc &= d\n\\end{align*}\n\nAfter."
+
+    def test_single_line_equation_untouched(self):
+        md = "\\begin{equation} x = y \\end{equation}\n\nNext paragraph.\n\nMore."
+        assert collapse_blank_lines_in_math_envs(md) == md
+
+    def test_runs_in_clean_markdown(self):
+        md = "\\begin{equation}\n\nx = y\n\n\\end{equation}"
+        assert clean_markdown(md) == "\\begin{equation}\nx = y\n\\end{equation}"
