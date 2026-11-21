@@ -131,6 +131,21 @@ def update_figure_paths(markdown_content: str, path_mapping: dict[str, str]) -> 
     return updated
 
 
+def _refuse_fetch(url: str, *args: Any, **kwargs: Any) -> dict:
+    """weasyprint ``url_fetcher`` for table PDFs: no outside resources at all.
+
+    A table is HTML and CSS markmeld writes itself, with escaped cell text, so
+    it needs nothing from outside. Refusing every URL (``data:`` excepted)
+    stops a ``file:`` or ``http:`` URL that slipped in (for example through a
+    CSS value from a config) from reading server files or the network.
+    """
+    if url.startswith("data:"):
+        from weasyprint import default_url_fetcher
+
+        return default_url_fetcher(url, *args, **kwargs)
+    raise ValueError(f"table PDFs load no outside resources (refused {url[:80]})")
+
+
 def convert_svg(svg_path: str, output_path: Path) -> bool:
     """Convert SVG to PDF using inkscape.
 
@@ -398,7 +413,9 @@ def df_to_pdf(
     )
 
     _LOGGER.info(f"  Generating PDF with dimensions: {fig_width_mm}mm x {fig_height_mm}mm")
-    HTML(string=css + df.to_html(index=False, escape=True)).write_pdf(output_file)
+    HTML(string=css + df.to_html(index=False, escape=True), url_fetcher=_refuse_fetch).write_pdf(
+        output_file
+    )
 
 
 def find_optimal_height(
@@ -423,7 +440,8 @@ def find_optimal_height(
             tr_padding_v,
             tr_padding_h,
         )
-        return len(HTML(string=css + df.to_html(index=False, escape=True)).render().pages) == 1
+        html = HTML(string=css + df.to_html(index=False, escape=True), url_fetcher=_refuse_fetch)
+        return len(html.render().pages) == 1
 
     low, high = 10.0, 2000.0
     if not fits_on_one_page(high):

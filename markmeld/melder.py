@@ -12,6 +12,7 @@ import frontmatter
 import yaml
 from jinja2 import Template
 from jinja2.filters import FILTERS, pass_environment
+from jinja2.sandbox import SandboxedEnvironment
 from ubiquerg import is_url
 
 from .api_handler import APIHandler
@@ -127,6 +128,21 @@ def extract_refs(environment: Any, value: str) -> list[str]:
 FILTERS["date"] = datetimeformat
 # Add custom reference extraction filter
 FILTERS["extract_refs"] = extract_refs
+
+# Every template markmeld renders goes through this sandbox. A template (and,
+# with recursive rendering, the text it renders) can come from someone else:
+# an uploaded Jinja resource or a co-author's document on a shared server.
+# Plain ``jinja2.Template`` lets ``{{ ''.__class__.__mro__ ... }}`` reach
+# Python and run code; the sandbox refuses unsafe attributes and calls.
+# Made after the FILTERS lines above, so it has the custom filters too.
+_JINJA = SandboxedEnvironment()
+
+
+def make_template(source: str) -> Template:
+    """A sandboxed Jinja template for ``source`` (keeps it as ``.source``)."""
+    template = _JINJA.from_string(source)
+    template.source = source
+    return template
 
 # m = extract_refs("abc; hello @test;me @second one; and finally @three")
 # m
@@ -685,8 +701,7 @@ def load_template(cfg: dict[str, Any]) -> Template | None:
 
             with open(jinja_tpl, "r") as f:
                 jinja_tpl_contents = f.read()
-        t = Template(jinja_tpl_contents)
-        t.source = jinja_tpl_contents
+        t = make_template(jinja_tpl_contents)
     except TypeError:
         raise Exception(f"Unable to open jinja_template. Path: {jinja_tpl}")
     return t
@@ -2275,8 +2290,7 @@ class MarkdownMelder:
             tpl = load_template(target.meta)
         else:
             # cmd_data["jinja_template"] = None
-            tpl = Template(tpl_generic)
-            tpl.source = tpl_generic
+            tpl = make_template(tpl_generic)
             _LOGGER.error("No jinja_template provided. Using generic markmeld jinja_template.")
 
         # Check for variable mismatches before rendering
@@ -2300,6 +2314,6 @@ class MarkdownMelder:
                 double = True
 
         if double:
-            return Template(tpl.render(melded_input)).render(melded_input)  # two times
+            return make_template(tpl.render(melded_input)).render(melded_input)  # two times
         else:
             return tpl.render(melded_input)
