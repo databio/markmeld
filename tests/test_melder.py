@@ -3,6 +3,10 @@ Tests for frontmatter/variable precedence, content sources (md_content /
 yaml_content), section extraction, and target inheritance.
 """
 
+import json
+import shutil
+import subprocess
+
 import frontmatter
 import pytest
 import yaml
@@ -492,3 +496,46 @@ class TestFrontmatterYamlMerge:
         result = mm_.build_target("manuscript", print_only=True)
         assert result.melded_input["metadata_extra"]["title"] == "Test Paper Title From YAML"
         assert "metadata_extra" not in result.melded_input["_global_frontmatter"]["dict"]
+
+
+class TestFrontmatterDump:
+    """Multi-line strings must reach pandoc as block scalars, or pandoc reads them
+    as inline text and turns paragraph breaks into line breaks."""
+
+    @pytest.mark.parametrize(
+        "abstract",
+        ["First paragraph.\n\nSecond paragraph.", "Résumé – first.\n\nSecond, “quoted”."],
+    )
+    def test_multiline_string_is_block_scalar(self, abstract):
+        fm = {"title": "A title", "abstract": abstract}
+        raw = markmeld.melder.get_frontmatter_formats(fm)["raw"]
+        assert "abstract: |\n" in raw
+        assert yaml.safe_load(raw) == {**fm, "abstract": abstract + "\n"}
+
+    @pytest.mark.skipif(shutil.which("pandoc") is None, reason="needs pandoc")
+    @pytest.mark.parametrize(
+        "abstract",
+        [
+            "**Background** One.\n\n**Findings** Two.\n\n**Conclusions** Three.",
+            "One. \n\nTwo.\n\nThree.",  # trailing space: PyYAML quotes instead of |
+            "One.\n   \nTwo.\n\t\nThree.",  # blank lines holding whitespace
+        ],
+    )
+    def test_pandoc_reads_paragraphs(self, abstract):
+        fenced = markmeld.melder.get_frontmatter_formats({"abstract": abstract})["fenced"]
+        meta = json.loads(
+            subprocess.run(
+                ["pandoc", "-f", "markdown", "-t", "json", "-s"],
+                input=fenced,
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout
+        )["meta"]["abstract"]
+        assert meta["t"] == "MetaBlocks"
+        assert [b["t"] for b in meta["c"]] == ["Para", "Para", "Para"]
+
+    @pytest.mark.parametrize("title", ["A title", "A title\nwrapped"])
+    def test_strings_without_paragraph_break_unchanged(self, title):
+        raw = markmeld.melder.get_frontmatter_formats({"title": title})["raw"]
+        assert raw == yaml.dump({"title": title})

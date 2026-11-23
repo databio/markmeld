@@ -144,8 +144,36 @@ def make_template(source: str) -> Template:
     template.source = source
     return template
 
+
 # m = extract_refs("abc; hello @test;me @second one; and finally @three")
 # m
+
+
+class _FrontmatterDumper(yaml.Dumper):
+    """Ends every string that has a paragraph break with a newline, as a ``|`` block.
+
+    Pandoc parses a metadata string as blocks only when it ends in a newline;
+    otherwise it reads it as inline text, and the paragraph breaks in a
+    multi-paragraph value (such as an abstract lifted by ``extract_sections``) become
+    line breaks. The trailing newline is the fix. ``|`` is for readability, and PyYAML
+    falls back to a quoted scalar (which still keeps the newline) when a line has
+    trailing spaces or tabs. ``allow_unicode`` keeps non-ASCII text out of that
+    fallback. Strings without a paragraph break dump as before, so a title wrapped
+    over two lines stays inline.
+    """
+
+
+_PARAGRAPH_BREAK = re.compile(r"\n[ \t\r]*\n")
+
+
+def _represent_str(dumper: yaml.Dumper, value: str) -> yaml.ScalarNode:
+    if not _PARAGRAPH_BREAK.search(value.strip("\n")):
+        return dumper.represent_scalar("tag:yaml.org,2002:str", value)
+    value = value.rstrip("\n") + "\n"
+    return dumper.represent_scalar("tag:yaml.org,2002:str", value, style="|")
+
+
+_FrontmatterDumper.add_representer(str, _represent_str)
 
 
 def get_frontmatter_formats(frontmatter: dict[str, Any]) -> dict[str, Any]:
@@ -167,7 +195,7 @@ def get_frontmatter_formats(frontmatter: dict[str, Any]) -> dict[str, Any]:
         frontmatter_raw = ""
         frontmatter_fenced = ""
     else:
-        frontmatter_raw = yaml.dump(frontmatter)
+        frontmatter_raw = yaml.dump(frontmatter, Dumper=_FrontmatterDumper, allow_unicode=True)
         frontmatter_fenced = f"---\n{frontmatter_raw}---\n"
 
     return {
