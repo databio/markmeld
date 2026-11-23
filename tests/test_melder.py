@@ -255,10 +255,18 @@ class TestSectionExtraction:
     """extract_sections lifts a body '# Abstract' heading into the `abstract` var."""
 
     TEMPLATE = "ABSTRACT:{{ abstract }}|BODY:{{ body }}"
+    ON = {"extract_sections": {"abstract": ["Abstract"]}}
 
-    def test_extract_abstract_default_on(self, mm_target):
-        body = "# Abstract\n\nThis is the abstract.\n\n# Introduction\n\nIntro body."
+    def test_extract_abstract_default_off(self, mm_target):
+        """Without extract_sections, a body that is only an abstract keeps its text."""
+        body = "# Abstract\n\nThis is the abstract."
         result = mm_target(self.TEMPLATE, data={"md_content": {"body": body}})
+        assert "ABSTRACT:|BODY:" in result.melded_output
+        assert "This is the abstract." in result.melded_output.split("BODY:")[1]
+
+    def test_extract_abstract_opt_in(self, mm_target):
+        body = "# Abstract\n\nThis is the abstract.\n\n# Introduction\n\nIntro body."
+        result = mm_target(self.TEMPLATE, **self.ON, data={"md_content": {"body": body}})
         assert "ABSTRACT:This is the abstract." in result.melded_output
         assert "# Abstract" not in result.melded_output
         assert "This is the abstract." not in result.melded_output.split("BODY:")[1]
@@ -268,7 +276,7 @@ class TestSectionExtraction:
     def test_extract_abstract_h2_section_span(self, mm_target):
         """An H2 '## Abstract' section ends at the next H2; later sections stay."""
         body = "## Abstract\n\nAbstract prose here.\n\n## Methods\n\nMethods prose here."
-        result = mm_target(self.TEMPLATE, data={"md_content": {"body": body}})
+        result = mm_target(self.TEMPLATE, **self.ON, data={"md_content": {"body": body}})
         assert "ABSTRACT:Abstract prose here." in result.melded_output
         body_out = result.melded_output.split("BODY:")[1]
         assert "Abstract prose here." not in body_out
@@ -279,6 +287,7 @@ class TestSectionExtraction:
         body = "# Abstract\n\nBody abstract text.\n\n# Intro\n\nIntro."
         result = mm_target(
             self.TEMPLATE,
+            **self.ON,
             data={
                 "md_content": {
                     "body": {
@@ -317,7 +326,7 @@ class TestSectionExtraction:
         body = (
             "# Abstract\n\nTop-level abstract.\n\n## Details\n\n### Abstract\n\nNested abstract.\n"
         )
-        result = mm_target(self.TEMPLATE, data={"md_content": {"body": body}})
+        result = mm_target(self.TEMPLATE, **self.ON, data={"md_content": {"body": body}})
         assert "ABSTRACT:Top-level abstract." in result.melded_output
         body_out = result.melded_output.split("BODY:")[1]
         assert "Top-level abstract." not in body_out
@@ -340,7 +349,7 @@ class TestSectionExtraction:
             "# **Title**\n\n## **Abstract**\n\nBold-heading abstract.\n\n"
             "## **Introduction**\n\nIntro."
         )
-        result = mm_target(self.TEMPLATE, data={"md_content": {"body": body}})
+        result = mm_target(self.TEMPLATE, **self.ON, data={"md_content": {"body": body}})
         assert "ABSTRACT:Bold-heading abstract." in result.melded_output
         body_out = result.melded_output.split("BODY:")[1]
         assert "Bold-heading abstract." not in body_out
@@ -350,6 +359,7 @@ class TestSectionExtraction:
         """Extraction also applies to md_files sources (same code path)."""
         result = mm_target(
             self.TEMPLATE,
+            **self.ON,
             md_files={"body": "# Abstract\n\nFile abstract text.\n\n# Body\n\nBody text."},
         )
         assert "ABSTRACT:File abstract text." in result.melded_output

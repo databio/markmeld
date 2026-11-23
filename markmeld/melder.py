@@ -205,11 +205,11 @@ def get_frontmatter_formats(frontmatter: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-# Default section-extraction map: lift a body "# Abstract" heading into the
-# `abstract` variable automatically, with no config. Targets can override or
-# opt out via the target-level `extract_sections:` key (see
-# resolve_extract_sections).
-DEFAULT_EXTRACT_SECTIONS = {"abstract": ["Abstract"]}
+# Section extraction is opt-in: a target lifts a body "# Abstract" heading into
+# the `abstract` variable only when its `extract_sections:` key asks for it (see
+# resolve_extract_sections). Lifting by default emptied documents whose whole
+# body is the abstract when the template never prints `abstract`.
+DEFAULT_EXTRACT_SECTIONS: dict[str, list] = {}
 
 _HEADING_RE = re.compile(r"^(#{1,6})[ \t]+(.*?)[ \t]*$", re.MULTILINE)
 _H1_RE = re.compile(r"^#[ \t]+(.*?)[ \t]*$", re.MULTILINE)
@@ -281,7 +281,7 @@ def resolve_extract_sections(target_meta: dict) -> dict:
     """Merge the built-in defaults with a target's extract_sections key.
 
     Resolution semantics:
-      - key absent            -> DEFAULT_EXTRACT_SECTIONS (abstract on)
+      - key absent            -> DEFAULT_EXTRACT_SECTIONS (no extraction)
       - False / None / {}     -> disable all extraction ({} returned)
       - {var: None}           -> drop that section from the effective map
       - {var: [X, Y]} / "X"   -> override heading list for that section

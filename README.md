@@ -4,15 +4,19 @@ Markmeld is a markdown melder. It merges yaml and markdown content using jinja2 
 
 Read the complete documentation at [markmeld.databio.org](https://markmeld.databio.org).
 
-## Automatic abstract extraction
+## Abstract extraction
 
-A markdown paper written as plain prose with an `# Abstract` heading has that
-section lifted into the `abstract` variable automatically (and stripped from the
-body), so it renders in a template's abstract slot just like a frontmatter
-`abstract:` would. A frontmatter `abstract:` still takes precedence. Opt a target
-out with `extract_sections: {abstract: null}`, disable all extraction with
-`extract_sections: false`, or override the heading names with
-`extract_sections: {abstract: [Abstract, Summary]}`.
+A target can lift a body `# Abstract` section into the `abstract` variable (and
+strip it from the body), so it renders in a template's abstract slot just like a
+frontmatter `abstract:` would. It is off unless the target asks for it:
+
+```yaml
+targets:
+  manuscript:
+    extract_sections: {abstract: [Abstract]}   # or [Abstract, Summary]
+```
+
+A frontmatter `abstract:` still takes precedence.
 
 ## Testing
 
