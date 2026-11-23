@@ -314,19 +314,15 @@ config = {
     "targets": {
         "document": {
             "_workpath": "/tmp",  # Required working directory
-            "_defpath": "/tmp",   # Required definition path
+            "_defpath": "/tmp",  # Required definition path
             "data": {
-                "md_content": {
-                    "body": "# Title\n\nContent here"
-                },
-                "yaml_content": {
-                    "metadata": {"author": "John Doe", "date": "2024-01-01"}
-                }
+                "md_content": {"body": "# Title\n\nContent here"},
+                "yaml_content": {"metadata": {"author": "John Doe", "date": "2024-01-01"}},
             },
             "jinja_template": "template.jinja",
-            "command": None  # Just render, don't execute
+            "command": None,  # Just render, don't execute
         }
-    }
+    },
 }
 
 mm = MarkdownMelder(config)
@@ -341,13 +337,13 @@ result = mm.build_target("target_name", print_only=True)
 result.melded_output  # String of rendered content
 
 # Access input data passed to template
-result.melded_input   # Dict with all template variables
+result.melded_input  # Dict with all template variables
 
 # Check return code (0 = success)
-result.returncode     # Integer return code
+result.returncode  # Integer return code
 
 # Access target metadata
-result.meta          # Dict of target configuration
+result.meta  # Dict of target configuration
 ```
 
 ### Building with Subprocess Execution
@@ -374,7 +370,7 @@ for idx, result in results.items():
 ### Adding a New Feature
 1. Implement in appropriate module (`melder.py` for core logic, `cli.py` for CLI)
 2. Add tests in `tests/`
-3. Format code with `black`
+3. Lint and format with `ruff check . && ruff format .`
 4. Run full test suite with `pytest`
 
 ### Debugging Template Issues

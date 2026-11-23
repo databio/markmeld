@@ -12,7 +12,9 @@ from markmeld.melder import make_template
 
 
 def test_templates_render_normally_with_markmeld_filters():
-    tpl = make_template("{{ title }}: {% for x in items %}{{ x|upper }} {% endfor %}{{ refs|extract_refs }}")
+    tpl = make_template(
+        "{{ title }}: {% for x in items %}{{ x|upper }} {% endfor %}{{ refs|extract_refs }}"
+    )
     out = tpl.render(title="T", items=["a", "b"], refs="see @smith2020")
     assert out.startswith("T: A B ")
     assert "smith2020" in out
